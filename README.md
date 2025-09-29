@@ -1,14 +1,14 @@
 # Excel Comparison Tool
 
-A Flask web application for comparing Excel files and analyzing differences between datasets.
+A web-based tool for comparing two Excel files and identifying differences between them.
 
 ## Features
 
-- Upload and compare two Excel files
+- Upload two Excel files for comparison
 - Side-by-side comparison view
-- Highlight differences between datasets
-- Download comparison results
-- Clean, responsive interface
+- Highlight differences between files
+- Export comparison results
+- Clean, responsive web interface
 
 ## Local Development
 
@@ -22,33 +22,29 @@ pip install -r requirements.txt
 python excel_comparison.py
 ```
 
-3. Open your browser to `http://localhost:5002`
+3. Open your browser and go to: http://localhost:5002
 
 ## Deployment
 
-This app is designed to be deployed on Railway. The main app will automatically link to this comparison tool.
+This app is designed to be deployed on Railway or similar platforms.
+
+### Environment Variables
+
+- `MAIN_APP_URL`: URL of the main Excel automation app (for navigation)
 
 ### Railway Deployment
 
-1. Create a new Railway project
-2. Connect this repository
-3. Railway will automatically detect the `Procfile` and deploy
-4. Set the environment variable `MAIN_APP_URL` to your main app's URL
+1. Connect your GitHub repository to Railway
+2. Set the environment variable `MAIN_APP_URL` to your main app's URL
+3. Deploy!
 
-## Environment Variables
+## Usage
 
-- `MAIN_APP_URL`: URL of the main Excel AI Builder app (default: http://localhost:5001/)
+1. Upload your first Excel file (Raw Data)
+2. Upload your second Excel file (Previous Data) 
+3. Click "Compare Files" to see the differences
+4. Use the navigation to switch between apps
 
-## API Endpoints
+## Related Apps
 
-- `GET /` - Redirects to `/comparison`
-- `GET /comparison` - Main comparison interface
-- `POST /upload` - Upload Excel files for comparison
-- `GET /download` - Download comparison results
-
-## Requirements
-
-- Python 3.10+
-- Flask
-- Pandas
-- OpenPyXL
+- [Main Excel Automation App](../excel-ai-builder/) - Upload Excel files and give natural language instructions
