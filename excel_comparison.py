@@ -190,23 +190,6 @@ HTML_TEMPLATE = """
             0% { transform: rotate(0deg); } 
             100% { transform: rotate(360deg); } 
         }
-        .nav-buttons {
-            text-align: center;
-            margin: 20px 0;
-        }
-        .nav-buttons a {
-            display: inline-block;
-            margin: 0 10px;
-            padding: 10px 20px;
-            background: #6c757d;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            transition: background 0.3s;
-        }
-        .nav-buttons a:hover {
-            background: #5a6268;
-        }
     </style>
 </head>
 <body>
@@ -217,9 +200,6 @@ HTML_TEMPLATE = """
         </div>
 
         <div class="content">
-            <div class="nav-buttons">
-                <a href="{{ main_app_url }}">🏠 Main App</a>
-            </div>
 
             <!-- File Upload Section -->
             <div class="section">
@@ -480,8 +460,7 @@ def comparison_index():
                                 previous_data=previous_data,
                                 raw_filename=raw_filename,
                                 previous_filename=previous_filename,
-                                comparison_result=comparison_result,
-                                main_app_url=os.environ.get('MAIN_APP_URL', 'http://localhost:5001/'))
+                                comparison_result=comparison_result)
 
 @app.route('/upload_raw', methods=['POST'])
 def upload_raw_file():
