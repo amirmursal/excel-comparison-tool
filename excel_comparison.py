@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Excel File Comparison Tool
-Compare Patient Names between two Excel files and add status column
+Compare Patient IDs between two Excel files and add status column
 """
 
 from flask import Flask, render_template_string, request, jsonify, send_file, redirect
@@ -196,7 +196,7 @@ HTML_TEMPLATE = """
     <div class="container">
         <div class="header">
             <h1>📊 Excel File Comparison Tool</h1>
-            <p>Compare Patient Names between two Excel files and add status column</p>
+            <p>Compare Patient IDs between two Excel files and add status column</p>
         </div>
 
         <div class="content">
@@ -296,7 +296,7 @@ HTML_TEMPLATE = """
                             {% endfor %}
                         </select>
                     </div>
-                    <button type="submit" id="compare-btn">🔄 Compare Patient Names</button>
+                    <button type="submit" id="compare-btn">🔄 Compare Patient IDs</button>
                 </form>
                 <div class="loading" id="compare-loading">
                     <div class="spinner"></div>
@@ -312,7 +312,7 @@ HTML_TEMPLATE = """
                     {% if comparison_result %}
                         {{ comparison_result }}
                     {% else %}
-                        Upload both files and click "Compare Patient Names" to see results...
+                        Upload both files and click "Compare Patient IDs" to see results...
                     {% endif %}
                 </div>
             </div>
@@ -376,46 +376,46 @@ HTML_TEMPLATE = """
 """
 
 def compare_patient_names(raw_df, previous_df):
-    """Compare Patient Names between two DataFrames and add Status column"""
+    """Compare Patient IDs between two DataFrames and add Status column"""
     try:
         # Debug: Show available columns
         raw_columns = list(raw_df.columns)
         previous_columns = list(previous_df.columns)
         
-        # Function to find patient name column (case-insensitive, handles spaces)
-        def find_patient_name_column(columns):
+        # Function to find patient ID column (case-insensitive, handles spaces)
+        def find_patient_id_column(columns):
             for col in columns:
-                if 'patient' in col.lower() and 'name' in col.lower():
+                if 'patient' in col.lower() and 'id' in col.lower():
                     return col
             return None
         
-        # Find patient name columns
-        raw_patient_col = find_patient_name_column(raw_columns)
-        previous_patient_col = find_patient_name_column(previous_columns)
+        # Find patient ID columns
+        raw_patient_col = find_patient_id_column(raw_columns)
+        previous_patient_col = find_patient_id_column(previous_columns)
         
-        # Check if Patient Name column exists in both DataFrames
+        # Check if Patient ID column exists in both DataFrames
         if not raw_patient_col:
-            return f"❌ Error: 'Patient Name' column not found in raw file.\nAvailable columns: {raw_columns}", None
+            return f"❌ Error: 'Patient ID' column not found in raw file.\nAvailable columns: {raw_columns}", None
         
         if not previous_patient_col:
-            return f"❌ Error: 'Patient Name' column not found in previous file.\nAvailable columns: {previous_columns}", None
+            return f"❌ Error: 'Patient ID' column not found in previous file.\nAvailable columns: {previous_columns}", None
         
-        # Get unique patient names from previous file
+        # Get unique patient IDs from previous file
         previous_patients = set(previous_df[previous_patient_col].dropna().astype(str).str.strip())
         
         # Create a copy of raw data to avoid modifying original
         result_df = raw_df.copy()
         
-        # Find the position of the Patient Name column
+        # Find the position of the Patient ID column
         patient_col_index = result_df.columns.get_loc(raw_patient_col)
         
-        # Insert Status column right after Patient Name column
+        # Insert Status column right after Patient ID column
         result_df.insert(patient_col_index + 1, 'Status', '')
         
         # Compare and set status
-        for idx, patient_name in enumerate(result_df[raw_patient_col]):
-            if pd.notna(patient_name):
-                patient_str = str(patient_name).strip()
+        for idx, patient_id in enumerate(result_df[raw_patient_col]):
+            if pd.notna(patient_id):
+                patient_str = str(patient_id).strip()
                 if patient_str in previous_patients:
                     result_df.at[idx, 'Status'] = 'Done'
         
@@ -428,9 +428,9 @@ def compare_patient_names(raw_df, previous_df):
         result_message = f"""✅ Comparison completed successfully!
 
 📊 Statistics:
-- Total patients in raw file: {total_patients}
-- Patients found in previous file: {done_patients}
-- Patients not found in previous file: {not_done_patients}
+- Total patient IDs in raw file: {total_patients}
+- Patient IDs found in previous file: {done_patients}
+- Patient IDs not found in previous file: {not_done_patients}
 - Completion rate: {(done_patients/total_patients*100):.1f}%
 
 📋 Columns used:
@@ -438,8 +438,8 @@ def compare_patient_names(raw_df, previous_df):
 - Previous file: "{previous_patient_col}"
 
 📋 Status column added to raw file with:
-- "Done" for patients found in previous file
-- Empty cell for patients not found in previous file
+- "Done" for patient IDs found in previous file
+- Empty cell for patient IDs not found in previous file
 
 💾 Ready to download the result file!"""
         
@@ -476,12 +476,12 @@ def upload_raw_file():
         return redirect('/comparison')
     
     try:
-        # Save uploaded file
+        # Get filename without saving to disk
         filename = secure_filename(file.filename)
-        file.save(filename)
         
-        # Load Excel file
-        raw_data = pd.read_excel(filename, sheet_name=None)
+        # Read Excel file directly from memory (no disk storage)
+        file.seek(0)  # Reset file pointer to beginning
+        raw_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
         raw_filename = filename
         
         comparison_result = f"✅ Raw file uploaded successfully! Loaded {len(raw_data)} sheets: {', '.join(list(raw_data.keys()))}"
@@ -505,12 +505,12 @@ def upload_previous_file():
         return redirect('/comparison')
     
     try:
-        # Save uploaded file
+        # Get filename without saving to disk
         filename = secure_filename(file.filename)
-        file.save(filename)
         
-        # Load Excel file
-        previous_data = pd.read_excel(filename, sheet_name=None)
+        # Read Excel file directly from memory (no disk storage)
+        file.seek(0)  # Reset file pointer to beginning
+        previous_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
         previous_filename = filename
         
         comparison_result = f"✅ Previous file uploaded successfully! Loaded {len(previous_data)} sheets: {', '.join(list(previous_data.keys()))}"
