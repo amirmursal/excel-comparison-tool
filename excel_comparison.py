@@ -32,6 +32,14 @@ insurance_formatting_filename = None
 insurance_formatting_result = None
 insurance_formatting_output = ""
 
+# Global variables for remarks update
+remarks_appointments_data = None
+remarks_excel_data = None
+remarks_appointments_filename = None
+remarks_remarks_filename = None
+remarks_result = None
+remarks_updated_count = 0
+
 # HTML Template for Excel Comparison
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -300,6 +308,7 @@ HTML_TEMPLATE = """
                 <button class="tab {% if active_tab == 'comparison' %}active{% endif %}" id="comparison-tab-btn" onclick="switchTab('comparison')">🔄 Comparison Tool</button>
                 <button class="tab {% if active_tab == 'conversion' %}active{% endif %}" id="conversion-tab-btn" onclick="switchTab('conversion')">📋 Conversion Report Formatting</button>
                 <button class="tab {% if active_tab == 'insurance' %}active{% endif %}" id="insurance-tab-btn" onclick="switchTab('insurance')">🦷 Insurance Name Formatting</button>
+                <button class="tab {% if active_tab == 'remarks' %}active{% endif %}" id="remarks-tab-btn" onclick="switchTab('remarks')">📝 Update Remarks</button>
             </div>
 
             <!-- Tab 1: Comparison Tool -->
@@ -601,6 +610,110 @@ HTML_TEMPLATE = """
                     </form>
                 </div>
             </div>
+
+            <!-- Tab 4: Update Remarks -->
+            <div id="remarks-tab" class="tab-content {% if active_tab == 'remarks' %}active{% endif %}">
+                <div class="section">
+                    <h3>📝 Update Remarks</h3>
+                    <p>Upload two Excel files: Appointments file (with Pat ID) and Remarks file (with Patient ID, Remark, and Agent Name). The tool will match Patient IDs and update appointments with remarks.</p>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="section">
+                    <h3>📁 Upload Excel Files</h3>
+                    <form action="/upload_remarks" method="post" enctype="multipart/form-data" id="remarks-form">
+                        <div class="two-column">
+                            <div>
+                                <h4>Appointments Excel File</h4>
+                                <div class="form-group">
+                                    <label for="appointments_file">Select Appointments Excel File (must have "Pat ID" column):</label>
+                                    <input type="file" id="appointments_file" name="appointments_file" accept=".xlsx,.xls" required>
+                                </div>
+                                {% if remarks_appointments_filename %}
+                                <div class="file-status">
+                                    <div class="status-success">
+                                        ✅ {{ remarks_appointments_filename }}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div>
+                                <h4>Remarks Excel File</h4>
+                                <div class="form-group">
+                                    <label for="remarks_file">Select Remarks Excel File (must have "Patient ID", "Remark", and "Agent Name" columns):</label>
+                                    <input type="file" id="remarks_file" name="remarks_file" accept=".xlsx,.xls" required>
+                                </div>
+                                {% if remarks_remarks_filename %}
+                                <div class="file-status">
+                                    <div class="status-success">
+                                        ✅ {{ remarks_remarks_filename }}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <button type="submit" id="remarks-btn">📤 Upload & Process Files</button>
+                    </form>
+                    <div class="loading" id="remarks-loading">
+                        <div class="spinner"></div>
+                        <p>Processing files and matching Patient IDs...</p>
+                    </div>
+                </div>
+
+                <!-- Status Messages -->
+                {% if remarks_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ remarks_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- File Status -->
+                {% if remarks_appointments_data %}
+                <div class="section">
+                    <h3>📊 Processing Results</h3>
+                    <div class="file-status">
+                        <div class="status-success">
+                            ✅ Total appointments processed: {{ remarks_appointments_data | length }}<br>
+                            ✅ Appointments updated with remarks: {{ remarks_updated_count }}<br>
+                            {% if remarks_appointments_filename %}
+                            📄 Appointments file: {{ remarks_appointments_filename }}<br>
+                            {% endif %}
+                            {% if remarks_remarks_filename %}
+                            📄 Remarks file: {{ remarks_remarks_filename }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if remarks_appointments_data and remarks_result and 'successfully' in remarks_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Updated File</h3>
+                    <form action="/download_remarks" method="post">
+                        <div class="form-group">
+                            <label for="remarks_output_filename">Output filename (optional):</label>
+                            <input type="text" id="remarks_output_filename" name="filename" 
+                                   placeholder="appointments_with_remarks.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Updated File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Remarks Tool</h3>
+                    <p>Clear all uploaded files and reset the remarks tool to start fresh.</p>
+                    <form action="/reset_remarks" method="post" onsubmit="return confirm('Are you sure you want to reset the remarks tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Remarks Tool</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -693,6 +806,15 @@ HTML_TEMPLATE = """
             });
         }
 
+        // Remarks form submission
+        const remarksForm = document.getElementById('remarks-form');
+        if (remarksForm) {
+            remarksForm.addEventListener('submit', function() {
+                document.getElementById('remarks-loading').style.display = 'block';
+                document.getElementById('remarks-btn').disabled = true;
+            });
+        }
+
         // Auto-scroll results to bottom
         function scrollResults() {
             const results = document.getElementById('results');
@@ -710,6 +832,8 @@ HTML_TEMPLATE = """
                 switchTab('conversion', true); // Skip URL update on page load
             } else if (activeTab === 'insurance') {
                 switchTab('insurance', true); // Skip URL update on page load
+            } else if (activeTab === 'remarks') {
+                switchTab('remarks', true); // Skip URL update on page load
             } else if (activeTab === 'comparison') {
                 switchTab('comparison', true); // Skip URL update on page load
             }
@@ -1272,6 +1396,7 @@ def comparison_index():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
     global conversion_data, conversion_filename, conversion_result
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
+    global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
     
     # Get the active tab from URL parameter
     active_tab = request.args.get('tab', 'comparison')
@@ -1289,6 +1414,12 @@ def comparison_index():
                                 insurance_formatting_filename=insurance_formatting_filename,
                                 insurance_formatting_result=insurance_formatting_result,
                                 insurance_formatting_output=insurance_formatting_output,
+                                remarks_appointments_data=remarks_appointments_data,
+                                remarks_excel_data=remarks_excel_data,
+                                remarks_appointments_filename=remarks_appointments_filename,
+                                remarks_remarks_filename=remarks_remarks_filename,
+                                remarks_result=remarks_result,
+                                remarks_updated_count=remarks_updated_count,
                                 active_tab=active_tab)
 
 @app.route('/upload_raw', methods=['POST'])
@@ -1824,11 +1955,401 @@ def reset_insurance_formatting():
         insurance_formatting_result = f"❌ Error resetting insurance formatting tool: {str(e)}"
         return redirect('/comparison?tab=insurance')
 
+# Remarks update functions (from excel-remark)
+def process_remarks_excel_file(file_stream):
+    """Process uploaded Excel file and extract Patient ID, Remark, and Agent Name data.
+    Checks all sheets to find the one with required columns."""
+    try:
+        from openpyxl import load_workbook
+        
+        wb = load_workbook(file_stream)
+        ws = None
+        patient_id_col = None
+        remark_col = None
+        agent_name_col = None
+        header_row = 1
+        
+        # Try all sheets to find the one with Patient ID, Remark, and Agent Name columns
+        for sheet_name in wb.sheetnames:
+            current_ws = wb[sheet_name]
+            
+            # Look for headers in the first few rows
+            for row_num in range(1, min(6, current_ws.max_row + 1)):
+                temp_patient_id_col = None
+                temp_remark_col = None
+                temp_agent_name_col = None
+                
+                for col in range(1, current_ws.max_column + 1):
+                    cell_value = str(current_ws.cell(row=row_num, column=col).value or '').strip().lower()
+                    cell_value_clean = cell_value.replace(' ', '').replace('_', '').replace('-', '').replace('.', '')
+                    
+                    if ('patient' in cell_value_clean and 'id' in cell_value_clean) or cell_value_clean == 'pid':
+                        temp_patient_id_col = col
+                    elif 'remark' in cell_value_clean:
+                        temp_remark_col = col
+                    elif 'agent' in cell_value_clean and 'name' in cell_value_clean:
+                        temp_agent_name_col = col
+                
+                # If we found Patient ID and Remark (Agent Name is optional), use this sheet
+                if temp_patient_id_col and temp_remark_col:
+                    patient_id_col = temp_patient_id_col
+                    remark_col = temp_remark_col
+                    agent_name_col = temp_agent_name_col
+                    header_row = row_num
+                    ws = current_ws
+                    break
+            
+            if ws:
+                break
+        
+        # If still not found, try active sheet
+        if not ws:
+            ws = wb.active
+            for col in range(1, ws.max_column + 1):
+                cell_value = str(ws.cell(row=1, column=col).value or '').strip().lower()
+                cell_value_clean = cell_value.replace(' ', '').replace('_', '').replace('-', '').replace('.', '')
+                
+                if ('patient' in cell_value_clean and 'id' in cell_value_clean) or cell_value_clean == 'pid':
+                    patient_id_col = col
+                elif 'remark' in cell_value_clean:
+                    remark_col = col
+                elif 'agent' in cell_value_clean and 'name' in cell_value_clean:
+                    agent_name_col = col
+        
+        if not patient_id_col:
+            sheet_names = ', '.join(wb.sheetnames)
+            raise Exception(f"Patient ID column not found in Excel file. Checked sheets: {sheet_names}")
+        
+        if not remark_col:
+            sheet_names = ', '.join(wb.sheetnames)
+            raise Exception(f"Remark column not found in Excel file. Checked sheets: {sheet_names}")
+        
+        # Extract data - now returns list of records for each patient ID
+        excel_data = {}
+        data_start_row = header_row + 1
+        for row in range(data_start_row, ws.max_row + 1):  # Skip header row
+            patient_id = str(ws.cell(row=row, column=patient_id_col).value or '').strip()
+            remark = str(ws.cell(row=row, column=remark_col).value or '').strip()
+            agent_name = str(ws.cell(row=row, column=agent_name_col).value or '').strip() if agent_name_col else ''
+            
+            # Clean up Patient ID - remove .0 if it's a float
+            if patient_id.endswith('.0'):
+                patient_id = patient_id[:-2]
+            
+            if patient_id:  # Only add non-empty patient IDs
+                if patient_id not in excel_data:
+                    excel_data[patient_id] = []
+                
+                excel_data[patient_id].append({
+                    'remark': remark,
+                    'agent_name': agent_name
+                })
+        
+        return excel_data
+        
+    except Exception as e:
+        raise Exception(f"Error processing Excel file: {str(e)}")
+
+def process_remarks_appointments_excel(file_stream):
+    """Read an appointments Excel and return list of appointment dicts with all columns.
+    
+    Only requires 'Pat ID' column. All other columns are preserved as-is.
+    Checks all sheets to find the one with Pat ID column.
+    """
+    from openpyxl import load_workbook
+
+    wb = load_workbook(file_stream)
+    ws = None
+    headers = []
+    pat_id_col = None
+    header_row = 1
+    
+    # Try all sheets to find the one with Pat ID column
+    for sheet_name in wb.sheetnames:
+        current_ws = wb[sheet_name]
+        
+        # Try to find header row (check first 5 rows)
+        for row_num in range(1, min(6, current_ws.max_row + 1)):
+            temp_headers = []
+            for col in range(1, current_ws.max_column + 1):
+                raw = current_ws.cell(row=row_num, column=col).value
+                name = (str(raw or '')).strip()
+                temp_headers.append(name)
+            
+            # Check if this row looks like headers (has a Pat ID column)
+            for i, header in enumerate(temp_headers):
+                header_lower = header.lower().replace(' ', '').replace('_', '').replace('-', '').replace('.', '')
+                # Check for various patterns: pat id, patient id, patientid, patid, etc.
+                if ('pat' in header_lower and 'id' in header_lower) or header_lower == 'pid':
+                    headers = temp_headers
+                    header_row = row_num
+                    pat_id_col = i + 1  # 1-based column index
+                    ws = current_ws
+                    break
+            
+            if pat_id_col:
+                break
+        
+        if pat_id_col:
+            break
+    
+    # If still not found, use active sheet and check again
+    if pat_id_col is None:
+        ws = wb.active
+        headers = []
+        for col in range(1, ws.max_column + 1):
+            raw = ws.cell(row=1, column=col).value
+            name = (str(raw or '')).strip()
+            headers.append(name)
+        
+        for i, header in enumerate(headers):
+            header_lower = header.lower().replace(' ', '').replace('_', '').replace('-', '').replace('.', '')
+            if ('pat' in header_lower and 'id' in header_lower) or header_lower == 'pid':
+                pat_id_col = i + 1
+                header_row = 1
+                break
+    
+    if pat_id_col is None:
+        # Provide helpful error message with found columns
+        sheet_names = ', '.join(wb.sheetnames)
+        found_columns = ', '.join([f"'{h}'" for h in headers if h]) or 'none'
+        raise Exception(f"Pat ID column not found in appointments Excel. Checked sheets: {sheet_names}. Found columns: {found_columns}. Please ensure there's a column containing 'Pat ID', 'Patient ID', or similar.")
+
+    # Read all rows starting after the header row
+    appointments = []
+    data_start_row = header_row + 1
+    for row in range(data_start_row, ws.max_row + 1):
+        record = {}
+        
+        # Read all columns
+        for col, header in enumerate(headers, 1):
+            value = ws.cell(row=row, column=col).value
+            record[header] = '' if value is None else str(value)
+        
+        # Normalize Patient ID to string without trailing .0
+        pat_id_value = record.get(headers[pat_id_col - 1], '')
+        pid = str(pat_id_value).strip()
+        if pid.endswith('.0'):
+            pid = pid[:-2]
+        record['Pat ID'] = pid  # Standardize the key name
+        
+        # Ensure Remark and Agent Name exist
+        if 'Remark' not in record:
+            record['Remark'] = ''
+        if 'Agent Name' not in record:
+            record['Agent Name'] = ''
+        
+        # Skip empty rows (no Pat ID)
+        if pid:
+            appointments.append(record)
+
+    return appointments
+
+def update_appointments_with_remarks(appointments, excel_data):
+    """Update appointments with remarks and agent names from Excel data based on Patient ID matching.
+    Creates separate rows for each match when Patient ID appears multiple times."""
+    updated_appointments = []
+    updated_count = 0
+    
+    for appointment in appointments:
+        patient_id = str(appointment.get('Pat ID', '')).strip()
+        matches_found = False
+        
+        # Try exact match first
+        if patient_id and patient_id in excel_data:
+            # Create a separate row for each match
+            for match_data in excel_data[patient_id]:
+                new_appointment = appointment.copy()  # Copy all original data
+                new_appointment['Remark'] = match_data['remark']
+                new_appointment['Agent Name'] = match_data['agent_name']
+                updated_appointments.append(new_appointment)
+                updated_count += 1
+                matches_found = True
+        # Try with .0 suffix (in case Excel has float format)
+        elif patient_id and f"{patient_id}.0" in excel_data:
+            for match_data in excel_data[f"{patient_id}.0"]:
+                new_appointment = appointment.copy()  # Copy all original data
+                new_appointment['Remark'] = match_data['remark']
+                new_appointment['Agent Name'] = match_data['agent_name']
+                updated_appointments.append(new_appointment)
+                updated_count += 1
+                matches_found = True
+        
+        # If no matches found, add original appointment with empty remark and agent name
+        if not matches_found:
+            appointment['Remark'] = ''
+            appointment['Agent Name'] = ''
+            updated_appointments.append(appointment)
+    
+    return updated_appointments, updated_count
+
+def create_excel_from_appointments(appointments, filename):
+    """Create Excel file from processed appointment data with all columns."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment
+    import io
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Appointment Data"
+    
+    if not appointments:
+        return wb
+    
+    # Get all unique headers from all appointments
+    all_headers = set()
+    for appointment in appointments:
+        all_headers.update(appointment.keys())
+    
+    # Convert to list and ensure Pat ID, Remark, and Agent Name are at the end for visibility
+    headers = list(all_headers)
+    if 'Pat ID' in headers:
+        headers.remove('Pat ID')
+    if 'Remark' in headers:
+        headers.remove('Remark')
+    if 'Agent Name' in headers:
+        headers.remove('Agent Name')
+    headers.extend(['Pat ID', 'Remark', 'Agent Name'])  # Put these at the end
+    
+    # Set headers
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal='center')
+    
+    # Add appointment data
+    for row, appointment in enumerate(appointments, 2):
+        for col, header in enumerate(headers, 1):
+            value = appointment.get(header, '')
+            ws.cell(row=row, column=col, value=value)
+    
+    # Auto-adjust column widths
+    for column in ws.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+        
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        
+        adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
+        ws.column_dimensions[column_letter].width = adjusted_width
+    
+    # Save to memory
+    excel_buffer = io.BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+    
+    return excel_buffer
+
+@app.route('/upload_remarks', methods=['POST'])
+def upload_remarks():
+    global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
+    
+    appointments_file = request.files.get('appointments_file')
+    remarks_file = request.files.get('remarks_file')
+    
+    # Require both Excel files
+    if not appointments_file or appointments_file.filename == '':
+        remarks_result = "❌ Error: Please upload the Appointments Excel file."
+        return redirect('/comparison?tab=remarks')
+    
+    if not remarks_file or remarks_file.filename == '':
+        remarks_result = "❌ Error: Please upload the Remarks Excel file."
+        return redirect('/comparison?tab=remarks')
+    
+    try:
+        # Process appointments Excel directly from memory
+        appointments_filename_raw = secure_filename(appointments_file.filename)
+        appointments_file.seek(0)  # Reset file pointer
+        remarks_appointments_data = process_remarks_appointments_excel(appointments_file)
+        remarks_appointments_filename = appointments_filename_raw
+        
+        # Process remarks Excel
+        remarks_file.seek(0)  # Reset file pointer
+        remarks_excel_data = process_remarks_excel_file(remarks_file)
+        remarks_remarks_filename = secure_filename(remarks_file.filename)
+        
+        # Update appointments with remarks
+        updated_appointments, updated_count = update_appointments_with_remarks(remarks_appointments_data, remarks_excel_data)
+        
+        # Update the global processed_appointments with the new data
+        remarks_appointments_data = updated_appointments
+        remarks_updated_count = updated_count
+        
+        remarks_result = f"✅ Successfully processed {len(remarks_appointments_data)} appointment(s) and updated {updated_count} appointment(s) with remarks and agent names."
+        
+        return redirect('/comparison?tab=remarks')
+        
+    except Exception as e:
+        remarks_result = f"❌ Error processing files: {str(e)}"
+        return redirect('/comparison?tab=remarks')
+
+@app.route('/download_remarks', methods=['POST'])
+def download_remarks():
+    global remarks_appointments_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
+    
+    if not remarks_appointments_data:
+        return jsonify({'error': 'No data to download'}), 400
+    
+    filename = request.form.get('filename', '').strip()
+    if not filename:
+        if remarks_appointments_filename:
+            base_name = os.path.splitext(remarks_appointments_filename)[0]
+            filename = f"{base_name}_appointments.xlsx"
+        else:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"appointments_with_remarks_{timestamp}.xlsx"
+    
+    try:
+        # Create Excel file
+        excel_buffer = create_excel_from_appointments(remarks_appointments_data, filename)
+        
+        # Clear data after successful download
+        remarks_appointments_data = None
+        remarks_excel_data = None
+        remarks_appointments_filename = None
+        remarks_remarks_filename = None
+        remarks_result = None
+        remarks_updated_count = 0
+        
+        return send_file(excel_buffer, 
+                        as_attachment=True, 
+                        download_name=filename,
+                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/reset_remarks', methods=['POST'])
+def reset_remarks():
+    global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
+    # Explicitly do NOT touch other tool variables
+    
+    try:
+        # Reset ONLY remarks tool variables
+        remarks_appointments_data = None
+        remarks_excel_data = None
+        remarks_appointments_filename = None
+        remarks_remarks_filename = None
+        remarks_result = None
+        remarks_updated_count = 0
+        
+        return redirect('/comparison?tab=remarks')
+        
+    except Exception as e:
+        remarks_result = f"❌ Error resetting remarks tool: {str(e)}"
+        return redirect('/comparison?tab=remarks')
+
 @app.route('/reset_app', methods=['POST'])
 def reset_app():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
     global conversion_data, conversion_filename, conversion_result
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
+    global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
     
     try:
         # Reset all global variables
@@ -1848,6 +2369,14 @@ def reset_app():
         insurance_formatting_filename = None
         insurance_formatting_result = None
         insurance_formatting_output = ""
+        
+        # Reset remarks data
+        remarks_appointments_data = None
+        remarks_excel_data = None
+        remarks_appointments_filename = None
+        remarks_remarks_filename = None
+        remarks_result = None
+        remarks_updated_count = 0
         
         return redirect('/comparison')
         
