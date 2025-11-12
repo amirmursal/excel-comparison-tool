@@ -26,6 +26,12 @@ conversion_data = None
 conversion_filename = None
 conversion_result = None
 
+# Global variables for insurance name formatting
+insurance_formatting_data = None
+insurance_formatting_filename = None
+insurance_formatting_result = None
+insurance_formatting_output = ""
+
 # HTML Template for Excel Comparison
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -293,6 +299,7 @@ HTML_TEMPLATE = """
             <div class="tabs">
                 <button class="tab {% if active_tab == 'comparison' %}active{% endif %}" id="comparison-tab-btn" onclick="switchTab('comparison')">🔄 Comparison Tool</button>
                 <button class="tab {% if active_tab == 'conversion' %}active{% endif %}" id="conversion-tab-btn" onclick="switchTab('conversion')">📋 Conversion Report Formatting</button>
+                <button class="tab {% if active_tab == 'insurance' %}active{% endif %}" id="insurance-tab-btn" onclick="switchTab('insurance')">🦷 Insurance Name Formatting</button>
             </div>
 
             <!-- Tab 1: Comparison Tool -->
@@ -513,6 +520,87 @@ HTML_TEMPLATE = """
                     </form>
                 </div>
             </div>
+
+            <!-- Tab 3: Insurance Name Formatting -->
+            <div id="insurance-tab" class="tab-content {% if active_tab == 'insurance' %}active{% endif %}">
+                <div class="section">
+                    <h3>🦷 Insurance Name Formatting</h3>
+                    <p>Upload an Excel file to automatically format "Dental Primary Ins Carr" column in all sheets. A new formatted column will be created.</p>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="section">
+                    <h3>📁 Upload Excel File</h3>
+                    <form action="/upload_insurance_formatting" method="post" enctype="multipart/form-data" id="insurance-form">
+                        <div class="form-group">
+                            <label for="insurance_file">Select Excel File (.xlsx, .xls):</label>
+                            <input type="file" id="insurance_file" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" id="insurance-btn">📤 Upload & Process File</button>
+                    </form>
+                    <div class="loading" id="insurance-loading">
+                        <div class="spinner"></div>
+                        <p>Processing file and formatting columns...</p>
+                    </div>
+                </div>
+
+                <!-- Status Messages -->
+                {% if insurance_formatting_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ insurance_formatting_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- File Status -->
+                {% if insurance_formatting_filename %}
+                <div class="section">
+                    <h3>📊 File Status</h3>
+                    <div class="file-status">
+                        <div class="status-success">
+                            ✅ File loaded: {{ insurance_formatting_filename }}<br>
+                            📋 Sheets processed: {{ insurance_formatting_data.keys() | list | length if insurance_formatting_data else 0 }}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Processing Output -->
+                {% if insurance_formatting_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ insurance_formatting_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if insurance_formatting_data and insurance_formatting_result and 'processing complete' in insurance_formatting_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Formatted File</h3>
+                    <form action="/download_insurance_formatting" method="post">
+                        <div class="form-group">
+                            <label for="insurance_output_filename">Output filename (optional):</label>
+                            <input type="text" id="insurance_output_filename" name="filename" 
+                                   placeholder="formatted_insurance_names.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Formatted File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Insurance Formatting Tool</h3>
+                    <p>Clear all uploaded files and reset the insurance formatting tool to start fresh.</p>
+                    <form action="/reset_insurance_formatting" method="post" onsubmit="return confirm('Are you sure you want to reset the insurance formatting tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Insurance Formatting Tool</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -596,6 +684,15 @@ HTML_TEMPLATE = """
             });
         }
 
+        // Insurance formatting form submission
+        const insuranceForm = document.getElementById('insurance-form');
+        if (insuranceForm) {
+            insuranceForm.addEventListener('submit', function() {
+                document.getElementById('insurance-loading').style.display = 'block';
+                document.getElementById('insurance-btn').disabled = true;
+            });
+        }
+
         // Auto-scroll results to bottom
         function scrollResults() {
             const results = document.getElementById('results');
@@ -611,6 +708,8 @@ HTML_TEMPLATE = """
             const activeTab = urlParams.get('tab');
             if (activeTab === 'conversion') {
                 switchTab('conversion', true); // Skip URL update on page load
+            } else if (activeTab === 'insurance') {
+                switchTab('insurance', true); // Skip URL update on page load
             } else if (activeTab === 'comparison') {
                 switchTab('comparison', true); // Skip URL update on page load
             }
@@ -1172,6 +1271,7 @@ def root():
 def comparison_index():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
     global conversion_data, conversion_filename, conversion_result
+    global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
     
     # Get the active tab from URL parameter
     active_tab = request.args.get('tab', 'comparison')
@@ -1185,6 +1285,10 @@ def comparison_index():
                                 conversion_data=conversion_data,
                                 conversion_filename=conversion_filename,
                                 conversion_result=conversion_result,
+                                insurance_formatting_data=insurance_formatting_data,
+                                insurance_formatting_filename=insurance_formatting_filename,
+                                insurance_formatting_result=insurance_formatting_result,
+                                insurance_formatting_output=insurance_formatting_output,
                                 active_tab=active_tab)
 
 @app.route('/upload_raw', methods=['POST'])
@@ -1552,10 +1656,179 @@ def reset_conversion():
         conversion_result = f"❌ Error resetting conversion tool: {str(e)}"
         return redirect('/comparison?tab=conversion')
 
+def reformat_insurance_column(df, source_column, new_column_name):
+    """Reformat the source column and create a new column next to it"""
+    if source_column not in df.columns:
+        return None, f"Column '{source_column}' not found in sheet."
+    
+    # Apply the reformatting
+    df[new_column_name] = df[source_column].apply(format_insurance_name)
+    
+    # Get the position of the source column
+    source_col_idx = df.columns.get_loc(source_column)
+    
+    # Reorder columns to place new column right after source column
+    cols = df.columns.tolist()
+    # Remove new column from its current position
+    cols.remove(new_column_name)
+    # Insert it right after source column
+    cols.insert(source_col_idx + 1, new_column_name)
+    df = df[cols]
+    
+    return df, None
+
+def process_insurance_formatting(data_dict, source_column="Dental Primary Ins Carr", new_column_name="formated insurance names"):
+    """Process all sheets in the Excel file for insurance formatting"""
+    output_lines = []
+    output_lines.append("=" * 70)
+    output_lines.append("PROCESSING EXCEL FILE - REFORMATTING COLUMNS")
+    output_lines.append("=" * 70)
+    output_lines.append("")
+    
+    processed_sheets = {}
+    
+    for sheet_name, df in data_dict.items():
+        output_lines.append(f"📋 Processing sheet: {sheet_name}")
+        output_lines.append(f"   Original shape: {df.shape[0]} rows × {df.shape[1]} columns")
+        
+        if source_column not in df.columns:
+            output_lines.append(f"   ⚠️  Column '{source_column}' not found. Skipping this sheet.")
+            processed_sheets[sheet_name] = df
+            output_lines.append("")
+            continue
+        
+        # Reformat the column
+        df_processed, error = reformat_insurance_column(df.copy(), source_column, new_column_name)
+        
+        if error:
+            output_lines.append(f"   ❌ Error: {error}")
+            processed_sheets[sheet_name] = df
+        else:
+            processed_sheets[sheet_name] = df_processed
+            output_lines.append(f"   ✅ Column reformatted successfully!")
+            output_lines.append(f"   New shape: {df_processed.shape[0]} rows × {df_processed.shape[1]} columns")
+            
+            # Show sample
+            sample_df = df_processed[[source_column, new_column_name]].head(10)
+            output_lines.append(f"   Sample of original vs formatted (first 10 rows):")
+            output_lines.append(sample_df.to_string(index=False))
+            output_lines.append(f"   Total formatted entries: {df_processed[new_column_name].notna().sum()}")
+            output_lines.append(f"   Unique formatted values: {df_processed[new_column_name].value_counts().head(10).to_string()}")
+        
+        output_lines.append("")
+    
+    output_lines.append("=" * 70)
+    output_lines.append("PROCESSING COMPLETE!")
+    output_lines.append("=" * 70)
+    
+    return processed_sheets, "\n".join(output_lines)
+
+@app.route('/upload_insurance_formatting', methods=['POST'])
+def upload_insurance_formatting():
+    global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
+    
+    if 'file' not in request.files:
+        insurance_formatting_result = "❌ Error: No file provided"
+        return redirect('/comparison?tab=insurance')
+    
+    file = request.files['file']
+    if file.filename == '':
+        insurance_formatting_result = "❌ Error: No file selected"
+        return redirect('/comparison?tab=insurance')
+    
+    try:
+        # Get filename without saving to disk
+        filename = secure_filename(file.filename)
+        
+        # Read Excel file directly from memory (no disk storage)
+        file.seek(0)  # Reset file pointer to beginning
+        excel_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
+        
+        # Remove "Unnamed:" columns from all sheets
+        cleaned_data = {}
+        for sheet_name, df in excel_data.items():
+            # Convert column names to strings first, then remove columns that start with "Unnamed:"
+            df.columns = df.columns.astype(str)
+            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            cleaned_data[sheet_name] = df_cleaned
+        
+        # Process all sheets automatically
+        insurance_formatting_data, insurance_formatting_output = process_insurance_formatting(cleaned_data)
+        insurance_formatting_filename = filename
+        
+        # Count sheets processed
+        sheets_count = len(insurance_formatting_data)
+        insurance_formatting_result = f"✅ Processing complete! Processed {sheets_count} sheet(s). Formatted insurance names column added to all sheets."
+        
+        return redirect('/comparison?tab=insurance')
+        
+    except Exception as e:
+        insurance_formatting_result = f"❌ Error processing file: {str(e)}"
+        insurance_formatting_output = f"Error: {str(e)}"
+        return redirect('/comparison?tab=insurance')
+
+@app.route('/download_insurance_formatting', methods=['POST'])
+def download_insurance_formatting():
+    global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
+    
+    if not insurance_formatting_data:
+        return jsonify({'error': 'No data to download'}), 400
+    
+    filename = request.form.get('filename', '').strip()
+    if not filename:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"formatted_insurance_names_{timestamp}.xlsx"
+    
+    try:
+        # Create a temporary file
+        import tempfile
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
+        
+        try:
+            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+                for sheet_name, df in insurance_formatting_data.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            # Clear data after successful download
+            insurance_formatting_data = None
+            insurance_formatting_filename = None
+            insurance_formatting_result = None
+            insurance_formatting_output = ""
+            
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+            
+        finally:
+            # Clean up temporary file
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/reset_insurance_formatting', methods=['POST'])
+def reset_insurance_formatting():
+    global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
+    # Explicitly do NOT touch other tool variables
+    
+    try:
+        # Reset ONLY insurance formatting tool variables
+        insurance_formatting_data = {}
+        insurance_formatting_filename = None
+        insurance_formatting_result = None
+        insurance_formatting_output = ""
+        
+        return redirect('/comparison?tab=insurance')
+        
+    except Exception as e:
+        insurance_formatting_result = f"❌ Error resetting insurance formatting tool: {str(e)}"
+        return redirect('/comparison?tab=insurance')
+
 @app.route('/reset_app', methods=['POST'])
 def reset_app():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
     global conversion_data, conversion_filename, conversion_result
+    global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
     
     try:
         # Reset all global variables
@@ -1569,6 +1842,12 @@ def reset_app():
         conversion_data = {}
         conversion_filename = None
         conversion_result = None
+        
+        # Reset insurance formatting data
+        insurance_formatting_data = {}
+        insurance_formatting_filename = None
+        insurance_formatting_result = None
+        insurance_formatting_output = ""
         
         return redirect('/comparison')
         
