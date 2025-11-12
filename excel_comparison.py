@@ -211,6 +211,91 @@ HTML_TEMPLATE = """
             100% { transform: rotate(360deg); } 
         }
         
+        /* Processing Modal Overlay */
+        .processing-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .processing-modal-overlay.show {
+            display: flex;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .processing-modal {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s ease;
+        }
+        
+        @keyframes slideUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .processing-modal .modal-spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        .processing-modal h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+        
+        .processing-modal p {
+            color: #666;
+            font-size: 1.1em;
+            margin: 0;
+        }
+        
+        .processing-modal .processing-dots {
+            display: inline-block;
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        
+        .processing-modal .processing-dots::after {
+            content: '...';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+        
         /* Tab Styles */
         .tabs {
             display: flex;
@@ -294,6 +379,15 @@ HTML_TEMPLATE = """
     <div id="toast" class="toast">
         <span id="toast-message"></span>
         <span class="toast-close" onclick="hideToast()">&times;</span>
+    </div>
+
+    <!-- Processing Modal Overlay -->
+    <div id="processing-modal-overlay" class="processing-modal-overlay">
+        <div class="processing-modal">
+            <div class="modal-spinner"></div>
+            <h3 id="processing-title">Processing</h3>
+            <p id="processing-message">Please wait while we process your request<span class="processing-dots">...</span></p>
+        </div>
     </div>
 
     <div class="container">
@@ -732,35 +826,72 @@ HTML_TEMPLATE = """
             toast.classList.remove('show');
         }
         
+        // Processing modal functions
+        function showProcessingModal(title = 'Processing', message = 'Please wait while we process your request') {
+            const overlay = document.getElementById('processing-modal-overlay');
+            const titleEl = document.getElementById('processing-title');
+            const messageEl = document.getElementById('processing-message');
+            
+            titleEl.textContent = title;
+            messageEl.innerHTML = message + '<span class="processing-dots">...</span>';
+            overlay.classList.add('show');
+            
+            // Prevent body scroll when modal is open
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function hideProcessingModal() {
+            const overlay = document.getElementById('processing-modal-overlay');
+            overlay.classList.remove('show');
+            
+            // Restore body scroll
+            document.body.style.overflow = '';
+        }
+        
         // Tab switching function
         function switchTab(tabName, skipUrlUpdate = false) {
+            if (!tabName) return; // Safety check
+            
             // Hide all tab contents
             document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
+                if (content && content.classList) {
+                    content.classList.remove('active');
+                }
             });
             
             // Remove active class from all tabs
             document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
+                if (tab && tab.classList) {
+                    tab.classList.remove('active');
+                }
             });
             
             // Show selected tab content
-            document.getElementById(tabName + '-tab').classList.add('active');
+            const tabContent = document.getElementById(tabName + '-tab');
+            if (tabContent && tabContent.classList) {
+                tabContent.classList.add('active');
+            }
             
             // Add active class to clicked tab
-            if (event && event.target) {
+            if (typeof event !== 'undefined' && event && event.target && event.target.classList) {
                 event.target.classList.add('active');
             } else {
                 // If called programmatically, find the right tab button by ID
                 const tabButton = document.getElementById(tabName + '-tab-btn');
-                if (tabButton) {
+                if (tabButton && tabButton.classList) {
                     tabButton.classList.add('active');
                 } else {
                     // Fallback: find by text content
                     const tabs = document.querySelectorAll('.tab');
                     tabs.forEach(tab => {
-                        if (tab.textContent.includes(tabName === 'comparison' ? 'Comparison' : 'Conversion')) {
-                            tab.classList.add('active');
+                        if (tab && tab.classList && tab.textContent) {
+                            const tabText = tab.textContent.toLowerCase();
+                            if ((tabName === 'comparison' && tabText.includes('comparison')) ||
+                                (tabName === 'conversion' && tabText.includes('conversion')) ||
+                                (tabName === 'insurance' && tabText.includes('insurance')) ||
+                                (tabName === 'remarks' && tabText.includes('remarks'))) {
+                                tab.classList.add('active');
+                            }
                         }
                     });
                 }
@@ -772,27 +903,39 @@ HTML_TEMPLATE = """
                 window.history.pushState({path: newUrl}, '', newUrl);
             }
         }
-        // Form submission with loading states
-        document.getElementById('raw-form').addEventListener('submit', function() {
-            document.getElementById('raw-loading').style.display = 'block';
-            document.getElementById('raw-btn').disabled = true;
-        });
+        // Form submission with processing modal
+        const rawForm = document.getElementById('raw-form');
+        if (rawForm) {
+            rawForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading Appointment Report', 'Processing your Appointment Report file');
+                const btn = document.getElementById('raw-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
 
-        document.getElementById('previous-form').addEventListener('submit', function() {
-            document.getElementById('previous-loading').style.display = 'block';
-            document.getElementById('previous-btn').disabled = true;
-        });
+        const previousForm = document.getElementById('previous-form');
+        if (previousForm) {
+            previousForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading Smart Assist File', 'Processing your Smart Assist file');
+                const btn = document.getElementById('previous-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
 
-        document.getElementById('compare-form').addEventListener('submit', function() {
-            document.getElementById('compare-loading').style.display = 'block';
-            document.getElementById('compare-btn').disabled = true;
-        });
+        const compareForm = document.getElementById('compare-form');
+        if (compareForm) {
+            compareForm.addEventListener('submit', function() {
+                showProcessingModal('Comparing Files', 'Matching Patient IDs and updating insurance columns');
+                const btn = document.getElementById('compare-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
 
         // Conversion form submission
         const conversionForm = document.getElementById('conversion-form');
         if (conversionForm) {
             conversionForm.addEventListener('submit', function() {
-                document.getElementById('conversion-loading').style.display = 'block';
+                showProcessingModal('Processing Conversion Report', 'Validating and formatting conversion report');
                 document.getElementById('conversion-btn').disabled = true;
             });
         }
@@ -801,7 +944,7 @@ HTML_TEMPLATE = """
         const insuranceForm = document.getElementById('insurance-form');
         if (insuranceForm) {
             insuranceForm.addEventListener('submit', function() {
-                document.getElementById('insurance-loading').style.display = 'block';
+                showProcessingModal('Formatting Insurance Names', 'Processing file and formatting insurance columns');
                 document.getElementById('insurance-btn').disabled = true;
             });
         }
@@ -810,10 +953,19 @@ HTML_TEMPLATE = """
         const remarksForm = document.getElementById('remarks-form');
         if (remarksForm) {
             remarksForm.addEventListener('submit', function() {
-                document.getElementById('remarks-loading').style.display = 'block';
+                showProcessingModal('Processing Files', 'Matching Patient IDs and updating appointments with remarks');
                 document.getElementById('remarks-btn').disabled = true;
             });
         }
+
+        // Reset forms - show modal when form is submitted (HTML confirm already handled)
+        const resetForms = document.querySelectorAll('form[action*="reset"]');
+        resetForms.forEach(form => {
+            form.addEventListener('submit', function() {
+                // Show modal - HTML onsubmit confirm already handled the confirmation
+                showProcessingModal('Resetting', 'Clearing all data and files');
+            });
+        });
 
         // Auto-scroll results to bottom
         function scrollResults() {
@@ -824,6 +976,9 @@ HTML_TEMPLATE = """
         // Scroll results on page load
         window.onload = function() {
             scrollResults();
+            
+            // Hide processing modal on page load (in case it was left open)
+            hideProcessingModal();
             
             // Check URL parameter for active tab
             const urlParams = new URLSearchParams(window.location.search);
@@ -1779,7 +1934,7 @@ def reset_conversion():
         # Reset ONLY conversion tool variables - do not affect comparison tool
         conversion_data = {}
         conversion_filename = None
-        conversion_result = None
+        conversion_result = "🔄 Conversion tool reset successfully! All files and data have been cleared."
         
         return redirect('/comparison?tab=conversion')
         
@@ -1946,7 +2101,7 @@ def reset_insurance_formatting():
         # Reset ONLY insurance formatting tool variables
         insurance_formatting_data = {}
         insurance_formatting_filename = None
-        insurance_formatting_result = None
+        insurance_formatting_result = "🔄 Insurance formatting tool reset successfully! All files and data have been cleared."
         insurance_formatting_output = ""
         
         return redirect('/comparison?tab=insurance')
@@ -2335,7 +2490,7 @@ def reset_remarks():
         remarks_excel_data = None
         remarks_appointments_filename = None
         remarks_remarks_filename = None
-        remarks_result = None
+        remarks_result = "🔄 Remarks tool reset successfully! All files and data have been cleared."
         remarks_updated_count = 0
         
         return redirect('/comparison?tab=remarks')
