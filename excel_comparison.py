@@ -21,6 +21,11 @@ raw_filename = None
 previous_filename = None
 comparison_result = None
 
+# Global variables for conversion report
+conversion_data = None
+conversion_filename = None
+conversion_result = None
+
 # HTML Template for Excel Comparison
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -191,16 +196,111 @@ HTML_TEMPLATE = """
             0% { transform: rotate(0deg); } 
             100% { transform: rotate(360deg); } 
         }
+        
+        /* Tab Styles */
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 20px;
+            background: transparent;
+            padding: 5px 0;
+        }
+        .tab {
+            padding: 15px 30px;
+            cursor: pointer;
+            background: #f8f9fa;
+            border: none;
+            border-bottom: 3px solid transparent;
+            font-size: 16px;
+            font-weight: 600;
+            color: #495057;
+            transition: all 0.3s;
+            border-radius: 8px 8px 0 0;
+            margin-right: 5px;
+        }
+        .tab:hover {
+            background: #e9ecef;
+            color: #212529;
+        }
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #ffffff;
+            border-bottom-color: #667eea;
+            box-shadow: 0 -2px 8px rgba(102, 126, 234, 0.3);
+            border-bottom-width: 4px;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4caf50;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            display: none;
+            animation: slideIn 0.3s ease;
+            max-width: 400px;
+        }
+        .toast.error {
+            background: #f44336;
+        }
+        .toast.show {
+            display: block;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .toast-close {
+            float: right;
+            font-weight: bold;
+            cursor: pointer;
+            margin-left: 15px;
+        }
     </style>
 </head>
 <body>
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">
+        <span id="toast-message"></span>
+        <span class="toast-close" onclick="hideToast()">&times;</span>
+    </div>
+
     <div class="container">
         <div class="header">
-            <h1>📊 Excel File Comparison Tool</h1>
-            <p>Compare Patient ID (Appointment report) with PATID (Smart Assist) and add insurance columns</p>
+            <h1>📊 Excel Automation Tools</h1>
+            <p>Multiple Excel processing tools in one place</p>
         </div>
 
         <div class="content">
+            <!-- Tab Navigation -->
+            <div class="tabs">
+                <button class="tab {% if active_tab == 'comparison' %}active{% endif %}" id="comparison-tab-btn" onclick="switchTab('comparison')">🔄 Comparison Tool</button>
+                <button class="tab {% if active_tab == 'conversion' %}active{% endif %}" id="conversion-tab-btn" onclick="switchTab('conversion')">📋 Conversion Report Formatting</button>
+            </div>
+
+            <!-- Tab 1: Comparison Tool -->
+            <div id="comparison-tab" class="tab-content {% if active_tab == 'comparison' %}active{% endif %}">
+                <div class="section">
+                    <h3>🔄 Comparison Tool</h3>
+                    <p>Compare Patient ID from Appointment Report with PATID from Smart Assist file. When matched, insurance columns will be added to the Smart Assist file.</p>
+                </div>
 
             <!-- File Upload Section -->
             <div class="section">
@@ -335,16 +435,142 @@ HTML_TEMPLATE = """
 
             <!-- Reset Section -->
             <div class="section">
-                <h3>🔄 Reset Application</h3>
-                <p>Clear all uploaded files and reset the application to start fresh.</p>
-                <form action="/reset_app" method="post" onsubmit="return confirm('Are you sure you want to reset the application? This will clear all uploaded files and data.')">
-                    <button type="submit" class="reset-btn">🗑️ Reset Application</button>
+                <h3>🔄 Reset Comparison Tool</h3>
+                <p>Clear all uploaded files and reset the comparison tool to start fresh.</p>
+                <form action="/reset_comparison" method="post" onsubmit="return confirm('Are you sure you want to reset the comparison tool? This will clear all uploaded files and data.')">
+                    <button type="submit" class="reset-btn">🗑️ Reset Comparison Tool</button>
                 </form>
+            </div>
+            </div>
+
+            <!-- Tab 2: Conversion Report Formatting -->
+            <div id="conversion-tab" class="tab-content {% if active_tab == 'conversion' %}active{% endif %}">
+                <div class="section">
+                    <h3>📋 Conversion Report Formatting</h3>
+                    <p>Upload an Excel file to process and format conversion reports. The file must contain an "Insurance Note" column.</p>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="section">
+                    <h3>📁 Upload Excel File</h3>
+                    <form action="/upload_conversion" method="post" enctype="multipart/form-data" id="conversion-form">
+                        <div class="form-group">
+                            <label for="conversion_file">Select Conversion Report Excel File:</label>
+                            <input type="file" id="conversion_file" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" id="conversion-btn">📤 Upload & Validate File</button>
+                    </form>
+                    <div class="loading" id="conversion-loading">
+                        <div class="spinner"></div>
+                        <p>Processing conversion report...</p>
+                    </div>
+                </div>
+
+                <!-- Status Messages -->
+                {% if conversion_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ conversion_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- File Status -->
+                {% if conversion_filename %}
+                <div class="section">
+                    <h3>📊 File Status</h3>
+                    <div class="file-status">
+                        <div class="status-success">
+                            ✅ Conversion Report: {{ conversion_filename }}<br>
+                            📋 Sheets: {{ conversion_data.keys() | list | length if conversion_data else 0 }}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if conversion_data and conversion_result and 'processing completed successfully' in conversion_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Processed File</h3>
+                    <form action="/download_conversion" method="post">
+                        <div class="form-group">
+                            <label for="conversion_output_filename">Output filename (optional):</label>
+                            <input type="text" id="conversion_output_filename" name="filename" 
+                                   placeholder="conversion_report_formatted.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Processed File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Conversion Tool</h3>
+                    <p>Clear all uploaded files and reset the conversion tool to start fresh.</p>
+                    <form action="/reset_conversion" method="post" onsubmit="return confirm('Are you sure you want to reset the conversion tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Conversion Tool</button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        // Toast notification functions
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toast-message');
+            toastMessage.textContent = message;
+            toast.className = 'toast' + (isError ? ' error' : '') + ' show';
+            setTimeout(hideToast, 5000);
+        }
+        
+        function hideToast() {
+            const toast = document.getElementById('toast');
+            toast.classList.remove('show');
+        }
+        
+        // Tab switching function
+        function switchTab(tabName, skipUrlUpdate = false) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // Add active class to clicked tab
+            if (event && event.target) {
+                event.target.classList.add('active');
+            } else {
+                // If called programmatically, find the right tab button by ID
+                const tabButton = document.getElementById(tabName + '-tab-btn');
+                if (tabButton) {
+                    tabButton.classList.add('active');
+                } else {
+                    // Fallback: find by text content
+                    const tabs = document.querySelectorAll('.tab');
+                    tabs.forEach(tab => {
+                        if (tab.textContent.includes(tabName === 'comparison' ? 'Comparison' : 'Conversion')) {
+                            tab.classList.add('active');
+                        }
+                    });
+                }
+            }
+            
+            // Update URL without reloading (only if not called from page load)
+            if (!skipUrlUpdate) {
+                const newUrl = window.location.pathname + '?tab=' + tabName;
+                window.history.pushState({path: newUrl}, '', newUrl);
+            }
+        }
         // Form submission with loading states
         document.getElementById('raw-form').addEventListener('submit', function() {
             document.getElementById('raw-loading').style.display = 'block';
@@ -361,6 +587,15 @@ HTML_TEMPLATE = """
             document.getElementById('compare-btn').disabled = true;
         });
 
+        // Conversion form submission
+        const conversionForm = document.getElementById('conversion-form');
+        if (conversionForm) {
+            conversionForm.addEventListener('submit', function() {
+                document.getElementById('conversion-loading').style.display = 'block';
+                document.getElementById('conversion-btn').disabled = true;
+            });
+        }
+
         // Auto-scroll results to bottom
         function scrollResults() {
             const results = document.getElementById('results');
@@ -370,6 +605,52 @@ HTML_TEMPLATE = """
         // Scroll results on page load
         window.onload = function() {
             scrollResults();
+            
+            // Check URL parameter for active tab
+            const urlParams = new URLSearchParams(window.location.search);
+            const activeTab = urlParams.get('tab');
+            if (activeTab === 'conversion') {
+                switchTab('conversion', true); // Skip URL update on page load
+            } else if (activeTab === 'comparison') {
+                switchTab('comparison', true); // Skip URL update on page load
+            }
+            
+            // Show toast notification for conversion validation and processing
+            {% if conversion_result %}
+            var result = `{{ conversion_result | safe }}`;
+            if (result.includes('processing completed successfully')) {
+                showToast('✅ Processing completed! Formatted Insurance column added to all sheets.', false);
+            } else if (result.includes('Validation successful')) {
+                showToast('✅ Validation successful! Insurance Note column found in all sheets.', false);
+            } else if (result.includes('Validation Error') || result.includes('❌ Error')) {
+                var errorMsg = result.split('\\n')[0];
+                showToast(errorMsg, true);
+            }
+            {% endif %}
+        }
+        
+        // Helper function to switch tab programmatically
+        function switchTabProgrammatically(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // Add active class to corresponding tab button
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => {
+                if (tab.textContent.includes(tabName === 'comparison' ? 'Comparison' : 'Conversion')) {
+                    tab.classList.add('active');
+                }
+            });
         }
     </script>
 </body>
@@ -890,12 +1171,21 @@ def root():
 @app.route('/comparison')
 def comparison_index():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
+    global conversion_data, conversion_filename, conversion_result
+    
+    # Get the active tab from URL parameter
+    active_tab = request.args.get('tab', 'comparison')
+    
     return render_template_string(HTML_TEMPLATE, 
                                 raw_data=raw_data, 
                                 previous_data=previous_data,
                                 raw_filename=raw_filename,
                                 previous_filename=previous_filename,
-                                comparison_result=comparison_result)
+                                comparison_result=comparison_result,
+                                conversion_data=conversion_data,
+                                conversion_filename=conversion_filename,
+                                conversion_result=conversion_result,
+                                active_tab=active_tab)
 
 @app.route('/upload_raw', methods=['POST'])
 def upload_raw_file():
@@ -917,14 +1207,24 @@ def upload_raw_file():
         # Read Excel file directly from memory (no disk storage)
         file.seek(0)  # Reset file pointer to beginning
         raw_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
+        
+        # Remove "Unnamed:" columns from all sheets
+        cleaned_data = {}
+        for sheet_name, df in raw_data.items():
+            # Convert column names to strings first, then remove columns that start with "Unnamed:"
+            df.columns = df.columns.astype(str)
+            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            cleaned_data[sheet_name] = df_cleaned
+        raw_data = cleaned_data
+        
         raw_filename = filename
         
         comparison_result = f"✅ Appointment Report uploaded successfully! Loaded {len(raw_data)} sheets: {', '.join(list(raw_data.keys()))}"
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
         
     except Exception as e:
         comparison_result = f"❌ Error uploading Appointment Report: {str(e)}"
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
 
 @app.route('/upload_previous', methods=['POST'])
 def upload_previous_file():
@@ -932,12 +1232,12 @@ def upload_previous_file():
     
     if 'file' not in request.files:
         comparison_result = "❌ Error: No file provided"
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
     
     file = request.files['file']
     if file.filename == '':
         comparison_result = "❌ Error: No file selected"
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
     
     try:
         # Get filename without saving to disk
@@ -946,14 +1246,24 @@ def upload_previous_file():
         # Read Excel file directly from memory (no disk storage)
         file.seek(0)  # Reset file pointer to beginning
         previous_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
+        
+        # Remove "Unnamed:" columns from all sheets
+        cleaned_data = {}
+        for sheet_name, df in previous_data.items():
+            # Convert column names to strings first, then remove columns that start with "Unnamed:"
+            df.columns = df.columns.astype(str)
+            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            cleaned_data[sheet_name] = df_cleaned
+        previous_data = cleaned_data
+        
         previous_filename = filename
         
         comparison_result = f"✅ Smart Assist file uploaded successfully! Loaded {len(previous_data)} sheets: {', '.join(list(previous_data.keys()))}"
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
         
     except Exception as e:
         comparison_result = f"❌ Error uploading Smart Assist file: {str(e)}"
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
 
 @app.route('/compare', methods=['POST'])
 def compare_files():
@@ -961,14 +1271,14 @@ def compare_files():
     
     if not raw_data or not previous_data:
         comparison_result = "❌ Error: Please upload both files first"
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
     
     raw_sheet = request.form.get('raw_sheet')
     previous_sheet = request.form.get('previous_sheet')
     
     if not raw_sheet or not previous_sheet:
         comparison_result = "❌ Error: Please select sheets for both files"
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
     
     try:
         # Get the selected sheets
@@ -986,11 +1296,11 @@ def compare_files():
         else:
             comparison_result = result_message
         
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
         
     except Exception as e:
         comparison_result = f"❌ Error comparing files: {str(e)}"
-        return redirect('/comparison')
+        return redirect('/comparison?tab=comparison')
 
 @app.route('/download_result', methods=['POST'])
 def download_result():
@@ -1025,9 +1335,227 @@ def download_result():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/upload_conversion', methods=['POST'])
+def upload_conversion_file():
+    global conversion_data, conversion_filename, conversion_result
+    
+    if 'file' not in request.files:
+        conversion_result = "❌ Error: No file provided"
+        return redirect('/comparison?tab=conversion')
+    
+    file = request.files['file']
+    if file.filename == '':
+        conversion_result = "❌ Error: No file selected"
+        return redirect('/comparison?tab=conversion')
+    
+    try:
+        # Get filename without saving to disk
+        filename = secure_filename(file.filename)
+        
+        # Read Excel file directly from memory (no disk storage)
+        file.seek(0)  # Reset file pointer to beginning
+        conversion_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
+        conversion_filename = filename
+        
+        # Remove "Unnamed:" columns from all sheets
+        cleaned_data = {}
+        for sheet_name, df in conversion_data.items():
+            # Convert column names to strings first, then remove columns that start with "Unnamed:"
+            df.columns = df.columns.astype(str)
+            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            cleaned_data[sheet_name] = df_cleaned
+        conversion_data = cleaned_data
+        
+        # Validate "Insurance Note" column exists in all sheets
+        missing_sheets = []
+        for sheet_name, df in conversion_data.items():
+            columns = [col.lower().strip() for col in df.columns]
+            if 'insurance note' not in columns:
+                missing_sheets.append(sheet_name)
+        
+        if missing_sheets:
+            conversion_result = f"❌ Validation Error: 'Insurance Note' column not found in the following sheets: {', '.join(missing_sheets)}\n\nAvailable columns in first sheet: {list(conversion_data[list(conversion_data.keys())[0]].columns) if conversion_data else 'N/A'}"
+            conversion_data = None
+            conversion_filename = None
+        else:
+            # Validation successful - now process the Insurance Note column
+            processed_sheets = {}
+            total_rows_processed = 0
+            
+            for sheet_name, df in conversion_data.items():
+                # Find Insurance Note column (case-insensitive)
+                insurance_note_col = None
+                for col in df.columns:
+                    if col.lower().strip() == 'insurance note':
+                        insurance_note_col = col
+                        break
+                
+                if insurance_note_col:
+                    # Create a copy of the dataframe
+                    processed_df = df.copy()
+                    
+                    # Extract insurance names and format them
+                    def extract_and_format_insurance(note_text):
+                        """Extract insurance name from Insurance Note text and format it"""
+                        if pd.isna(note_text) or note_text == '':
+                            return ''
+                        
+                        note_str = str(note_text).strip()
+                        
+                        # Pattern 1: "from conversion carrier: <insurance_name>| ** | ..."
+                        # Pattern 2: "From Conversion Carrier: <insurance_name> | ..."
+                        if 'from conversion carrier:' in note_str.lower():
+                            # Find the insurance name part
+                            # Look for "From Conversion Carrier:" or "from conversion carrier:"
+                            parts = note_str.split('|')
+                            if len(parts) > 0:
+                                carrier_part = parts[0].strip()
+                                # Remove "from conversion carrier:" prefix (case-insensitive)
+                                if 'from conversion carrier:' in carrier_part.lower():
+                                    insurance_name = carrier_part.split(':', 1)[1].strip() if ':' in carrier_part else carrier_part
+                                    # Format the insurance name using existing function
+                                    return format_insurance_name(insurance_name)
+                        
+                        # If pattern doesn't match, try to format the whole text
+                        return format_insurance_name(note_str)
+                    
+                    # Extract status from Insurance Note
+                    def extract_status(note_text):
+                        """Extract status from Insurance Note text"""
+                        if pd.isna(note_text) or note_text == '':
+                            return ''
+                        
+                        note_str = str(note_text).strip()
+                        
+                        # Pattern: "Status - <status>"
+                        # Look for "Status -" or "Status-"
+                        import re
+                        status_pattern = r'Status\s*-\s*([^\]|]+)'
+                        match = re.search(status_pattern, note_str, re.IGNORECASE)
+                        if match:
+                            status = match.group(1).strip()
+                            # Remove any trailing brackets or pipes
+                            status = status.rstrip(' ]|')
+                            return status
+                        
+                        return ''
+                    
+                    # Apply extraction and formatting
+                    processed_df['Formatted Insurance'] = processed_df[insurance_note_col].apply(extract_and_format_insurance)
+                    processed_df['Status'] = processed_df[insurance_note_col].apply(extract_status)
+                    processed_df['Conversion'] = 'Conversion'  # Add Conversion column with value "Conversion"
+                    
+                    # Find position of Insurance Note column and insert new columns after it
+                    insurance_note_index = processed_df.columns.get_loc(insurance_note_col)
+                    # Move the new columns to right after Insurance Note
+                    cols = processed_df.columns.tolist()
+                    # Remove new columns from their current position
+                    for col_name in ['Formatted Insurance', 'Status', 'Conversion']:
+                        if col_name in cols:
+                            cols.remove(col_name)
+                    # Insert new columns after Insurance Note
+                    cols.insert(insurance_note_index + 1, 'Formatted Insurance')
+                    cols.insert(insurance_note_index + 2, 'Status')
+                    cols.insert(insurance_note_index + 3, 'Conversion')
+                    processed_df = processed_df[cols]
+                    
+                    processed_sheets[sheet_name] = processed_df
+                    total_rows_processed += len(processed_df)
+                else:
+                    processed_sheets[sheet_name] = df
+            
+            # Update conversion_data with processed data
+            conversion_data = processed_sheets
+            
+            conversion_result = f"✅ Validation and processing completed successfully!\n\n📊 File loaded: {filename}\n📋 Sheets processed: {len(conversion_data)}\n📋 Sheet names: {', '.join(list(conversion_data.keys()))}\n📊 Total rows processed: {total_rows_processed}\n\n✅ New columns added:\n- 'Formatted Insurance' - Extracted and formatted insurance names\n- 'Status' - Extracted status values\n- 'Conversion' - Set to 'Conversion' for all rows\n💾 Ready to download the processed file!"
+        
+        return redirect('/comparison?tab=conversion')
+        
+    except Exception as e:
+        conversion_result = f"❌ Error uploading Conversion Report: {str(e)}"
+        conversion_data = None
+        conversion_filename = None
+        return redirect('/comparison?tab=conversion')
+
+@app.route('/download_conversion', methods=['POST'])
+def download_conversion_result():
+    global conversion_data, conversion_filename
+    
+    if not conversion_data:
+        return jsonify({'error': 'No data to download'}), 400
+    
+    filename = request.form.get('filename', '').strip()
+    if not filename:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"conversion_report_{timestamp}.xlsx"
+    
+    try:
+        # Create a temporary file
+        import tempfile
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
+        
+        try:
+            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+                for sheet_name, df in conversion_data.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            # Clear data after successful download
+            global conversion_result
+            conversion_data = None
+            conversion_filename = None
+            conversion_result = None
+            
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+            
+        finally:
+            # Clean up temporary file
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/reset_comparison', methods=['POST'])
+def reset_comparison():
+    global raw_data, previous_data, raw_filename, previous_filename, comparison_result
+    # Explicitly do NOT touch conversion_data, conversion_filename, or conversion_result
+    
+    try:
+        # Reset ONLY comparison tool variables - do not affect conversion tool
+        raw_data = {}
+        previous_data = {}
+        raw_filename = None
+        previous_filename = None
+        comparison_result = "🔄 Comparison tool reset successfully! All files and data have been cleared."
+        
+        return redirect('/comparison?tab=comparison')
+        
+    except Exception as e:
+        comparison_result = f"❌ Error resetting comparison tool: {str(e)}"
+        return redirect('/comparison?tab=comparison')
+
+@app.route('/reset_conversion', methods=['POST'])
+def reset_conversion():
+    global conversion_data, conversion_filename, conversion_result
+    # Explicitly do NOT touch raw_data, previous_data, raw_filename, previous_filename, or comparison_result
+    
+    try:
+        # Reset ONLY conversion tool variables - do not affect comparison tool
+        conversion_data = {}
+        conversion_filename = None
+        conversion_result = None
+        
+        return redirect('/comparison?tab=conversion')
+        
+    except Exception as e:
+        conversion_result = f"❌ Error resetting conversion tool: {str(e)}"
+        return redirect('/comparison?tab=conversion')
+
 @app.route('/reset_app', methods=['POST'])
 def reset_app():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
+    global conversion_data, conversion_filename, conversion_result
     
     try:
         # Reset all global variables
@@ -1036,6 +1564,11 @@ def reset_app():
         raw_filename = None
         previous_filename = None
         comparison_result = "🔄 Application reset successfully! All files and data have been cleared."
+        
+        # Reset conversion data
+        conversion_data = {}
+        conversion_filename = None
+        conversion_result = None
         
         return redirect('/comparison')
         
