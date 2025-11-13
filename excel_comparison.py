@@ -2356,15 +2356,17 @@ def create_excel_from_appointments(appointments, filename):
     for appointment in appointments:
         all_headers.update(appointment.keys())
     
-    # Convert to list and ensure Pat ID, Remark, and Agent Name are at the end for visibility
+    # Convert to list and ensure Pat ID, Insurance Name, Remark, and Agent Name are at the end for visibility
     headers = list(all_headers)
     if 'Pat ID' in headers:
         headers.remove('Pat ID')
+    if 'Insurance Name' in headers:
+        headers.remove('Insurance Name')
     if 'Remark' in headers:
         headers.remove('Remark')
     if 'Agent Name' in headers:
         headers.remove('Agent Name')
-    headers.extend(['Pat ID', 'Remark', 'Agent Name'])  # Put these at the end
+    headers.extend(['Pat ID', 'Insurance Name', 'Remark', 'Agent Name'])  # Put these at the end
     
     # Set headers
     for col, header in enumerate(headers, 1):
@@ -2431,11 +2433,78 @@ def upload_remarks():
         # Update appointments with remarks
         updated_appointments, updated_count = update_appointments_with_remarks(remarks_appointments_data, remarks_excel_data)
         
+        # Format Insurance Note column to create Insurance Name column
+        for appointment in updated_appointments:
+            # Find Insurance Note column (case-insensitive search)
+            insurance_note_value = None
+            insurance_note_key = None
+            
+            for key, value in appointment.items():
+                if key.lower().strip() == 'insurance note':
+                    insurance_note_key = key
+                    insurance_note_value = value
+                    break
+            
+            # Format the insurance note value using existing format_insurance_name function
+            if insurance_note_value:
+                # Handle None, empty string, or NaN values
+                insurance_str = str(insurance_note_value).strip() if insurance_note_value else ''
+                if insurance_str and insurance_str.lower() not in ['nan', 'none', '']:
+                    try:
+                        # Extract insurance name from "from conversion carrier:" pattern (case-insensitive)
+                        # Example 1: "from conversion carrier: <insurance_name> | Plan #684 | ..."
+                        # Example 2: "2025-10-29 18:34:01 PT, By - 5240HSHINDE, Status - Eligible ] From conversion carrier: <insurance_name>"
+                        # We want to extract only the insurance name after "from conversion carrier:" and before the first "|" (if present)
+                        extracted_insurance_name = None
+                        
+                        # Check for "from conversion carrier:" pattern (case-insensitive)
+                        if 'from conversion carrier:' in insurance_str.lower():
+                            # Find the position of "from conversion carrier:" (case-insensitive)
+                            import re
+                            pattern_match = re.search(r'from conversion carrier:\s*(.+?)(?:\s*\||$)', insurance_str, re.IGNORECASE)
+                            
+                            if pattern_match:
+                                # Extract the insurance name (everything after "from conversion carrier:" until "|" or end of string)
+                                insurance_name = pattern_match.group(1).strip()
+                                # Remove any trailing characters like "]" if present
+                                insurance_name = insurance_name.rstrip(' ]|')
+                                extracted_insurance_name = insurance_name
+                            else:
+                                # Fallback: Split by "|" to get only the part before the first pipe
+                                parts = insurance_str.split('|', 1)  # Split only on first "|"
+                                if len(parts) > 0:
+                                    carrier_part = parts[0].strip()
+                                    # Find "from conversion carrier:" in this part (case-insensitive)
+                                    carrier_match = re.search(r'from conversion carrier:\s*(.+?)$', carrier_part, re.IGNORECASE)
+                                    if carrier_match:
+                                        insurance_name = carrier_match.group(1).strip()
+                                        insurance_name = insurance_name.rstrip(' ]|')
+                                        extracted_insurance_name = insurance_name
+                                    elif 'from conversion carrier:' in carrier_part.lower():
+                                        # Extract everything after "from conversion carrier:"
+                                        insurance_name = carrier_part.split(':', 1)[1].strip() if ':' in carrier_part else carrier_part
+                                        insurance_name = insurance_name.rstrip(' ]|')
+                                        extracted_insurance_name = insurance_name
+                        
+                        # If we extracted a name, use it; otherwise use the full text
+                        insurance_to_format = extracted_insurance_name if extracted_insurance_name else insurance_str
+                        
+                        # Format the insurance name using existing function
+                        formatted_insurance = format_insurance_name(insurance_to_format)
+                        appointment['Insurance Name'] = formatted_insurance if formatted_insurance and not (isinstance(formatted_insurance, float) and pd.isna(formatted_insurance)) else ''
+                    except Exception as e:
+                        # If formatting fails, use empty string
+                        appointment['Insurance Name'] = ''
+                else:
+                    appointment['Insurance Name'] = ''
+            else:
+                appointment['Insurance Name'] = ''
+        
         # Update the global processed_appointments with the new data
         remarks_appointments_data = updated_appointments
         remarks_updated_count = updated_count
         
-        remarks_result = f"✅ Successfully processed {len(remarks_appointments_data)} appointment(s) and updated {updated_count} appointment(s) with remarks and agent names."
+        remarks_result = f"✅ Successfully processed {len(remarks_appointments_data)} appointment(s) and updated {updated_count} appointment(s) with remarks and agent names. Insurance Name column added based on Insurance Note formatting."
         
         return redirect('/comparison?tab=remarks')
         
