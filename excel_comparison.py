@@ -1350,6 +1350,34 @@ def format_insurance_name(insurance_text):
     # If no specific pattern matches, return the cleaned company name
     return company_name.strip()
 
+def normalize_patient_id(patient_id_val):
+    """Normalize patient ID for consistent matching - handles numeric, string, whitespace, leading zeros"""
+    if pd.isna(patient_id_val):
+        return None
+    
+    # Convert to string first
+    patient_id_str = str(patient_id_val).strip()
+    
+    if not patient_id_str:
+        return None
+    
+    # Try to convert to number to remove leading zeros and scientific notation
+    try:
+        # If it's a number, convert to int (removes leading zeros and decimals)
+        if '.' in patient_id_str:
+            num_val = float(patient_id_str)
+            # If it's a whole number, convert to int
+            if num_val.is_integer():
+                return str(int(num_val))
+            else:
+                return str(num_val)
+        else:
+            num_val = int(patient_id_str)
+            return str(num_val)
+    except (ValueError, OverflowError):
+        # If it's not a number, return the cleaned string
+        return patient_id_str.strip()
+
 def compare_patient_names(raw_df, previous_df):
     """Compare Patient ID from Appointment report with PATID from Smart Assist and add insurance columns"""
     try:
@@ -1433,27 +1461,26 @@ def compare_patient_names(raw_df, previous_df):
         appointment_insurance_map = {}
         for idx, row in raw_df.iterrows():
             patient_id_val = row[raw_patient_col]
-            if pd.notna(patient_id_val):
-                # Convert to string and strip for consistent matching
-                patient_id = str(patient_id_val).strip()
-                if patient_id:
-                    primary_value = ''
-                    secondary_value = ''
-                    
-                    if appointment_primary_col:
-                        primary_val = row[appointment_primary_col]
-                        if pd.notna(primary_val):
-                            primary_value = str(primary_val).strip()
-                    
-                    if appointment_secondary_col:
-                        secondary_val = row[appointment_secondary_col]
-                        if pd.notna(secondary_val):
-                            secondary_value = str(secondary_val).strip()
-                    
-                    appointment_insurance_map[patient_id] = {
-                        'primary': primary_value,
-                        'secondary': secondary_value
-                    }
+            # Normalize patient ID for consistent matching
+            patient_id = normalize_patient_id(patient_id_val)
+            if patient_id:
+                primary_value = ''
+                secondary_value = ''
+                
+                if appointment_primary_col:
+                    primary_val = row[appointment_primary_col]
+                    if pd.notna(primary_val):
+                        primary_value = str(primary_val).strip()
+                
+                if appointment_secondary_col:
+                    secondary_val = row[appointment_secondary_col]
+                    if pd.notna(secondary_val):
+                        secondary_value = str(secondary_val).strip()
+                
+                appointment_insurance_map[patient_id] = {
+                    'primary': primary_value,
+                    'secondary': secondary_value
+                }
         
         # Use Smart Assist file as the result file (base)
         result_df = smart_assist_df.copy()
@@ -1486,19 +1513,23 @@ def compare_patient_names(raw_df, previous_df):
         
         # Compare and populate insurance columns in Smart Assist file from Appointment Report
         matched_count = 0
+        unmatched_patids = []  # Track unmatched PATIDs for debugging
         for idx, row in result_df.iterrows():
             patid_val = row[previous_patient_col]
-            if pd.notna(patid_val):
-                # Convert to string and strip for consistent matching
-                patid = str(patid_val).strip()
-                if patid and patid in appointment_insurance_map:
-                    # Match found - Patient ID from Appointment Report matches PATID in Smart Assist
-                    # Copy insurance data FROM Appointment Report TO Smart Assist file
-                    # Format the insurance names before adding
-                    insurance_data = appointment_insurance_map[patid]
-                    result_df.at[idx, primary_col_name] = format_insurance_name(insurance_data['primary'])
-                    result_df.at[idx, secondary_col_name] = format_insurance_name(insurance_data['secondary'])
-                    matched_count += 1
+            # Normalize patient ID for consistent matching
+            patid = normalize_patient_id(patid_val)
+            if patid and patid in appointment_insurance_map:
+                # Match found - Patient ID from Appointment Report matches PATID in Smart Assist
+                # Copy insurance data FROM Appointment Report TO Smart Assist file
+                # Format the insurance names before adding
+                insurance_data = appointment_insurance_map[patid]
+                result_df.at[idx, primary_col_name] = format_insurance_name(insurance_data['primary'])
+                result_df.at[idx, secondary_col_name] = format_insurance_name(insurance_data['secondary'])
+                matched_count += 1
+            elif patid:
+                # Track unmatched PATIDs (limit to first 10 for display)
+                if len(unmatched_patids) < 10:
+                    unmatched_patids.append(str(patid_val))
         
         # Count statistics
         total_patients = len(result_df)
@@ -1508,6 +1539,12 @@ def compare_patient_names(raw_df, previous_df):
         columns_info = ""
         if columns_added:
             columns_info = f"\n⚠️ Note: The following columns were added to Smart Assist file (with empty values): {', '.join(columns_added)}"
+        
+        # Add debugging info for unmatched records
+        unmatched_info = ""
+        if unmatched_patids and not_matched_patients > 0:
+            unmatched_info = f"\n\n🔍 Sample unmatched PATIDs from Smart Assist (first 10): {', '.join(unmatched_patids)}"
+            unmatched_info += f"\n💡 Tip: Check if these Patient IDs exist in the Appointment Report file with the same values."
         
         result_message = f"""✅ Comparison completed successfully!
 
@@ -1527,7 +1564,7 @@ def compare_patient_names(raw_df, previous_df):
 📊 Matching details:
 - Total Patient IDs in Appointment Report: {len(appointment_insurance_map)}
 - Records in Smart Assist: {total_patients}
-- Successful matches: {matched_count}
+- Successful matches: {matched_count}{unmatched_info}
 
 📋 Result file:
 - Based on Smart Assist file
