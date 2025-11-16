@@ -1749,7 +1749,65 @@ def download_result():
         try:
             with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
                 for sheet_name, df in previous_data.items():
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    df_clean = df.copy()
+                    
+                    # Format "Appt Date" column to MM/DD/YYYY format (flexible column name search)
+                    appt_date_col = None
+                    for col in df_clean.columns:
+                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        # Check for variations: "appt date", "appointment date", "apptdate", etc.
+                        if 'appt' in col_lower and 'date' in col_lower:
+                            appt_date_col = col
+                            break
+                    
+                    if appt_date_col:
+                        # Convert dates to MM/DD/YYYY format
+                        def format_date(date_val):
+                            if pd.isna(date_val) or date_val == '':
+                                return ''
+                            try:
+                                # Convert to datetime if not already
+                                if isinstance(date_val, pd.Timestamp):
+                                    date_obj = date_val
+                                elif isinstance(date_val, str):
+                                    # Try to parse string date
+                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    if pd.isna(date_obj):
+                                        return str(date_val)  # Return original if can't parse
+                                else:
+                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    if pd.isna(date_obj):
+                                        return str(date_val)  # Return original if can't parse
+                                
+                                # Format as MM/DD/YYYY
+                                return date_obj.strftime('%m/%d/%Y')
+                            except (ValueError, TypeError, AttributeError):
+                                # If parsing fails, return as-is
+                                return str(date_val)
+                        
+                        # Format dates and convert column to string type to prevent Excel auto-formatting
+                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(format_date)
+                        df_clean[appt_date_col] = df_clean[appt_date_col].astype(str)
+                    
+                    df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
+                    
+                    # Set date column format to text in Excel to preserve MM/DD/YYYY format
+                    if appt_date_col:
+                        ws = writer.sheets[sheet_name]
+                        
+                        # Find the column index
+                        col_idx = None
+                        for idx, col_name in enumerate(df_clean.columns, 1):
+                            if col_name == appt_date_col:
+                                col_idx = idx
+                                break
+                        
+                        if col_idx:
+                            # Set all cells in this column to text format
+                            for row in range(2, ws.max_row + 1):
+                                cell = ws.cell(row=row, column=col_idx)
+                                if cell.value:
+                                    cell.number_format = '@'  # Text format
             
             return send_file(temp_path, as_attachment=True, download_name=filename)
             
@@ -1943,6 +2001,41 @@ def download_conversion_result():
                     df_clean = df.copy()
                     if 'Conversion' in df_clean.columns:
                         df_clean = df_clean.drop(columns=['Conversion'])
+                    
+                    # Format "Appt Date" column to MM/DD/YYYY format
+                    appt_date_col = None
+                    for col in df_clean.columns:
+                        if col.lower().strip() == 'appt date':
+                            appt_date_col = col
+                            break
+                    
+                    if appt_date_col:
+                        # Convert dates to MM/DD/YYYY format
+                        def format_date(date_val):
+                            if pd.isna(date_val) or date_val == '':
+                                return ''
+                            try:
+                                # Convert to datetime if not already
+                                if isinstance(date_val, pd.Timestamp):
+                                    date_obj = date_val
+                                elif isinstance(date_val, str):
+                                    # Try to parse string date
+                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    if pd.isna(date_obj):
+                                        return str(date_val)  # Return original if can't parse
+                                else:
+                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    if pd.isna(date_obj):
+                                        return str(date_val)  # Return original if can't parse
+                                
+                                # Format as MM/DD/YYYY
+                                return date_obj.strftime('%m/%d/%Y')
+                            except (ValueError, TypeError, AttributeError):
+                                # If parsing fails, return as-is
+                                return str(date_val)
+                        
+                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(format_date)
+                    
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
             
             # Clear data after successful download
@@ -2129,7 +2222,65 @@ def download_insurance_formatting():
         try:
             with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
                 for sheet_name, df in insurance_formatting_data.items():
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    df_clean = df.copy()
+                    
+                    # Format "Appointment Date" column to MM/DD/YYYY format (flexible column name search)
+                    appt_date_col = None
+                    for col in df_clean.columns:
+                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        # Check for variations: "appointment date", "appt date", "apptdate", etc.
+                        if ('appointment' in col_lower or 'appt' in col_lower) and 'date' in col_lower:
+                            appt_date_col = col
+                            break
+                    
+                    if appt_date_col:
+                        # Convert dates to MM/DD/YYYY format
+                        def format_date(date_val):
+                            if pd.isna(date_val) or date_val == '':
+                                return ''
+                            try:
+                                # Convert to datetime if not already
+                                if isinstance(date_val, pd.Timestamp):
+                                    date_obj = date_val
+                                elif isinstance(date_val, str):
+                                    # Try to parse string date
+                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    if pd.isna(date_obj):
+                                        return str(date_val)  # Return original if can't parse
+                                else:
+                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    if pd.isna(date_obj):
+                                        return str(date_val)  # Return original if can't parse
+                                
+                                # Format as MM/DD/YYYY
+                                return date_obj.strftime('%m/%d/%Y')
+                            except (ValueError, TypeError, AttributeError):
+                                # If parsing fails, return as-is
+                                return str(date_val)
+                        
+                        # Format dates and convert column to string type to prevent Excel auto-formatting
+                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(format_date)
+                        df_clean[appt_date_col] = df_clean[appt_date_col].astype(str)
+                    
+                    df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
+                    
+                    # Set date column format to text in Excel to preserve MM/DD/YYYY format
+                    if appt_date_col:
+                        ws = writer.sheets[sheet_name]
+                        
+                        # Find the column index
+                        col_idx = None
+                        for idx, col_name in enumerate(df_clean.columns, 1):
+                            if col_name == appt_date_col:
+                                col_idx = idx
+                                break
+                        
+                        if col_idx:
+                            # Set all cells in this column to text format
+                            for row in range(2, ws.max_row + 1):
+                                cell = ws.cell(row=row, column=col_idx)
+                                if cell.value:
+                                    cell.number_format = '@'  # Text format
             
             # Clear data after successful download
             insurance_formatting_data = None
@@ -2430,11 +2581,52 @@ def create_excel_from_appointments(appointments, filename):
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal='center')
     
+    # Find "Time" column index for formatting
+    time_col_idx = None
+    for col, header in enumerate(headers, 1):
+        if header.lower().strip() == 'time':
+            time_col_idx = col
+            break
+    
+    # Format date function for Time column
+    def format_time_value(time_val):
+        """Format Time column value to MM/DD/YYYY format"""
+        if not time_val or time_val == '':
+            return ''
+        try:
+            # Convert to datetime if not already
+            if isinstance(time_val, pd.Timestamp):
+                date_obj = time_val
+            elif isinstance(time_val, str):
+                # Try to parse string date
+                date_obj = pd.to_datetime(time_val, errors='coerce')
+                if pd.isna(date_obj):
+                    return str(time_val)  # Return original if can't parse
+            else:
+                date_obj = pd.to_datetime(time_val, errors='coerce')
+                if pd.isna(date_obj):
+                    return str(time_val)  # Return original if can't parse
+            
+            # Format as MM/DD/YYYY
+            return date_obj.strftime('%m/%d/%Y')
+        except (ValueError, TypeError, AttributeError):
+            # If parsing fails, return as-is
+            return str(time_val)
+    
     # Add appointment data
     for row, appointment in enumerate(appointments, 2):
         for col, header in enumerate(headers, 1):
             value = appointment.get(header, '')
-            ws.cell(row=row, column=col, value=value)
+            
+            # Format Time column if this is the Time column
+            if time_col_idx and col == time_col_idx:
+                value = format_time_value(value)
+            
+            cell = ws.cell(row=row, column=col, value=value)
+            
+            # Set Time column format to text to preserve MM/DD/YYYY format
+            if time_col_idx and col == time_col_idx and value:
+                cell.number_format = '@'  # Text format
     
     # Auto-adjust column widths
     for column in ws.columns:
