@@ -1821,6 +1821,10 @@ def upload_conversion_file():
                     # Create a copy of the dataframe
                     processed_df = df.copy()
                     
+                    # Remove "Conversion" column if it exists (we don't want this column)
+                    if 'Conversion' in processed_df.columns:
+                        processed_df = processed_df.drop(columns=['Conversion'])
+                    
                     # Extract insurance names and format them
                     def extract_and_format_insurance(note_text):
                         """Extract insurance name from Insurance Note text and format it"""
@@ -1848,42 +1852,53 @@ def upload_conversion_file():
                     
                     # Extract status from Insurance Note
                     def extract_status(note_text):
-                        """Extract status from Insurance Note text"""
+                        """Extract status from Insurance Note text - captures only the status value and discards all text after it.
+                        Handles multi-word statuses (e.g., "Not Eligible") and stops at the first "-" character after the status.
+                        Returns 'Conversion' if no status value is found."""
                         if pd.isna(note_text) or note_text == '':
-                            return ''
+                            return 'Conversion'
                         
                         note_str = str(note_text).strip()
                         
-                        # Pattern: "Status - <status>"
-                        # Look for "Status -" or "Status-"
+                        # Pattern: "Status - <status>" - capture the status value, stop at first "-" after status or other delimiters
+                        # Look for "Status -" or "Status-" followed by the status value
+                        # Status value can be multiple words (e.g., "Not Eligible", "Eligible")
+                        # Stop at the first "-" character after the status, or at ], |, comma, or end of string
                         import re
-                        status_pattern = r'Status\s*-\s*([^\]|]+)'
+                        # Match "Status -" or "Status-" followed by the status value
+                        # Capture everything (including spaces for multi-word statuses) until we hit:
+                        # - A "-" character (not the one after "Status")
+                        # - A "]" bracket
+                        # - A "|" pipe
+                        # - A comma
+                        # - End of string
+                        # Use non-greedy matching to stop at the first delimiter
+                        status_pattern = r'Status\s*-\s*([^-]+?)(?:\s*-|]|\||,|$)'
                         match = re.search(status_pattern, note_str, re.IGNORECASE)
                         if match:
                             status = match.group(1).strip()
-                            # Remove any trailing brackets or pipes
-                            status = status.rstrip(' ]|')
+                            # Remove any trailing whitespace or delimiters
+                            status = status.rstrip(' ]|,')
                             return status
                         
-                        return ''
+                        # If no status found, return 'Conversion' instead of empty string
+                        return 'Conversion'
                     
                     # Apply extraction and formatting
                     processed_df['Formatted Insurance'] = processed_df[insurance_note_col].apply(extract_and_format_insurance)
                     processed_df['Status'] = processed_df[insurance_note_col].apply(extract_status)
-                    processed_df['Conversion'] = 'Conversion'  # Add Conversion column with value "Conversion"
                     
                     # Find position of Insurance Note column and insert new columns after it
                     insurance_note_index = processed_df.columns.get_loc(insurance_note_col)
                     # Move the new columns to right after Insurance Note
                     cols = processed_df.columns.tolist()
                     # Remove new columns from their current position
-                    for col_name in ['Formatted Insurance', 'Status', 'Conversion']:
+                    for col_name in ['Formatted Insurance', 'Status']:
                         if col_name in cols:
                             cols.remove(col_name)
                     # Insert new columns after Insurance Note
                     cols.insert(insurance_note_index + 1, 'Formatted Insurance')
                     cols.insert(insurance_note_index + 2, 'Status')
-                    cols.insert(insurance_note_index + 3, 'Conversion')
                     processed_df = processed_df[cols]
                     
                     processed_sheets[sheet_name] = processed_df
@@ -1894,7 +1909,7 @@ def upload_conversion_file():
             # Update conversion_data with processed data
             conversion_data = processed_sheets
             
-            conversion_result = f"✅ Validation and processing completed successfully!\n\n📊 File loaded: {filename}\n📋 Sheets processed: {len(conversion_data)}\n📋 Sheet names: {', '.join(list(conversion_data.keys()))}\n📊 Total rows processed: {total_rows_processed}\n\n✅ New columns added:\n- 'Formatted Insurance' - Extracted and formatted insurance names\n- 'Status' - Extracted status values\n- 'Conversion' - Set to 'Conversion' for all rows\n💾 Ready to download the processed file!"
+            conversion_result = f"✅ Validation and processing completed successfully!\n\n📊 File loaded: {filename}\n📋 Sheets processed: {len(conversion_data)}\n📋 Sheet names: {', '.join(list(conversion_data.keys()))}\n📊 Total rows processed: {total_rows_processed}\n\n✅ New columns added:\n- 'Formatted Insurance' - Extracted and formatted insurance names\n- 'Status' - Extracted status values (shows 'Conversion' when no status is found)\n💾 Ready to download the processed file!"
         
         return redirect('/comparison?tab=conversion')
         
@@ -1924,7 +1939,11 @@ def download_conversion_result():
         try:
             with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
                 for sheet_name, df in conversion_data.items():
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    # Remove "Conversion" column if it exists (safety check)
+                    df_clean = df.copy()
+                    if 'Conversion' in df_clean.columns:
+                        df_clean = df_clean.drop(columns=['Conversion'])
+                    df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
             
             # Clear data after successful download
             global conversion_result
