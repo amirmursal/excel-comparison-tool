@@ -1866,6 +1866,8 @@ def upload_conversion_file():
             # Validation successful - now process the Insurance Note column
             processed_sheets = {}
             total_rows_processed = 0
+            patient_name_created = False
+            total_duplicates_removed = 0
             
             for sheet_name, df in conversion_data.items():
                 # Find Insurance Note column (case-insensitive)
@@ -1890,20 +1892,17 @@ def upload_conversion_file():
                             return ''
                         
                         note_str = str(note_text).strip()
+                        import re
                         
-                        # Pattern 1: "from conversion carrier: <insurance_name>| ** | ..."
-                        # Pattern 2: "From Conversion Carrier: <insurance_name> | ..."
-                        if 'from conversion carrier:' in note_str.lower():
-                            # Find the insurance name part
-                            # Look for "From Conversion Carrier:" or "from conversion carrier:"
-                            parts = note_str.split('|')
-                            if len(parts) > 0:
-                                carrier_part = parts[0].strip()
-                                # Remove "from conversion carrier:" prefix (case-insensitive)
-                                if 'from conversion carrier:' in carrier_part.lower():
-                                    insurance_name = carrier_part.split(':', 1)[1].strip() if ':' in carrier_part else carrier_part
-                                    # Format the insurance name using existing function
-                                    return format_insurance_name(insurance_name)
+                        # Pattern: "From Conversion Carrier: <insurance_name> | ..." or "from conversion carrier: <insurance_name>|..."
+                        # Use regex to find "From Conversion Carrier:" (case-insensitive) and extract everything after it until "|" or end of string
+                        pattern = r'from\s+conversion\s+carrier\s*:\s*([^|]+?)(?:\s*\||$)'
+                        match = re.search(pattern, note_str, re.IGNORECASE)
+                        
+                        if match:
+                            insurance_name = match.group(1).strip()
+                            # Format the insurance name using existing function
+                            return format_insurance_name(insurance_name)
                         
                         # If pattern doesn't match, try to format the whole text
                         return format_insurance_name(note_str)
@@ -1946,18 +1945,181 @@ def upload_conversion_file():
                     processed_df['Formatted Insurance'] = processed_df[insurance_note_col].apply(extract_and_format_insurance)
                     processed_df['Status'] = processed_df[insurance_note_col].apply(extract_status)
                     
+                    # Create "Patient Name" column from "Patient Last Name" and "Patient First Name"
+                    def find_column(columns, target_names):
+                        """Find column matching any of the target names (case-insensitive, flexible matching)"""
+                        for col in columns:
+                            col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                            for target in target_names:
+                                target_lower = target.lower().strip().replace(' ', '').replace('_', '')
+                                if col_lower == target_lower:
+                                    return col
+                        # Try partial matching as fallback
+                        for col in columns:
+                            col_lower = col.lower().strip()
+                            for target in target_names:
+                                target_lower = target.lower().strip()
+                                if target_lower in col_lower or col_lower in target_lower:
+                                    return col
+                        return None
+                    
+                    patient_last_name_col = find_column(processed_df.columns, ['Patient Last Name', 'PatientLastName', 'patient last name', 'Last Name', 'LastName'])
+                    patient_first_name_col = find_column(processed_df.columns, ['Patient First Name', 'PatientFirstName', 'patient first name', 'First Name', 'FirstName'])
+                    
+                    if patient_last_name_col and patient_first_name_col:
+                        # Create Patient Name column with format "<last_name>, <first_name>"
+                        def combine_names(row):
+                            last_name = str(row[patient_last_name_col]).strip() if pd.notna(row[patient_last_name_col]) else ''
+                            first_name = str(row[patient_first_name_col]).strip() if pd.notna(row[patient_first_name_col]) else ''
+                            
+                            # Format as "<last_name>, <first_name>"
+                            if last_name and first_name:
+                                return f"{last_name}, {first_name}"
+                            elif last_name:
+                                return last_name
+                            elif first_name:
+                                return first_name
+                            else:
+                                return ''
+                        
+                        # Create the Patient Name column
+                        processed_df['Patient Name'] = processed_df.apply(combine_names, axis=1)
+                        patient_name_created = True
+                        
+                        # Remove Patient Last Name and Patient First Name columns
+                        processed_df = processed_df.drop(columns=[patient_last_name_col, patient_first_name_col])
+                    
                     # Find position of Insurance Note column and insert new columns after it
                     insurance_note_index = processed_df.columns.get_loc(insurance_note_col)
                     # Move the new columns to right after Insurance Note
-                    cols = processed_df.columns.tolist()
-                    # Remove new columns from their current position
-                    for col_name in ['Formatted Insurance', 'Status']:
+                    cols = list(processed_df.columns)
+                    # Remove new columns from their current position (if they exist)
+                    cols_to_remove = ['Formatted Insurance', 'Status']
+                    if 'Patient Name' in cols:
+                        cols_to_remove.append('Patient Name')
+                    for col_name in cols_to_remove:
                         if col_name in cols:
                             cols.remove(col_name)
                     # Insert new columns after Insurance Note
                     cols.insert(insurance_note_index + 1, 'Formatted Insurance')
                     cols.insert(insurance_note_index + 2, 'Status')
+                    # Insert Patient Name column if it was created (after Status)
+                    if 'Patient Name' in processed_df.columns:
+                        status_index = cols.index('Status')
+                        cols.insert(status_index + 1, 'Patient Name')
+                    
+                    # Ensure Patient Name is in cols if it was created
+                    if patient_name_created:
+                        if 'Patient Name' not in cols:
+                            # Add it after Status
+                            if 'Status' in cols:
+                                status_index = cols.index('Status')
+                                cols.insert(status_index + 1, 'Patient Name')
+                            else:
+                                # If Status not found, add at end
+                                cols.append('Patient Name')
+                    
+                    # Reorder dataframe with all columns
                     processed_df = processed_df[cols]
+                    
+                    # Rename "Formatted Insurance" to "Dental Primary Ins Carr" and create "Dental Secondary Ins Carr"
+                    if 'Formatted Insurance' in processed_df.columns:
+                        # Find Pat ID column (flexible matching)
+                        pat_id_col = None
+                        pat_id_variations = ['Pat ID', 'PATID', 'PatID', 'pat id', 'Patient ID', 'PatientID', 'patient id']
+                        for col in processed_df.columns:
+                            col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                            for variation in pat_id_variations:
+                                if col_lower == variation.lower().strip().replace(' ', '').replace('_', ''):
+                                    pat_id_col = col
+                                    break
+                            if pat_id_col:
+                                break
+                        
+                        if pat_id_col:
+                            # Count rows before consolidation
+                            rows_before = len(processed_df)
+                            
+                            # Group by Pat ID and consolidate insurance information
+                            def consolidate_by_pat_id(group):
+                                # Get unique insurance names for this Pat ID (preserve order of first occurrence)
+                                insurance_names = []
+                                seen = set()
+                                for ins in group['Formatted Insurance']:
+                                    if pd.notna(ins):
+                                        ins_str = str(ins).strip()
+                                        if ins_str and ins_str not in seen:
+                                            insurance_names.append(ins_str)
+                                            seen.add(ins_str)
+                                
+                                # Take the first row as base
+                                first_row = group.iloc[0].copy()
+                                
+                                # Set Primary Insurance (first unique insurance)
+                                if len(insurance_names) > 0:
+                                    first_row['Dental Primary Ins Carr'] = insurance_names[0]
+                                else:
+                                    first_row['Dental Primary Ins Carr'] = ''
+                                
+                                # Set Secondary Insurance (second unique insurance if exists)
+                                if len(insurance_names) > 1:
+                                    first_row['Dental Secondary Ins Carr'] = insurance_names[1]
+                                else:
+                                    first_row['Dental Secondary Ins Carr'] = ''
+                                
+                                return first_row.to_dict()
+                            
+                            # Group by Pat ID and consolidate
+                            consolidated_rows = []
+                            for pat_id, group in processed_df.groupby(pat_id_col):
+                                consolidated_row = consolidate_by_pat_id(group)
+                                consolidated_rows.append(consolidated_row)
+                            
+                            # Create new DataFrame from consolidated rows
+                            processed_df = pd.DataFrame(consolidated_rows)
+                            
+                            # Remove the old "Formatted Insurance" column
+                            if 'Formatted Insurance' in processed_df.columns:
+                                processed_df = processed_df.drop(columns=['Formatted Insurance'])
+                            
+                            # Ensure "Dental Primary Ins Carr" and "Dental Secondary Ins Carr" columns exist
+                            if 'Dental Primary Ins Carr' not in processed_df.columns:
+                                processed_df['Dental Primary Ins Carr'] = ''
+                            if 'Dental Secondary Ins Carr' not in processed_df.columns:
+                                processed_df['Dental Secondary Ins Carr'] = ''
+                            
+                            # Reorder columns to place insurance columns after Pat ID
+                            cols_list = list(processed_df.columns)
+                            # Remove insurance columns from their current position
+                            for col_name in ['Dental Primary Ins Carr', 'Dental Secondary Ins Carr']:
+                                if col_name in cols_list:
+                                    cols_list.remove(col_name)
+                            
+                            # Find Pat ID column position
+                            if pat_id_col in cols_list:
+                                pat_id_index = cols_list.index(pat_id_col)
+                                # Insert insurance columns after Pat ID
+                                cols_list.insert(pat_id_index + 1, 'Dental Primary Ins Carr')
+                                cols_list.insert(pat_id_index + 2, 'Dental Secondary Ins Carr')
+                            else:
+                                # If Pat ID not found, add at the end
+                                cols_list.append('Dental Primary Ins Carr')
+                                cols_list.append('Dental Secondary Ins Carr')
+                            
+                            processed_df = processed_df[cols_list]
+                            
+                            # Count rows after consolidation
+                            rows_after = len(processed_df)
+                            rows_consolidated = rows_before - rows_after
+                            total_duplicates_removed += rows_consolidated
+                        else:
+                            # If Pat ID column not found, just rename the column
+                            processed_df = processed_df.rename(columns={'Formatted Insurance': 'Dental Primary Ins Carr'})
+                            processed_df['Dental Secondary Ins Carr'] = ''
+                    else:
+                        # If Formatted Insurance column doesn't exist, create empty insurance columns
+                        processed_df['Dental Primary Ins Carr'] = ''
+                        processed_df['Dental Secondary Ins Carr'] = ''
                     
                     processed_sheets[sheet_name] = processed_df
                     total_rows_processed += len(processed_df)
@@ -1967,7 +2129,17 @@ def upload_conversion_file():
             # Update conversion_data with processed data
             conversion_data = processed_sheets
             
-            conversion_result = f"✅ Validation and processing completed successfully!\n\n📊 File loaded: {filename}\n📋 Sheets processed: {len(conversion_data)}\n📋 Sheet names: {', '.join(list(conversion_data.keys()))}\n📊 Total rows processed: {total_rows_processed}\n\n✅ New columns added:\n- 'Formatted Insurance' - Extracted and formatted insurance names\n- 'Status' - Extracted status values (shows 'Conversion' when no status is found)\n💾 Ready to download the processed file!"
+            # Build columns added message
+            columns_added_msg = "- 'Dental Primary Ins Carr' - Extracted and formatted insurance names (first insurance for each Pat ID)\n- 'Dental Secondary Ins Carr' - Second insurance for Pat IDs with multiple insurances\n- 'Status' - Extracted status values (shows 'Conversion' when no status is found)"
+            if patient_name_created:
+                columns_added_msg += "\n- 'Patient Name' - Created from 'Patient Last Name' and 'Patient First Name' (format: <last_name>, <first_name>)"
+            
+            # Build consolidation message
+            dedup_msg = ""
+            if total_duplicates_removed > 0:
+                dedup_msg = f"\n\n🔄 Row Consolidation:\n- Consolidated {total_duplicates_removed} row(s) with same Pat ID\n- Multiple insurances for same Pat ID: first in 'Dental Primary Ins Carr', second in 'Dental Secondary Ins Carr'"
+            
+            conversion_result = f"✅ Validation and processing completed successfully!\n\n📊 File loaded: {filename}\n📋 Sheets processed: {len(conversion_data)}\n📋 Sheet names: {', '.join(list(conversion_data.keys()))}\n📊 Total rows processed: {total_rows_processed}{dedup_msg}\n\n✅ New columns added:\n{columns_added_msg}\n💾 Ready to download the processed file!"
         
         return redirect('/comparison?tab=conversion')
         
@@ -2859,8 +3031,10 @@ def reset_app():
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('PORT', 5002))
-    debug = os.environ.get('FLASK_ENV') == 'development'
+    # Enable debug mode for auto-reload during development
+    debug = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
     
     print("🚀 Starting Excel Comparison Tool...")
     print(f"📱 Open your browser and go to: http://localhost:{port}")
-    app.run(debug=debug, host='0.0.0.0', port=port)
+    print(f"🔄 Debug mode: {debug} (auto-reload enabled)")
+    app.run(debug=debug, host='0.0.0.0', port=port, use_reloader=True)
