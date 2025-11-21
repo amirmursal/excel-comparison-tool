@@ -46,6 +46,12 @@ appointment_report_filename = None
 appointment_report_result = None
 appointment_report_output = ""
 
+# Global variables for smart assist report formatting
+smart_assist_data = None
+smart_assist_filename = None
+smart_assist_result = None
+smart_assist_output = ""
+
 # HTML Template for Excel Comparison
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -56,36 +62,183 @@ HTML_TEMPLATE = """
     <title>Excel File Comparison Tool</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #f5f7fa;
             min-height: 100vh;
-            padding: 20px;
+            overflow-x: hidden;
         }
-        .container { 
-            max-width: 1400px; 
-            margin: 0 auto; 
-            background: white; 
-            border-radius: 15px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            overflow: hidden;
+        
+        /* Layout Structure */
+        .app-container {
+            display: flex;
+            min-height: 100vh;
         }
-        .header { 
+        
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            box-shadow: 4px 0 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+        
+        .sidebar-header {
+            padding: 30px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            text-align: center;
+        }
+        
+        .sidebar-header h1 {
+            font-size: 1.5em;
+            margin-bottom: 5px;
+            font-weight: 700;
+        }
+        
+        .sidebar-header p {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+        
+        .sidebar-menu {
+            padding: 20px 0;
+        }
+        
+        .menu-item {
+            padding: 15px 25px;
+            margin: 5px 15px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1em;
+            font-weight: 500;
+            color: rgba(255,255,255,0.8);
+            border: 2px solid transparent;
+        }
+        
+        .menu-item:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            transform: translateX(5px);
+        }
+        
+        .menu-item.active {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border-color: rgba(255,255,255,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .menu-item-icon {
+            font-size: 1.3em;
+            width: 25px;
+            text-align: center;
+        }
+        
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: white;
+            padding: 25px 40px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header h2 {
+            color: #333;
+            font-size: 1.8em;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 1em;
+        }
+        
+        /* Content Area */
+        .content {
+            flex: 1;
+            padding: 30px 40px;
+            max-width: 1400px;
+            width: 100%;
+        }
+        
+        /* Footer */
+        .footer {
+            background: white;
+            padding: 20px 40px;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #e0e0e0;
+            margin-top: auto;
+        }
+        
+        .footer p {
+            font-size: 0.9em;
+        }
+        
+        /* Mobile Toggle */
+        .mobile-toggle {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 1001;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white; 
-            padding: 30px; 
-            text-align: center; 
+            color: white;
+            border: none;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            font-size: 1.5em;
         }
-        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
-        .header p { font-size: 1.2em; opacity: 0.9; }
-        .content { padding: 30px; }
+        
+        /* Tab Content */
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Sections */
         .section { 
             margin: 25px 0; 
             padding: 25px; 
             border: 1px solid #e0e0e0; 
             border-radius: 10px; 
-            background: #fafafa;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
+        
         .section h3 { 
             color: #333; 
             margin-bottom: 20px; 
@@ -93,14 +246,17 @@ HTML_TEMPLATE = """
             border-bottom: 2px solid #667eea;
             padding-bottom: 10px;
         }
+        
         .form-group { margin: 15px 0; }
+        
         label { 
             display: block; 
             margin-bottom: 8px; 
             font-weight: 600; 
             color: #555;
         }
-        input[type="file"] { 
+        
+        input[type="file"], input[type="text"], select { 
             width: 100%; 
             padding: 12px; 
             border: 2px solid #ddd; 
@@ -108,10 +264,12 @@ HTML_TEMPLATE = """
             font-size: 16px;
             transition: border-color 0.3s;
         }
-        input[type="file"]:focus { 
+        
+        input[type="file"]:focus, input[type="text"]:focus, select:focus { 
             outline: none; 
             border-color: #667eea; 
         }
+        
         button { 
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white; 
@@ -124,10 +282,12 @@ HTML_TEMPLATE = """
             font-weight: 600;
             transition: transform 0.2s;
         }
+        
         button:hover { 
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
+        
         .file-status { 
             background: #f8f9fa; 
             padding: 15px; 
@@ -135,11 +295,13 @@ HTML_TEMPLATE = """
             margin: 15px 0; 
             border-left: 4px solid #667eea;
         }
+        
         .status-success { 
             background: #d4edda; 
             color: #155724; 
             border-color: #c3e6cb; 
         }
+        
         .status-info { 
             background: #d1ecf1; 
             color: #0c5460; 
@@ -178,10 +340,6 @@ HTML_TEMPLATE = """
             box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
         }
         
-        .reset-btn:active {
-            transform: translateY(0);
-            box-shadow: 0 2px 10px rgba(255, 107, 107, 0.3);
-        }
         .comparison-results { 
             background: #1e1e1e; 
             color: #f8f8f2; 
@@ -193,16 +351,19 @@ HTML_TEMPLATE = """
             overflow-y: auto;
             border: 1px solid #333;
         }
+        
         .two-column { 
             display: grid; 
             grid-template-columns: 1fr 1fr; 
             gap: 20px; 
         }
+        
         .loading { 
             display: none; 
             text-align: center; 
             padding: 20px; 
         }
+        
         .spinner { 
             border: 4px solid #f3f3f3; 
             border-top: 4px solid #667eea; 
@@ -212,6 +373,7 @@ HTML_TEMPLATE = """
             animation: spin 1s linear infinite; 
             margin: 0 auto;
         }
+        
         @keyframes spin { 
             0% { transform: rotate(0deg); } 
             100% { transform: rotate(360deg); } 
@@ -230,16 +392,10 @@ HTML_TEMPLATE = """
             z-index: 9999;
             justify-content: center;
             align-items: center;
-            animation: fadeIn 0.3s ease;
         }
         
         .processing-modal-overlay.show {
             display: flex;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
         }
         
         .processing-modal {
@@ -286,6 +442,7 @@ HTML_TEMPLATE = """
             margin: 0;
         }
         
+        
         .processing-modal .processing-dots {
             display: inline-block;
             animation: dots 1.5s steps(4, end) infinite;
@@ -302,45 +459,6 @@ HTML_TEMPLATE = """
             60%, 100% { content: '...'; }
         }
         
-        /* Tab Styles */
-        .tabs {
-            display: flex;
-            border-bottom: 2px solid #e0e0e0;
-            margin-bottom: 20px;
-            background: transparent;
-            padding: 5px 0;
-        }
-        .tab {
-            padding: 15px 30px;
-            cursor: pointer;
-            background: #f8f9fa;
-            border: none;
-            border-bottom: 3px solid transparent;
-            font-size: 16px;
-            font-weight: 600;
-            color: #495057;
-            transition: all 0.3s;
-            border-radius: 8px 8px 0 0;
-            margin-right: 5px;
-        }
-        .tab:hover {
-            background: #e9ecef;
-            color: #212529;
-        }
-        .tab.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #ffffff;
-            border-bottom-color: #667eea;
-            box-shadow: 0 -2px 8px rgba(102, 126, 234, 0.3);
-            border-bottom-width: 4px;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-        
         /* Toast Notification */
         .toast {
             position: fixed;
@@ -353,7 +471,6 @@ HTML_TEMPLATE = """
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             z-index: 10000;
             display: none;
-            animation: slideIn 0.3s ease;
             max-width: 400px;
         }
         .toast.error {
@@ -361,8 +478,9 @@ HTML_TEMPLATE = """
         }
         .toast.show {
             display: block;
+            animation: slideInRight 0.3s ease;
         }
-        @keyframes slideIn {
+        @keyframes slideInRight {
             from {
                 transform: translateX(400px);
                 opacity: 0;
@@ -377,6 +495,29 @@ HTML_TEMPLATE = """
             font-weight: bold;
             cursor: pointer;
             margin-left: 15px;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 968px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.active {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .mobile-toggle {
+                display: block;
+            }
+            
+            .two-column {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -396,22 +537,70 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <div class="container">
-        <div class="header">
-            <h1>📊 Excel Automation Tools</h1>
-            <p>Multiple Excel processing tools in one place</p>
+    <!-- Mobile Toggle Button -->
+    <button class="mobile-toggle" onclick="toggleSidebar()">☰</button>
+
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h1>📊 Excel Tools</h1>
+                <p>Automation Suite</p>
+            </div>
+            <nav class="sidebar-menu">
+                <div class="menu-item {% if active_tab == 'comparison' %}active{% endif %}" onclick="switchTab('comparison')">
+                    <span class="menu-item-icon">🔄</span>
+                    <span>Comparison Tool</span>
+                </div>
+                <div class="menu-item {% if active_tab == 'conversion' %}active{% endif %}" onclick="switchTab('conversion')">
+                    <span class="menu-item-icon">📋</span>
+                    <span>Conversion Report</span>
+                </div>
+                <div class="menu-item {% if active_tab == 'insurance' %}active{% endif %}" onclick="switchTab('insurance')">
+                    <span class="menu-item-icon">🦷</span>
+                    <span>Insurance Formatting</span>
+                </div>
+                <div class="menu-item {% if active_tab == 'remarks' %}active{% endif %}" onclick="switchTab('remarks')">
+                    <span class="menu-item-icon">📝</span>
+                    <span>Update Remarks</span>
+                </div>
+                <div class="menu-item {% if active_tab == 'appointment' %}active{% endif %}" onclick="switchTab('appointment')">
+                    <span class="menu-item-icon">📅</span>
+                    <span>Appointment Report</span>
+                </div>
+                <div class="menu-item {% if active_tab == 'smartassist' %}active{% endif %}" onclick="switchTab('smartassist')">
+                    <span class="menu-item-icon">🤖</span>
+                    <span>Smart Assist Report</span>
+                </div>
+            </nav>
         </div>
 
-        <div class="content">
-            <!-- Tab Navigation -->
-            <div class="tabs">
-                <button class="tab {% if active_tab == 'comparison' %}active{% endif %}" id="comparison-tab-btn" onclick="switchTab('comparison')">🔄 Comparison Tool</button>
-                <button class="tab {% if active_tab == 'conversion' %}active{% endif %}" id="conversion-tab-btn" onclick="switchTab('conversion')">📋 Conversion Report Formatting</button>
-                <button class="tab {% if active_tab == 'insurance' %}active{% endif %}" id="insurance-tab-btn" onclick="switchTab('insurance')">🦷 Insurance Name Formatting</button>
-                <button class="tab {% if active_tab == 'remarks' %}active{% endif %}" id="remarks-tab-btn" onclick="switchTab('remarks')">📝 Update Remarks</button>
-                <button class="tab {% if active_tab == 'appointment' %}active{% endif %}" id="appointment-tab-btn" onclick="switchTab('appointment')">📅 Appointment Report Formatting</button>
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="header">
+                <h2 id="page-title">
+                    {% if active_tab == 'comparison' %}🔄 Comparison Tool
+                    {% elif active_tab == 'conversion' %}📋 Conversion Report Formatting
+                    {% elif active_tab == 'insurance' %}🦷 Insurance Name Formatting
+                    {% elif active_tab == 'remarks' %}📝 Update Remarks
+                    {% elif active_tab == 'appointment' %}📅 Appointment Report Formatting
+                    {% elif active_tab == 'smartassist' %}🤖 Smart Assist Report Formatting
+                    {% else %}🔄 Comparison Tool
+                    {% endif %}
+                </h2>
+                <p id="page-description">
+                    {% if active_tab == 'comparison' %}Compare Patient IDs and add insurance columns
+                    {% elif active_tab == 'conversion' %}Format and process conversion reports
+                    {% elif active_tab == 'insurance' %}Standardize insurance carrier names
+                    {% elif active_tab == 'remarks' %}Add remarks to appointments
+                    {% elif active_tab == 'appointment' %}Format appointment report insurance columns
+                    {% elif active_tab == 'smartassist' %}Format smart assist report insurance columns
+                    {% else %}Compare Patient IDs and add insurance columns
+                    {% endif %}
+                </p>
             </div>
 
+            <div class="content">
             <!-- Tab 1: Comparison Tool -->
             <div id="comparison-tab" class="tab-content {% if active_tab == 'comparison' %}active{% endif %}">
                 <div class="section">
@@ -896,8 +1085,96 @@ HTML_TEMPLATE = """
                     </form>
                 </div>
             </div>
-        </div>
-    </div>
+
+            <!-- Tab 6: Smart Assist Report Formatting -->
+            <div id="smartassist-tab" class="tab-content {% if active_tab == 'smartassist' %}active{% endif %}">
+                <div class="section">
+                    <h3>🤖 Smart Assist Report Formatting</h3>
+                    <p>Upload a Smart Assist Report Excel file to automatically format columns to create allocation file </p>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="section">
+                    <h3>📁 Upload Excel File</h3>
+                    <form action="/upload_smart_assist" method="post" enctype="multipart/form-data" id="smartassist-form">
+                        <div class="form-group">
+                            <label for="smartassist_file">Select Smart Assist Report Excel File (.xlsx, .xls):</label>
+                            <input type="file" id="smartassist_file" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" id="smartassist-btn">📤 Upload & Format File</button>
+                    </form>
+                    <div class="loading" id="smartassist-loading">
+                        <div class="spinner"></div>
+                        <p>Processing and formatting insurance columns...</p>
+                    </div>
+                </div>
+
+                <!-- Status Messages -->
+                {% if smart_assist_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ smart_assist_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- File Status -->
+                {% if smart_assist_filename %}
+                <div class="section">
+                    <h3>📊 File Status</h3>
+                    <div class="file-status">
+                        <div class="status-success">
+                            ✅ File loaded: {{ smart_assist_filename }}<br>
+                            📋 Sheets processed: {{ smart_assist_data.keys() | list | length if smart_assist_data else 0 }}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Processing Output -->
+                {% if smart_assist_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ smart_assist_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if smart_assist_data and smart_assist_result and 'processing complete' in smart_assist_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Formatted File</h3>
+                    <form action="/download_smart_assist" method="post">
+                        <div class="form-group">
+                            <label for="smartassist_output_filename">Output filename (optional):</label>
+                            <input type="text" id="smartassist_output_filename" name="filename" 
+                                   placeholder="formatted_smart_assist_report.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Formatted File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Smart Assist Report Tool</h3>
+                    <p>Clear all uploaded files and reset the smart assist report formatting tool to start fresh.</p>
+                    <form action="/reset_smart_assist" method="post" onsubmit="return confirm('Are you sure you want to reset the smart assist report formatting tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Smart Assist Report Tool</button>
+                    </form>
+                </div>
+            </div>
+
+            </div> <!-- End content -->
+
+            <!-- Footer -->
+            <div class="footer">
+                <p>© 2025 Excel Automation Tools | Built with ❤️ for efficiency</p>
+            </div>
+        </div> <!-- End main-content -->
+    </div> <!-- End app-container -->
 
     <script>
         // Toast notification functions
@@ -936,57 +1213,74 @@ HTML_TEMPLATE = """
             document.body.style.overflow = '';
         }
         
+        // Toggle sidebar on mobile
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('active');
+        }
+        
         // Tab switching function
         function switchTab(tabName, skipUrlUpdate = false) {
-            if (!tabName) return; // Safety check
+            if (!tabName) return;
             
             // Hide all tab contents
             document.querySelectorAll('.tab-content').forEach(content => {
-                if (content && content.classList) {
-                    content.classList.remove('active');
-                }
+                content.classList.remove('active');
             });
             
-            // Remove active class from all tabs
-            document.querySelectorAll('.tab').forEach(tab => {
-                if (tab && tab.classList) {
-                    tab.classList.remove('active');
-                }
+            // Remove active class from all menu items
+            document.querySelectorAll('.menu-item').forEach(item => {
+                item.classList.remove('active');
             });
             
             // Show selected tab content
             const tabContent = document.getElementById(tabName + '-tab');
-            if (tabContent && tabContent.classList) {
+            if (tabContent) {
                 tabContent.classList.add('active');
             }
             
-            // Add active class to clicked tab
-            if (typeof event !== 'undefined' && event && event.target && event.target.classList) {
-                event.target.classList.add('active');
-            } else {
-                // If called programmatically, find the right tab button by ID
-                const tabButton = document.getElementById(tabName + '-tab-btn');
-                if (tabButton && tabButton.classList) {
-                    tabButton.classList.add('active');
-                } else {
-                    // Fallback: find by text content
-                    const tabs = document.querySelectorAll('.tab');
-                    tabs.forEach(tab => {
-                        if (tab && tab.classList && tab.textContent) {
-                            const tabText = tab.textContent.toLowerCase();
-                            if ((tabName === 'comparison' && tabText.includes('comparison')) ||
-                                (tabName === 'conversion' && tabText.includes('conversion')) ||
-                                (tabName === 'insurance' && tabText.includes('insurance')) ||
-                                (tabName === 'remarks' && tabText.includes('remarks')) ||
-                                (tabName === 'appointment' && tabText.includes('appointment'))) {
-                                tab.classList.add('active');
-                            }
-                        }
-                    });
+            // Add active class to menu item
+            const menuItems = document.querySelectorAll('.menu-item');
+            menuItems.forEach(item => {
+                const itemText = item.textContent.toLowerCase();
+                if ((tabName === 'comparison' && itemText.includes('comparison')) ||
+                    (tabName === 'conversion' && itemText.includes('conversion')) ||
+                    (tabName === 'insurance' && itemText.includes('insurance')) ||
+                    (tabName === 'remarks' && itemText.includes('remarks')) ||
+                    (tabName === 'appointment' && itemText.includes('appointment')) ||
+                    (tabName === 'smartassist' && itemText.includes('smart assist'))) {
+                    item.classList.add('active');
                 }
+            });
+            
+            // Update page title and description
+            const pageTitles = {
+                'comparison': '🔄 Comparison Tool',
+                'conversion': '📋 Conversion Report Formatting',
+                'insurance': '🦷 Insurance Name Formatting',
+                'remarks': '📝 Update Remarks',
+                'appointment': '📅 Appointment Report Formatting',
+                'smartassist': '🤖 Smart Assist Report Formatting'
+            };
+            
+            const pageDescriptions = {
+                'comparison': 'Compare Patient IDs and add insurance columns',
+                'conversion': 'Format and process conversion reports',
+                'insurance': 'Standardize insurance carrier names',
+                'remarks': 'Add remarks to appointments',
+                'appointment': 'Format appointment report insurance columns',
+                'smartassist': 'Format smart assist report insurance columns'
+            };
+            
+            document.getElementById('page-title').textContent = pageTitles[tabName] || pageTitles['comparison'];
+            document.getElementById('page-description').textContent = pageDescriptions[tabName] || pageDescriptions['comparison'];
+            
+            // Close sidebar on mobile
+            if (window.innerWidth <= 968) {
+                document.getElementById('sidebar').classList.remove('active');
             }
             
-            // Update URL without reloading (only if not called from page load)
+            // Update URL
             if (!skipUrlUpdate) {
                 const newUrl = window.location.pathname + '?tab=' + tabName;
                 window.history.pushState({path: newUrl}, '', newUrl);
@@ -1056,6 +1350,15 @@ HTML_TEMPLATE = """
             });
         }
 
+        // Smart assist form submission
+        const smartAssistForm = document.getElementById('smartassist-form');
+        if (smartAssistForm) {
+            smartAssistForm.addEventListener('submit', function() {
+                showProcessingModal('Formatting Insurance Columns', 'Processing file and formatting insurance names');
+                document.getElementById('smartassist-btn').disabled = true;
+            });
+        }
+
         // Reset forms - show modal when form is submitted (HTML confirm already handled)
         const resetForms = document.querySelectorAll('form[action*="reset"]');
         resetForms.forEach(form => {
@@ -1082,15 +1385,17 @@ HTML_TEMPLATE = """
             const urlParams = new URLSearchParams(window.location.search);
             const activeTab = urlParams.get('tab');
             if (activeTab === 'conversion') {
-                switchTab('conversion', true); // Skip URL update on page load
+                switchTab('conversion', true);
             } else if (activeTab === 'insurance') {
-                switchTab('insurance', true); // Skip URL update on page load
+                switchTab('insurance', true);
             } else if (activeTab === 'remarks') {
-                switchTab('remarks', true); // Skip URL update on page load
+                switchTab('remarks', true);
             } else if (activeTab === 'appointment') {
-                switchTab('appointment', true); // Skip URL update on page load
+                switchTab('appointment', true);
+            } else if (activeTab === 'smartassist') {
+                switchTab('smartassist', true);
             } else if (activeTab === 'comparison') {
-                switchTab('comparison', true); // Skip URL update on page load
+                switchTab('comparison', true);
             }
             
             // Show toast notification for conversion validation and processing
@@ -1690,6 +1995,7 @@ def comparison_index():
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
+    global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
     
     # Get the active tab from URL parameter
     active_tab = request.args.get('tab', 'comparison')
@@ -1717,6 +2023,10 @@ def comparison_index():
                                 appointment_report_filename=appointment_report_filename,
                                 appointment_report_result=appointment_report_result,
                                 appointment_report_output=appointment_report_output,
+                                smart_assist_data=smart_assist_data,
+                                smart_assist_filename=smart_assist_filename,
+                                smart_assist_result=smart_assist_result,
+                                smart_assist_output=smart_assist_output,
                                 active_tab=active_tab)
 
 @app.route('/upload_raw', methods=['POST'])
@@ -2050,6 +2360,30 @@ def upload_conversion_file():
                     processed_df['Formatted Insurance'] = processed_df[insurance_note_col].apply(extract_and_format_insurance)
                     processed_df['Status'] = processed_df[insurance_note_col].apply(extract_status)
                     
+                    # Update Status based on Eligibility column
+                    # Find Eligibility column (case-insensitive, flexible matching)
+                    eligibility_col = None
+                    for col in processed_df.columns:
+                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        if 'eligibility' in col_lower:
+                            eligibility_col = col
+                            break
+                    
+                    if eligibility_col:
+                        # Apply logic: ✗ -> Workable, ✓ -> Completed
+                        def set_status_from_eligibility(row):
+                            eligibility_val = row[eligibility_col]
+                            if pd.notna(eligibility_val):
+                                eligibility_str = str(eligibility_val).strip()
+                                if '✗' in eligibility_str or 'x' in eligibility_str.lower():
+                                    return 'Workable'
+                                elif '✓' in eligibility_str or '√' in eligibility_str or 'check' in eligibility_str.lower():
+                                    return 'Completed'
+                            # If no eligibility match, keep existing status
+                            return row['Status']
+                        
+                        processed_df['Status'] = processed_df.apply(set_status_from_eligibility, axis=1)
+                    
                     # Create "Patient Name" column from "Patient Last Name" and "Patient First Name"
                     def find_column(columns, target_names):
                         """Find column matching any of the target names (case-insensitive, flexible matching)"""
@@ -2211,6 +2545,10 @@ def upload_conversion_file():
                                 cols_list.append('Dental Primary Ins Carr')
                                 cols_list.append('Dental Secondary Ins Carr')
                             
+                            # Ensure Status column is preserved in the column list
+                            if 'Status' in processed_df.columns and 'Status' not in cols_list:
+                                cols_list.append('Status')
+                            
                             processed_df = processed_df[cols_list]
                             
                             # Count rows after consolidation
@@ -2221,13 +2559,26 @@ def upload_conversion_file():
                             # If Pat ID column not found, just rename the column
                             processed_df = processed_df.rename(columns={'Formatted Insurance': 'Dental Primary Ins Carr'})
                             processed_df['Dental Secondary Ins Carr'] = ''
+                            # Ensure Status column exists
+                            if 'Status' not in processed_df.columns:
+                                processed_df['Status'] = 'Conversion'
                     else:
                         # If Formatted Insurance column doesn't exist, create empty insurance columns
                         processed_df['Dental Primary Ins Carr'] = ''
                         processed_df['Dental Secondary Ins Carr'] = ''
+                        # Ensure Status column exists
+                        if 'Status' not in processed_df.columns:
+                            processed_df['Status'] = 'Conversion'
                     
                     processed_sheets[sheet_name] = processed_df
                     total_rows_processed += len(processed_df)
+                    
+                    # Debug: Print columns to verify Status is included
+                    print(f"DEBUG - Sheet '{sheet_name}' columns: {list(processed_df.columns)}")
+                    if 'Status' in processed_df.columns:
+                        print(f"DEBUG - Status column exists with values: {processed_df['Status'].unique()[:5]}")
+                    else:
+                        print("DEBUG - WARNING: Status column NOT FOUND!")
                 else:
                     processed_sheets[sheet_name] = df
             
@@ -3100,6 +3451,7 @@ def reset_app():
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
+    global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
     
     try:
         # Reset all global variables
@@ -3133,6 +3485,12 @@ def reset_app():
         appointment_report_filename = None
         appointment_report_result = None
         appointment_report_output = ""
+        
+        # Reset smart assist data
+        smart_assist_data = None
+        smart_assist_filename = None
+        smart_assist_result = None
+        smart_assist_output = ""
         
         return redirect('/comparison')
         
@@ -3407,6 +3765,442 @@ def reset_appointment_report():
     except Exception as e:
         appointment_report_result = f"❌ Error resetting appointment report formatting tool: {str(e)}"
         return redirect('/comparison?tab=appointment')
+
+@app.route('/upload_smart_assist', methods=['POST'])
+def upload_smart_assist():
+    global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
+    
+    if 'file' not in request.files:
+        smart_assist_result = "❌ Error: No file provided"
+        return redirect('/comparison?tab=smartassist')
+    
+    file = request.files['file']
+    if file.filename == '':
+        smart_assist_result = "❌ Error: No file selected"
+        return redirect('/comparison?tab=smartassist')
+    
+    try:
+        filename = secure_filename(file.filename)
+        file.seek(0)
+        
+        # Read raw Excel data without headers first to analyze structure
+        from openpyxl import load_workbook
+        wb = load_workbook(file)
+        
+        processed_sheets = {}
+        output_lines = []
+        output_lines.append("=" * 70)
+        output_lines.append("PROCESSING SMART ASSIST REPORT - ADVANCED FORMATTING")
+        output_lines.append("=" * 70)
+        output_lines.append("")
+        
+        for sheet_name in wb.sheetnames:
+            output_lines.append(f"📋 Processing sheet: {sheet_name}")
+            ws = wb[sheet_name]
+            
+            # Step 1: Read all data as raw values
+            all_rows = []
+            for row in ws.iter_rows(values_only=True):
+                all_rows.append(row)
+            
+            output_lines.append(f"   Original rows: {len(all_rows)}")
+            
+            # Step 2: Find header rows (rows that look like headers)
+            header_rows = []
+            header_indices = []
+            
+            for idx, row in enumerate(all_rows):
+                # Check if row looks like a header (has text values, not mostly empty)
+                if row and any(row):
+                    non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip() != '')
+                    # If more than 30% of cells are filled, could be a header or data row
+                    if non_empty_count > 0:
+                        # Check if it looks like a header (contains common header keywords)
+                        row_text = ' '.join([str(cell).lower() for cell in row if cell is not None])
+                        # Look for header patterns
+                        if any(keyword in row_text for keyword in ['patient', 'name', 'date', 'time', 'insurance', 'carrier', 'id', 'appt']):
+                            # Check if next few rows are data (to confirm this is a header)
+                            is_likely_header = False
+                            
+                            # First occurrence or significant gap from last header
+                            if not header_indices or (idx - header_indices[-1]) > 5:
+                                is_likely_header = True
+                            
+                            if is_likely_header:
+                                header_rows.append(row)
+                                header_indices.append(idx)
+            
+            output_lines.append(f"   Found {len(header_rows)} potential header row(s) at positions: {header_indices}")
+            
+            # Step 3: Use the first valid header row
+            if not header_rows:
+                output_lines.append(f"   ⚠️  No valid header row found, using first row as header")
+                header_row = all_rows[0] if all_rows else []
+                data_start_idx = 1
+            else:
+                header_row = header_rows[0]
+                data_start_idx = header_indices[0] + 1
+            
+            # Clean header row - remove None and empty strings
+            headers = []
+            for cell in header_row:
+                if cell is not None and str(cell).strip() != '':
+                    headers.append(str(cell).strip())
+                else:
+                    headers.append(f"Column_{len(headers)}")
+            
+            output_lines.append(f"   Headers identified: {len(headers)} columns")
+            
+            # Step 4: Collect all data rows (skip blank rows and intermediate header rows)
+            data_rows = []
+            blank_rows_removed = 0
+            duplicate_headers_removed = 0
+            summary_rows_removed = 0
+            
+            for idx in range(data_start_idx, len(all_rows)):
+                row = all_rows[idx]
+                
+                # Skip completely blank rows
+                if not row or all(cell is None or str(cell).strip() == '' for cell in row):
+                    blank_rows_removed += 1
+                    continue
+                
+                # Skip rows that look like duplicate headers (middle section headers)
+                row_text = ' '.join([str(cell).lower() for cell in row if cell is not None])
+                is_duplicate_header = False
+                
+                # Check if this row matches any header pattern
+                if idx in header_indices[1:]:  # Skip first header
+                    is_duplicate_header = True
+                    duplicate_headers_removed += 1
+                    continue
+                
+                # Additional check: if row closely matches header row, skip it
+                if len(row) == len(header_row):
+                    matches = sum(1 for i, cell in enumerate(row) if cell == header_row[i])
+                    if matches > len(header_row) * 0.5:  # More than 50% match
+                        is_duplicate_header = True
+                        duplicate_headers_removed += 1
+                        continue
+                
+                # Skip summary/total rows
+                # Check first few cells for total/summary indicators
+                first_cells_text = ' '.join([str(cell).lower().strip() for cell in row[:3] if cell is not None])
+                
+                if any(pattern in first_cells_text for pattern in [
+                    'total appointments for office',
+                    'office :',
+                    'office:',
+                    'grand total'
+                ]):
+                    summary_rows_removed += 1
+                    continue
+                
+                # Valid data row - add it
+                data_rows.append(row)
+            
+            output_lines.append(f"   ✅ Removed {blank_rows_removed} blank row(s)")
+            output_lines.append(f"   ✅ Removed {duplicate_headers_removed} duplicate header row(s)")
+            output_lines.append(f"   ✅ Removed {summary_rows_removed} summary/total row(s)")
+            output_lines.append(f"   Data rows collected: {len(data_rows)}")
+            
+            # Step 5: Create DataFrame with consolidated data
+            if not data_rows:
+                output_lines.append(f"   ⚠️  No data rows found in sheet")
+                continue
+            
+            # Ensure all rows have same length as headers
+            normalized_rows = []
+            for row in data_rows:
+                if len(row) < len(headers):
+                    # Pad with None
+                    row = list(row) + [None] * (len(headers) - len(row))
+                elif len(row) > len(headers):
+                    # Trim
+                    row = row[:len(headers)]
+                normalized_rows.append(row)
+            
+            df = pd.DataFrame(normalized_rows, columns=headers)
+            
+            # Step 6: Remove "Unnamed:" columns
+            df.columns = df.columns.astype(str)
+            df = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            df = df.loc[:, ~df.columns.str.startswith('Column_')]
+            
+            # Step 7: Remove any remaining rows that are all NaN
+            df = df.dropna(how='all')
+            
+            output_lines.append(f"   Cleaned shape: {df.shape[0]} rows × {df.shape[1]} columns")
+            
+            # Step 8: Build standardized output with requested columns
+            standard_columns = [
+                'Office Name','Appointment Date','Patient ID','Patient Name','Chart#',
+                'Dental Primary Ins Carr','Dental Secondary Ins Carr','Provider Name','Received date','Source',
+                'Type','Status Code','Comment','Group Number','Category','Agent Name','Work Date','Remark',
+                'Priority Status','QC Agent','QC Status','QC Comments','QC Date','Status'
+            ]
+            output_lines.append(f"   Standardizing to {len(standard_columns)} predefined column(s)")
+
+            # Helper to fuzzy-find a column by keywords
+            def find_col(keywords):
+                for col in df.columns:
+                    col_norm = col.lower().strip().replace(' ', '').replace('_', '')
+                    if all(k in col_norm for k in keywords):
+                        return col
+                return None
+
+            office_col = find_col(['office'])
+            appt_date_col = find_col(['appt','date']) or find_col(['appointment','date'])
+            patid_col = find_col(['patid']) or find_col(['patient','id'])
+            last_name_col = find_col(['patient','last']) or find_col(['last','name'])
+            first_name_col = find_col(['patient','first']) or find_col(['first','name'])
+            chart_col = find_col(['chart'])
+            provider_col = find_col(['provider']) or find_col(['dr'])
+            received_date_col = find_col(['received','date'])
+            source_col = find_col(['source'])
+            type_col = find_col(['type'])
+            status_code_col = find_col(['status','code']) or find_col(['code'])
+            comment_col = find_col(['comment']) or find_col(['notes'])
+            group_number_col = find_col(['group','number']) or find_col(['group#'])
+            category_col = find_col(['category'])
+            agent_name_col = find_col(['agent','name']) or find_col(['agent'])
+            work_date_col = find_col(['work','date'])
+            remark_col = find_col(['remark'])
+            priority_status_col = find_col(['priority','status']) or find_col(['priority'])
+            qc_agent_col = find_col(['qc','agent'])
+            qc_status_col = find_col(['qc','status'])
+            qc_comments_col = find_col(['qc','comment']) or find_col(['qc','notes'])
+            qc_date_col = find_col(['qc','date'])
+
+            # Find insurance columns
+            primary_ins_col = find_col(['dental','primary','ins']) or find_col(['primary','insurance'])
+            secondary_ins_col = find_col(['dental','secondary','ins']) or find_col(['secondary','insurance'])
+
+            standardized = pd.DataFrame(index=df.index, columns=standard_columns)
+            standardized['Office Name'] = df[office_col] if office_col else ''
+            standardized['Appointment Date'] = df[appt_date_col] if appt_date_col else ''
+            standardized['Patient ID'] = df[patid_col] if patid_col else ''
+            if last_name_col or first_name_col:
+                ln = df[last_name_col] if last_name_col else ''
+                fn = df[first_name_col] if first_name_col else ''
+                standardized['Patient Name'] = ln.fillna('').astype(str).str.strip() + ', ' + fn.fillna('').astype(str).str.strip()
+                standardized['Patient Name'] = standardized['Patient Name'].str.strip(', ').replace(', $','', regex=True)
+            else:
+                standardized['Patient Name'] = ''
+            standardized['Chart#'] = df[chart_col] if chart_col else ''
+            standardized['Dental Primary Ins Carr'] = df[primary_ins_col] if primary_ins_col else ''
+            standardized['Dental Secondary Ins Carr'] = df[secondary_ins_col] if secondary_ins_col else ''
+            standardized['Provider Name'] = df[provider_col] if provider_col else ''
+            standardized['Received date'] = df[received_date_col] if received_date_col else ''
+            standardized['Source'] = df[source_col] if source_col else ''
+            standardized['Type'] = df[type_col] if type_col else ''
+            standardized['Status Code'] = df[status_code_col] if status_code_col else ''
+            standardized['Comment'] = df[comment_col] if comment_col else ''
+            standardized['Group Number'] = df[group_number_col] if group_number_col else ''
+            standardized['Category'] = df[category_col] if category_col else ''
+            standardized['Agent Name'] = df[agent_name_col] if agent_name_col else ''
+            standardized['Work Date'] = df[work_date_col] if work_date_col else ''
+            standardized['Remark'] = df[remark_col] if remark_col else ''
+            standardized['Priority Status'] = df[priority_status_col] if priority_status_col else ''
+            standardized['QC Agent'] = df[qc_agent_col] if qc_agent_col else ''
+            standardized['QC Status'] = df[qc_status_col] if qc_status_col else ''
+            standardized['QC Comments'] = df[qc_comments_col] if qc_comments_col else ''
+            standardized['QC Date'] = df[qc_date_col] if qc_date_col else ''
+            
+            # Initialize Status column with empty values
+            standardized['Status'] = ''
+            
+            # Find Eligibility column and set Status based on its value
+            eligibility_col = find_col(['eligibility'])
+            print(f"DEBUG - Looking for Eligibility column. Found: {eligibility_col}")
+            print(f"DEBUG - Available columns in df: {list(df.columns)}")
+            
+            if eligibility_col:
+                output_lines.append(f"   Found Eligibility column: '{eligibility_col}'")
+                workable_count = 0
+                completed_count = 0
+                for idx in standardized.index:
+                    eligibility_val = df.loc[idx, eligibility_col] if eligibility_col and idx in df.index else None
+                    if pd.notna(eligibility_val):
+                        eligibility_str = str(eligibility_val).strip()
+                        print(f"DEBUG - Row {idx}: Eligibility value = '{eligibility_str}'")
+                        # Check for X marks (✗, x, û - encoded version)
+                        if '✗' in eligibility_str or 'x' in eligibility_str.lower() or 'û' in eligibility_str:
+                            standardized.at[idx, 'Status'] = 'Workable'
+                            workable_count += 1
+                        # Check for check marks (✓, √, ü - encoded version)
+                        elif '✓' in eligibility_str or '√' in eligibility_str or 'ü' in eligibility_str or 'check' in eligibility_str.lower():
+                            standardized.at[idx, 'Status'] = 'Completed'
+                            completed_count += 1
+                print(f"DEBUG - Status set: {workable_count} Workable, {completed_count} Completed")
+                output_lines.append(f"   ✅ Status column populated: {workable_count} Workable, {completed_count} Completed")
+            else:
+                output_lines.append(f"   ⚠️  Eligibility column not found - Status column will be empty")
+
+            # Step 10: Remove rows where Status is blank or "Completed"
+            rows_before_filter = len(standardized)
+            standardized = standardized[
+                (standardized['Status'].notna()) & 
+                (standardized['Status'].str.strip() != '') & 
+                (standardized['Status'] != 'Completed')
+            ]
+            rows_removed = rows_before_filter - len(standardized)
+            
+            if rows_removed > 0:
+                output_lines.append(f"   🗑️  Removed {rows_removed} row(s) with blank or 'Completed' status")
+                output_lines.append(f"   ✅ Kept {len(standardized)} row(s) with 'Workable' status")
+            
+            df = standardized
+
+            # Report which source columns were mapped
+            mapped_sources = []
+            for label, src in [
+                ('Office Name', office_col), ('Appointment Date', appt_date_col), ('Patient ID', patid_col), ('Patient Name', (last_name_col, first_name_col)),
+                ('Chart#', chart_col), ('Dental Primary Ins Carr', primary_ins_col), ('Dental Secondary Ins Carr', secondary_ins_col), ('Provider Name', provider_col),
+                ('Received date', received_date_col), ('Source', source_col), ('Type', type_col), ('Status Code', status_code_col), ('Comment', comment_col),
+                ('Group Number', group_number_col), ('Category', category_col), ('Agent Name', agent_name_col), ('Work Date', work_date_col), ('Remark', remark_col),
+                ('Priority Status', priority_status_col), ('QC Agent', qc_agent_col), ('QC Status', qc_status_col), ('QC Comments', qc_comments_col), ('QC Date', qc_date_col)
+            ]:
+                if isinstance(src, tuple):
+                    if any(s for s in src):
+                        mapped_sources.append(label)
+                elif src:
+                    mapped_sources.append(label)
+            output_lines.append(f"   ✅ Mapped {len(mapped_sources)}/{len(standard_columns)} column(s) from source data")
+
+            df = standardized
+
+            # Step 9: Show sample of standardized data
+            output_lines.append("")
+            sample_cols = df.columns.tolist()[:8]
+            if sample_cols:
+                sample_df = df[sample_cols].head(5)
+                output_lines.append("   Sample (first 5 rows):")
+                output_lines.append(sample_df.to_string(index=False))
+
+            output_lines.append("")
+            output_lines.append(f"   ✅ Final standardized shape: {df.shape[0]} rows × {df.shape[1]} columns")
+            output_lines.append(f"   Summary: Removed {blank_rows_removed + duplicate_headers_removed + summary_rows_removed} total unwanted rows")
+            output_lines.append("")
+
+            processed_sheets[sheet_name] = df
+        
+        output_lines.append("=" * 70)
+        output_lines.append("PROCESSING COMPLETE! FILE READY FOR DOWNLOAD")
+        output_lines.append("=" * 70)
+        
+        smart_assist_data = processed_sheets
+        smart_assist_filename = filename
+        smart_assist_output = "\n".join(output_lines)
+        
+        total_rows = sum(len(df) for df in processed_sheets.values())
+        sheets_count = len(processed_sheets)
+        smart_assist_result = f"✅ Processing complete! Formatted {sheets_count} sheet(s) with {total_rows} total rows. All sections combined, blank rows removed, and headers consolidated."
+        
+        return redirect('/comparison?tab=smartassist')
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        smart_assist_result = f"❌ Error processing file: {str(e)}"
+        smart_assist_output = f"Error: {str(e)}\n\nDetails:\n{error_details}"
+        return redirect('/comparison?tab=smartassist')
+
+@app.route('/download_smart_assist', methods=['POST'])
+def download_smart_assist():
+    global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
+    
+    if not smart_assist_data:
+        return jsonify({'error': 'No data to download'}), 400
+    
+    filename = request.form.get('filename', '').strip()
+    if not filename:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"formatted_smart_assist_{timestamp}.xlsx"
+    
+    try:
+        import tempfile
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
+        
+        try:
+            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+                for sheet_name, df in smart_assist_data.items():
+                    df_clean = df.copy()
+                    
+                    # Format date columns
+                    for col in df_clean.columns:
+                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        if 'date' in col_lower or 'time' in col_lower:
+                            def format_date(date_val):
+                                if pd.isna(date_val) or date_val == '':
+                                    return ''
+                                try:
+                                    if isinstance(date_val, pd.Timestamp):
+                                        date_obj = date_val
+                                    elif isinstance(date_val, str):
+                                        date_obj = pd.to_datetime(date_val, errors='coerce')
+                                        if pd.isna(date_obj):
+                                            return str(date_val)
+                                    else:
+                                        date_obj = pd.to_datetime(date_val, errors='coerce')
+                                        if pd.isna(date_obj):
+                                            return str(date_val)
+                                    return date_obj.strftime('%m/%d/%Y')
+                                except (ValueError, TypeError, AttributeError):
+                                    return str(date_val)
+                            
+                            df_clean[col] = df_clean[col].apply(format_date)
+                            df_clean[col] = df_clean[col].astype(str)
+                    
+                    df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
+                    
+                    # Set date column format to text
+                    ws = writer.sheets[sheet_name]
+                    for col in df_clean.columns:
+                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        if 'date' in col_lower or 'time' in col_lower:
+                            col_idx = None
+                            for idx, col_name in enumerate(df_clean.columns, 1):
+                                if col_name == col:
+                                    col_idx = idx
+                                    break
+                            
+                            if col_idx:
+                                for row in range(2, ws.max_row + 1):
+                                    cell = ws.cell(row=row, column=col_idx)
+                                    if cell.value:
+                                        cell.number_format = '@'
+            
+            smart_assist_data = None
+            smart_assist_filename = None
+            smart_assist_result = None
+            smart_assist_output = ""
+            
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+            
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/reset_smart_assist', methods=['POST'])
+def reset_smart_assist():
+    global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
+    
+    try:
+        smart_assist_data = None
+        smart_assist_filename = None
+        smart_assist_result = "🔄 Smart assist report formatting tool reset successfully! All files and data have been cleared."
+        smart_assist_output = ""
+        
+        return redirect('/comparison?tab=smartassist')
+        
+    except Exception as e:
+        smart_assist_result = f"❌ Error resetting smart assist report formatting tool: {str(e)}"
+        return redirect('/comparison?tab=smartassist')
 
 if __name__ == '__main__':
     import os
