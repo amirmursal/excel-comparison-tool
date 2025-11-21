@@ -40,6 +40,12 @@ remarks_remarks_filename = None
 remarks_result = None
 remarks_updated_count = 0
 
+# Global variables for appointment report formatting
+appointment_report_data = None
+appointment_report_filename = None
+appointment_report_result = None
+appointment_report_output = ""
+
 # HTML Template for Excel Comparison
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -403,6 +409,7 @@ HTML_TEMPLATE = """
                 <button class="tab {% if active_tab == 'conversion' %}active{% endif %}" id="conversion-tab-btn" onclick="switchTab('conversion')">📋 Conversion Report Formatting</button>
                 <button class="tab {% if active_tab == 'insurance' %}active{% endif %}" id="insurance-tab-btn" onclick="switchTab('insurance')">🦷 Insurance Name Formatting</button>
                 <button class="tab {% if active_tab == 'remarks' %}active{% endif %}" id="remarks-tab-btn" onclick="switchTab('remarks')">📝 Update Remarks</button>
+                <button class="tab {% if active_tab == 'appointment' %}active{% endif %}" id="appointment-tab-btn" onclick="switchTab('appointment')">📅 Appointment Report Formatting</button>
             </div>
 
             <!-- Tab 1: Comparison Tool -->
@@ -808,6 +815,87 @@ HTML_TEMPLATE = """
                     </form>
                 </div>
             </div>
+
+            <!-- Tab 5: Appointment Report Formatting -->
+            <div id="appointment-tab" class="tab-content {% if active_tab == 'appointment' %}active{% endif %}">
+                <div class="section">
+                    <h3>📅 Appointment Report Formatting</h3>
+                    <p>Upload an Appointment Report Excel file to automatically format insurance names in "Dental Primary Ins Carr" and "Dental Secondary Ins Carr" columns.</p>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="section">
+                    <h3>📁 Upload Excel File</h3>
+                    <form action="/upload_appointment_report" method="post" enctype="multipart/form-data" id="appointment-form">
+                        <div class="form-group">
+                            <label for="appointment_file">Select Appointment Report Excel File (.xlsx, .xls):</label>
+                            <input type="file" id="appointment_file" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" id="appointment-btn">📤 Upload & Format File</button>
+                    </form>
+                    <div class="loading" id="appointment-loading">
+                        <div class="spinner"></div>
+                        <p>Processing and formatting insurance columns...</p>
+                    </div>
+                </div>
+
+                <!-- Status Messages -->
+                {% if appointment_report_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ appointment_report_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- File Status -->
+                {% if appointment_report_filename %}
+                <div class="section">
+                    <h3>📊 File Status</h3>
+                    <div class="file-status">
+                        <div class="status-success">
+                            ✅ File loaded: {{ appointment_report_filename }}<br>
+                            📋 Sheets processed: {{ appointment_report_data.keys() | list | length if appointment_report_data else 0 }}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Processing Output -->
+                {% if appointment_report_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ appointment_report_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if appointment_report_data and appointment_report_result and 'processing complete' in appointment_report_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Formatted File</h3>
+                    <form action="/download_appointment_report" method="post">
+                        <div class="form-group">
+                            <label for="appointment_output_filename">Output filename (optional):</label>
+                            <input type="text" id="appointment_output_filename" name="filename" 
+                                   placeholder="formatted_appointment_report.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Formatted File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Appointment Report Tool</h3>
+                    <p>Clear all uploaded files and reset the appointment report formatting tool to start fresh.</p>
+                    <form action="/reset_appointment_report" method="post" onsubmit="return confirm('Are you sure you want to reset the appointment report formatting tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Appointment Report Tool</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -889,7 +977,8 @@ HTML_TEMPLATE = """
                             if ((tabName === 'comparison' && tabText.includes('comparison')) ||
                                 (tabName === 'conversion' && tabText.includes('conversion')) ||
                                 (tabName === 'insurance' && tabText.includes('insurance')) ||
-                                (tabName === 'remarks' && tabText.includes('remarks'))) {
+                                (tabName === 'remarks' && tabText.includes('remarks')) ||
+                                (tabName === 'appointment' && tabText.includes('appointment'))) {
                                 tab.classList.add('active');
                             }
                         }
@@ -958,6 +1047,15 @@ HTML_TEMPLATE = """
             });
         }
 
+        // Appointment report form submission
+        const appointmentForm = document.getElementById('appointment-form');
+        if (appointmentForm) {
+            appointmentForm.addEventListener('submit', function() {
+                showProcessingModal('Formatting Insurance Columns', 'Processing file and formatting insurance names');
+                document.getElementById('appointment-btn').disabled = true;
+            });
+        }
+
         // Reset forms - show modal when form is submitted (HTML confirm already handled)
         const resetForms = document.querySelectorAll('form[action*="reset"]');
         resetForms.forEach(form => {
@@ -989,6 +1087,8 @@ HTML_TEMPLATE = """
                 switchTab('insurance', true); // Skip URL update on page load
             } else if (activeTab === 'remarks') {
                 switchTab('remarks', true); // Skip URL update on page load
+            } else if (activeTab === 'appointment') {
+                switchTab('appointment', true); // Skip URL update on page load
             } else if (activeTab === 'comparison') {
                 switchTab('comparison', true); // Skip URL update on page load
             }
@@ -1589,6 +1689,7 @@ def comparison_index():
     global conversion_data, conversion_filename, conversion_result
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
+    global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
     
     # Get the active tab from URL parameter
     active_tab = request.args.get('tab', 'comparison')
@@ -1612,6 +1713,10 @@ def comparison_index():
                                 remarks_remarks_filename=remarks_remarks_filename,
                                 remarks_result=remarks_result,
                                 remarks_updated_count=remarks_updated_count,
+                                appointment_report_data=appointment_report_data,
+                                appointment_report_filename=appointment_report_filename,
+                                appointment_report_result=appointment_report_result,
+                                appointment_report_output=appointment_report_output,
                                 active_tab=active_tab)
 
 @app.route('/upload_raw', methods=['POST'])
@@ -2994,6 +3099,7 @@ def reset_app():
     global conversion_data, conversion_filename, conversion_result
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
+    global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
     
     try:
         # Reset all global variables
@@ -3022,11 +3128,285 @@ def reset_app():
         remarks_result = None
         remarks_updated_count = 0
         
+        # Reset appointment report data
+        appointment_report_data = None
+        appointment_report_filename = None
+        appointment_report_result = None
+        appointment_report_output = ""
+        
         return redirect('/comparison')
         
     except Exception as e:
         comparison_result = f"❌ Error resetting application: {str(e)}"
         return redirect('/comparison')
+
+@app.route('/upload_appointment_report', methods=['POST'])
+def upload_appointment_report():
+    global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
+    
+    if 'file' not in request.files:
+        appointment_report_result = "❌ Error: No file provided"
+        return redirect('/comparison?tab=appointment')
+    
+    file = request.files['file']
+    if file.filename == '':
+        appointment_report_result = "❌ Error: No file selected"
+        return redirect('/comparison?tab=appointment')
+    
+    try:
+        # Get filename without saving to disk
+        filename = secure_filename(file.filename)
+        
+        # Read Excel file directly from memory (no disk storage)
+        file.seek(0)  # Reset file pointer to beginning
+        excel_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
+        
+        # Remove "Unnamed:" columns from all sheets
+        cleaned_data = {}
+        for sheet_name, df in excel_data.items():
+            # Convert column names to strings first, then remove columns that start with "Unnamed:"
+            df.columns = df.columns.astype(str)
+            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            cleaned_data[sheet_name] = df_cleaned
+        
+        # Process all sheets - format both Primary and Secondary insurance columns
+        processed_sheets = {}
+        total_rows_processed = 0
+        output_lines = []
+        output_lines.append("=" * 70)
+        output_lines.append("PROCESSING APPOINTMENT REPORT - FORMATTING INSURANCE COLUMNS")
+        output_lines.append("=" * 70)
+        output_lines.append("")
+        
+        for sheet_name, df in cleaned_data.items():
+            output_lines.append(f"📋 Processing sheet: {sheet_name}")
+            output_lines.append(f"   Original shape: {df.shape[0]} rows × {df.shape[1]} columns")
+            
+            # Find the Patient ID column (case-insensitive search)
+            patient_id_col = None
+            for col in df.columns:
+                col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                if ('patient' in col_lower or 'pat' in col_lower) and 'id' in col_lower:
+                    patient_id_col = col
+                    break
+            
+            # Find the insurance columns (case-insensitive search)
+            primary_col = None
+            secondary_col = None
+            
+            for col in df.columns:
+                col_lower = col.lower().strip()
+                if 'dental' in col_lower and 'primary' in col_lower and 'ins' in col_lower:
+                    primary_col = col
+                elif 'dental' in col_lower and 'secondary' in col_lower and 'ins' in col_lower:
+                    secondary_col = col
+            
+            df_processed = df.copy()
+            formatted_primary = 0
+            formatted_secondary = 0
+            
+            if primary_col:
+                # Format primary insurance column
+                df_processed[primary_col] = df_processed[primary_col].apply(format_insurance_name)
+                formatted_primary = df_processed[primary_col].notna().sum()
+                output_lines.append(f"   ✅ Formatted '{primary_col}' column ({formatted_primary} entries)")
+            else:
+                output_lines.append(f"   ⚠️  'Dental Primary Ins Carr' column not found")
+            
+            if secondary_col:
+                # Format secondary insurance column
+                df_processed[secondary_col] = df_processed[secondary_col].apply(format_insurance_name)
+                formatted_secondary = df_processed[secondary_col].notna().sum()
+                output_lines.append(f"   ✅ Formatted '{secondary_col}' column ({formatted_secondary} entries)")
+            else:
+                output_lines.append(f"   ⚠️  'Dental Secondary Ins Carr' column not found")
+            
+            # Handle duplicate Patient IDs
+            duplicates_removed = 0
+            if patient_id_col and primary_col:
+                output_lines.append("")
+                output_lines.append(f"   🔍 Checking for duplicate Patient IDs...")
+                
+                # Normalize Patient IDs for comparison
+                df_processed['_normalized_patient_id'] = df_processed[patient_id_col].apply(normalize_patient_id)
+                
+                # Find duplicates
+                rows_before = len(df_processed)
+                
+                # Group by normalized Patient ID and Primary Insurance
+                # Keep only first occurrence when Patient ID + Primary Insurance are the same
+                df_processed = df_processed.drop_duplicates(
+                    subset=['_normalized_patient_id', primary_col], 
+                    keep='first'
+                )
+                
+                # Remove the temporary normalized column
+                df_processed = df_processed.drop(columns=['_normalized_patient_id'])
+                
+                rows_after = len(df_processed)
+                duplicates_removed = rows_before - rows_after
+                
+                if duplicates_removed > 0:
+                    output_lines.append(f"   ✅ Removed {duplicates_removed} duplicate record(s) with same Patient ID and same insurance")
+                    output_lines.append(f"   ℹ️  Kept records with same Patient ID but different insurance names")
+                else:
+                    output_lines.append(f"   ℹ️  No duplicates found (or all duplicates have different insurance)")
+            elif patient_id_col:
+                output_lines.append(f"   ⚠️  Cannot check duplicates: Primary insurance column not found")
+            else:
+                output_lines.append(f"   ⚠️  Cannot check duplicates: Patient ID column not found")
+            
+            # Show sample if columns were found
+            if primary_col or secondary_col:
+                output_lines.append("")
+                sample_cols = []
+                if patient_id_col:
+                    sample_cols.append(patient_id_col)
+                if primary_col:
+                    sample_cols.append(primary_col)
+                if secondary_col:
+                    sample_cols.append(secondary_col)
+                
+                sample_df = df_processed[sample_cols].head(5)
+                output_lines.append(f"   Sample of formatted data (first 5 rows):")
+                output_lines.append(sample_df.to_string(index=False))
+            
+            processed_sheets[sheet_name] = df_processed
+            total_rows_processed += len(df_processed)
+            output_lines.append("")
+            output_lines.append(f"   Final shape: {df_processed.shape[0]} rows × {df_processed.shape[1]} columns")
+            output_lines.append("")
+        
+        output_lines.append("=" * 70)
+        output_lines.append("PROCESSING COMPLETE!")
+        output_lines.append("=" * 70)
+        
+        # Update global variables
+        appointment_report_data = processed_sheets
+        appointment_report_filename = filename
+        appointment_report_output = "\n".join(output_lines)
+        
+        # Count sheets processed
+        sheets_count = len(processed_sheets)
+        appointment_report_result = f"✅ Processing complete! Formatted insurance columns in {sheets_count} sheet(s). Total rows processed: {total_rows_processed}"
+        
+        return redirect('/comparison?tab=appointment')
+        
+    except Exception as e:
+        appointment_report_result = f"❌ Error processing file: {str(e)}"
+        appointment_report_output = f"Error: {str(e)}"
+        return redirect('/comparison?tab=appointment')
+
+@app.route('/download_appointment_report', methods=['POST'])
+def download_appointment_report():
+    global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
+    
+    if not appointment_report_data:
+        return jsonify({'error': 'No data to download'}), 400
+    
+    filename = request.form.get('filename', '').strip()
+    if not filename:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"formatted_appointment_report_{timestamp}.xlsx"
+    
+    try:
+        # Create a temporary file
+        import tempfile
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
+        
+        try:
+            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+                for sheet_name, df in appointment_report_data.items():
+                    df_clean = df.copy()
+                    
+                    # Format date columns to MM/DD/YYYY format (flexible column name search)
+                    for col in df_clean.columns:
+                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        # Check for date columns
+                        if 'date' in col_lower or 'time' in col_lower:
+                            # Convert dates to MM/DD/YYYY format
+                            def format_date(date_val):
+                                if pd.isna(date_val) or date_val == '':
+                                    return ''
+                                try:
+                                    # Convert to datetime if not already
+                                    if isinstance(date_val, pd.Timestamp):
+                                        date_obj = date_val
+                                    elif isinstance(date_val, str):
+                                        # Try to parse string date
+                                        date_obj = pd.to_datetime(date_val, errors='coerce')
+                                        if pd.isna(date_obj):
+                                            return str(date_val)  # Return original if can't parse
+                                    else:
+                                        date_obj = pd.to_datetime(date_val, errors='coerce')
+                                        if pd.isna(date_obj):
+                                            return str(date_val)  # Return original if can't parse
+                                    
+                                    # Format as MM/DD/YYYY
+                                    return date_obj.strftime('%m/%d/%Y')
+                                except (ValueError, TypeError, AttributeError):
+                                    # If parsing fails, return as-is
+                                    return str(date_val)
+                            
+                            # Format dates and convert column to string type to prevent Excel auto-formatting
+                            df_clean[col] = df_clean[col].apply(format_date)
+                            df_clean[col] = df_clean[col].astype(str)
+                    
+                    df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
+                    
+                    # Set date column format to text in Excel to preserve MM/DD/YYYY format
+                    ws = writer.sheets[sheet_name]
+                    for col in df_clean.columns:
+                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        if 'date' in col_lower or 'time' in col_lower:
+                            # Find the column index
+                            col_idx = None
+                            for idx, col_name in enumerate(df_clean.columns, 1):
+                                if col_name == col:
+                                    col_idx = idx
+                                    break
+                            
+                            if col_idx:
+                                # Set all cells in this column to text format
+                                for row in range(2, ws.max_row + 1):
+                                    cell = ws.cell(row=row, column=col_idx)
+                                    if cell.value:
+                                        cell.number_format = '@'  # Text format
+            
+            # Clear data after successful download
+            appointment_report_data = None
+            appointment_report_filename = None
+            appointment_report_result = None
+            appointment_report_output = ""
+            
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+            
+        finally:
+            # Clean up temporary file
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/reset_appointment_report', methods=['POST'])
+def reset_appointment_report():
+    global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
+    # Explicitly do NOT touch other tool variables
+    
+    try:
+        # Reset ONLY appointment report tool variables
+        appointment_report_data = None
+        appointment_report_filename = None
+        appointment_report_result = "🔄 Appointment report formatting tool reset successfully! All files and data have been cleared."
+        appointment_report_output = ""
+        
+        return redirect('/comparison?tab=appointment')
+        
+    except Exception as e:
+        appointment_report_result = f"❌ Error resetting appointment report formatting tool: {str(e)}"
+        return redirect('/comparison?tab=appointment')
 
 if __name__ == '__main__':
     import os
