@@ -3937,7 +3937,7 @@ def upload_smart_assist():
                 'Office Name','Appointment Date','Patient ID','Patient Name','Chart#',
                 'Dental Primary Ins Carr','Dental Secondary Ins Carr','Provider Name','Received date','Source',
                 'Type','Status Code','Comment','Group Number','Category','Agent Name','Work Date','Remark',
-                'Priority Status','QC Agent','QC Status','QC Comments','QC Date','Status'
+                'Priority Status','QC Agent','QC Status','QC Comments','QC Date'
             ]
             output_lines.append(f"   Standardizing to {len(standard_columns)} predefined column(s)")
 
@@ -3995,7 +3995,23 @@ def upload_smart_assist():
             standardized['Source'] = df[source_col] if source_col else ''
             standardized['Type'] = df[type_col] if type_col else ''
             standardized['Status Code'] = df[status_code_col] if status_code_col else ''
-            standardized['Comment'] = df[comment_col] if comment_col else ''
+            
+            # Clean Comment column - remove special characters
+            if comment_col:
+                def clean_comment(text):
+                    if pd.isna(text) or text == '':
+                        return ''
+                    text_str = str(text)
+                    # Remove non-printable characters and keep only standard ASCII and common punctuation
+                    import re
+                    # Keep letters, numbers, spaces, and common punctuation
+                    cleaned = re.sub(r'[^\x20-\x7E\n\r\t]', '', text_str)
+                    return cleaned.strip()
+                
+                standardized['Comment'] = df[comment_col].apply(clean_comment)
+            else:
+                standardized['Comment'] = ''
+            
             standardized['Group Number'] = df[group_number_col] if group_number_col else ''
             standardized['Category'] = df[category_col] if category_col else ''
             standardized['Agent Name'] = df[agent_name_col] if agent_name_col else ''
@@ -4007,13 +4023,13 @@ def upload_smart_assist():
             standardized['QC Comments'] = df[qc_comments_col] if qc_comments_col else ''
             standardized['QC Date'] = df[qc_date_col] if qc_date_col else ''
             
-            # Initialize Status column with empty values
-            standardized['Status'] = ''
-            
-            # Find Eligibility column and set Status based on its value
+            # Find Eligibility column and set Remark based on its value
             eligibility_col = find_col(['eligibility'])
             print(f"DEBUG - Looking for Eligibility column. Found: {eligibility_col}")
             print(f"DEBUG - Available columns in df: {list(df.columns)}")
+            
+            # Create a temporary status column for filtering
+            temp_status = pd.Series('', index=standardized.index)
             
             if eligibility_col:
                 output_lines.append(f"   Found Eligibility column: '{eligibility_col}'")
@@ -4026,29 +4042,27 @@ def upload_smart_assist():
                         print(f"DEBUG - Row {idx}: Eligibility value = '{eligibility_str}'")
                         # Check for X marks (✗, x, û - encoded version)
                         if '✗' in eligibility_str or 'x' in eligibility_str.lower() or 'û' in eligibility_str:
-                            standardized.at[idx, 'Status'] = 'Workable'
+                            standardized.at[idx, 'Remark'] = 'Workable'
+                            temp_status.at[idx] = 'Workable'
                             workable_count += 1
                         # Check for check marks (✓, √, ü - encoded version)
                         elif '✓' in eligibility_str or '√' in eligibility_str or 'ü' in eligibility_str or 'check' in eligibility_str.lower():
-                            standardized.at[idx, 'Status'] = 'Completed'
+                            temp_status.at[idx] = 'Completed'
                             completed_count += 1
-                print(f"DEBUG - Status set: {workable_count} Workable, {completed_count} Completed")
-                output_lines.append(f"   ✅ Status column populated: {workable_count} Workable, {completed_count} Completed")
+                print(f"DEBUG - Remark set: {workable_count} Workable, {completed_count} Completed")
+                output_lines.append(f"   ✅ Remark column populated: {workable_count} Workable rows")
             else:
-                output_lines.append(f"   ⚠️  Eligibility column not found - Status column will be empty")
+                output_lines.append(f"   ⚠️  Eligibility column not found - Remark column will be empty")
 
-            # Step 10: Remove rows where Status is blank or "Completed"
+            # Filter: Remove rows where temp_status is blank or "Completed" (keep only Workable)
             rows_before_filter = len(standardized)
-            standardized = standardized[
-                (standardized['Status'].notna()) & 
-                (standardized['Status'].str.strip() != '') & 
-                (standardized['Status'] != 'Completed')
-            ]
+            keep_mask = (temp_status == 'Workable')
+            standardized = standardized[keep_mask]
             rows_removed = rows_before_filter - len(standardized)
             
             if rows_removed > 0:
-                output_lines.append(f"   🗑️  Removed {rows_removed} row(s) with blank or 'Completed' status")
-                output_lines.append(f"   ✅ Kept {len(standardized)} row(s) with 'Workable' status")
+                output_lines.append(f"   🗑️  Removed {rows_removed} row(s) with blank or 'Completed' eligibility")
+                output_lines.append(f"   ✅ Kept {len(standardized)} row(s) with 'Workable' in Remark")
             
             df = standardized
 
