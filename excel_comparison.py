@@ -1809,10 +1809,19 @@ def compare_patient_names(raw_df, previous_df):
                     raw_patient_col = col
                     break
         
-        # Find PATID in previous file (Smart Assist)
-        previous_patient_col = find_column(previous_columns, ['PATID', 'PatID', 'patid', 'PAT ID'])
+        # Find PATID in previous file (Smart Assist) - now also checking for "Patient ID"
+        previous_patient_col = find_column(previous_columns, ['PATID', 'PatID', 'patid', 'PAT ID', 'Patient ID', 'PatientID', 'patient id'])
         if not previous_patient_col:
-            return f"❌ Error: 'PATID' column not found in Smart Assist file.\nAvailable columns: {previous_columns}", None
+            # Try flexible search as fallback
+            for col in previous_columns:
+                col_lower = col.lower().strip()
+                if ('patid' in col_lower or 'pat id' in col_lower or 
+                    ('patient' in col_lower and 'id' in col_lower)):
+                    previous_patient_col = col
+                    break
+        
+        if not previous_patient_col:
+            return f"❌ Error: 'PATID' or 'Patient ID' column not found in Smart Assist file.\nAvailable columns: {previous_columns}", None
         
         # Find insurance columns in Smart Assist file, or create them if missing
         primary_ins_col = find_column(previous_columns, ['Dental Primary Ins Carr', 'DentalPrimaryInsCarr', 'Dental Primary Insurance Carrier'])
