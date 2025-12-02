@@ -12,7 +12,7 @@ from werkzeug.utils import secure_filename
 import re
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max file size
 
 # Global variables to store session data
 raw_data = None
@@ -1442,87 +1442,133 @@ HTML_TEMPLATE = """
 
 # State abbreviations mapping
 STATE_ABBREVIATIONS = {
-    'AL': 'Alabama', 'AK': 'Alaska', 'AR': 'Arkansas', 'AZ': 'Arizona',
-    'CA': 'California', 'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware',
-    'DC': 'District of Columbia', 'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii',
-    'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
-    'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine',
-    'MD': 'Maryland', 'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota',
-    'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska',
-    'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico',
-    'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
-    'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island',
-    'SC': 'South Carolina', 'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas',
-    'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
-    'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
+    "AL": "Alabama",
+    "AK": "Alaska",
+    "AR": "Arkansas",
+    "AZ": "Arizona",
+    "CA": "California",
+    "CO": "Colorado",
+    "CT": "Connecticut",
+    "DE": "Delaware",
+    "DC": "District of Columbia",
+    "FL": "Florida",
+    "GA": "Georgia",
+    "HI": "Hawaii",
+    "ID": "Idaho",
+    "IL": "Illinois",
+    "IN": "Indiana",
+    "IA": "Iowa",
+    "KS": "Kansas",
+    "KY": "Kentucky",
+    "LA": "Louisiana",
+    "ME": "Maine",
+    "MD": "Maryland",
+    "MA": "Massachusetts",
+    "MI": "Michigan",
+    "MN": "Minnesota",
+    "MS": "Mississippi",
+    "MO": "Missouri",
+    "MT": "Montana",
+    "NE": "Nebraska",
+    "NV": "Nevada",
+    "NH": "New Hampshire",
+    "NJ": "New Jersey",
+    "NM": "New Mexico",
+    "NY": "New York",
+    "NC": "North Carolina",
+    "ND": "North Dakota",
+    "OH": "Ohio",
+    "OK": "Oklahoma",
+    "OR": "Oregon",
+    "PA": "Pennsylvania",
+    "RI": "Rhode Island",
+    "SC": "South Carolina",
+    "SD": "South Dakota",
+    "TN": "Tennessee",
+    "TX": "Texas",
+    "UT": "Utah",
+    "VT": "Vermont",
+    "VA": "Virginia",
+    "WA": "Washington",
+    "WV": "West Virginia",
+    "WI": "Wisconsin",
+    "WY": "Wyoming",
 }
+
 
 def expand_state_abbreviations(text):
     """Expand state abbreviations to full state names - only if the entire text is an abbreviation"""
     if pd.isna(text):
         return text
-    
+
     text_str = str(text).strip()
-    
+
     # Check if the entire text (case-insensitive) is a state abbreviation
     # Only expand if it's exactly an abbreviation, not if abbreviation appears within a longer word
     text_upper = text_str.upper()
     if text_upper in STATE_ABBREVIATIONS:
         return STATE_ABBREVIATIONS[text_upper]
-    
+
     # If not a direct match, return the original text unchanged
     # This preserves full state names like "Arizona", "Minnesota", etc.
     return text_str
+
 
 def format_insurance_name(insurance_text):
     """Format insurance name to match expected format"""
     if pd.isna(insurance_text):
         return insurance_text
-    
+
     insurance_str = str(insurance_text).strip()
-    
+
     # Handle special cases first
-    if insurance_str.upper() == 'NO INSURANCE':
-        return 'No Insurance'
-    elif insurance_str.upper() == 'PATIENT NOT FOUND':
-        return 'PATIENT NOT FOUND'
-    elif insurance_str.upper() == 'DUPLICATE':
-        return 'DUPLICATE'
-    elif re.search(r'no\s+patient\s+chart', insurance_str, re.IGNORECASE):
-        return 'No Patient chart'
-    
+    if insurance_str.upper() == "NO INSURANCE":
+        return "No Insurance"
+    elif insurance_str.upper() == "PATIENT NOT FOUND":
+        return "PATIENT NOT FOUND"
+    elif insurance_str.upper() == "DUPLICATE":
+        return "DUPLICATE"
+    elif re.search(r"no\s+patient\s+chart", insurance_str, re.IGNORECASE):
+        return "No Patient chart"
+
     # Extract company name before "Ph#"
     if "Ph#" in insurance_str:
         company_name = insurance_str.split("Ph#")[0].strip()
     else:
         company_name = insurance_str
-    
+
     # Remove "Primary" and "Secondary" text
-    company_name = re.sub(r'\s*\(Primary\)', '', company_name, flags=re.IGNORECASE)
-    company_name = re.sub(r'\s*\(Secondary\)', '', company_name, flags=re.IGNORECASE)
-    company_name = re.sub(r'\s*Primary', '', company_name, flags=re.IGNORECASE)
-    company_name = re.sub(r'\s*Secondary', '', company_name, flags=re.IGNORECASE)
-    
+    company_name = re.sub(r"\s*\(Primary\)", "", company_name, flags=re.IGNORECASE)
+    company_name = re.sub(r"\s*\(Secondary\)", "", company_name, flags=re.IGNORECASE)
+    company_name = re.sub(r"\s*Primary", "", company_name, flags=re.IGNORECASE)
+    company_name = re.sub(r"\s*Secondary", "", company_name, flags=re.IGNORECASE)
+
     # If already formatted as "DD [State]", preserve it (don't reformat)
-    if re.match(r'^dd\s+', company_name, re.IGNORECASE):
+    if re.match(r"^dd\s+", company_name, re.IGNORECASE):
         # Extract the state part
-        state_part = re.sub(r'^dd\s+', '', company_name, flags=re.IGNORECASE).strip()
+        state_part = re.sub(r"^dd\s+", "", company_name, flags=re.IGNORECASE).strip()
         # Remove any trailing text (like "Ph#")
-        state_part = re.split(r'\s*[,\|;]\s*|\s+Ph#', state_part, flags=re.IGNORECASE)[0].strip()
+        state_part = re.split(r"\s*[,\|;]\s*|\s+Ph#", state_part, flags=re.IGNORECASE)[
+            0
+        ].strip()
         # Capitalize properly (Title Case) if not already uppercase
         if state_part and not state_part.isupper():
             state_part = state_part.title()
         return f"DD {state_part}"
-    
+
     # Handle Delta Dental variations
-    if re.search(r'delta\s+dental', company_name, re.IGNORECASE):
+    if re.search(r"delta\s+dental", company_name, re.IGNORECASE):
         # Extract state from Delta Dental - handles "Delta Dental Arizona", "Delta Dental of Arizona", etc.
-        delta_match = re.search(r'delta\s+dental\s+(?:of\s+)?(.+)', company_name, re.IGNORECASE)
+        delta_match = re.search(
+            r"delta\s+dental\s+(?:of\s+)?(.+)", company_name, re.IGNORECASE
+        )
         if delta_match:
             state = delta_match.group(1).strip()
             # Remove any trailing text after state (like "Ph#" or other info)
             # Split on common separators and take first part
-            state = re.split(r'\s*[,\|;]\s*|\s+Ph#', state, flags=re.IGNORECASE)[0].strip()
+            state = re.split(r"\s*[,\|;]\s*|\s+Ph#", state, flags=re.IGNORECASE)[
+                0
+            ].strip()
             # Expand state abbreviations (e.g., "AZ" -> "Arizona")
             state = expand_state_abbreviations(state)
             # Capitalize properly (Title Case)
@@ -1531,17 +1577,27 @@ def format_insurance_name(insurance_text):
             return f"DD {state}"
         else:
             return "DD"
-    
+
     # Handle Anthem variations FIRST (before BCBS to avoid conflicts)
-    if re.search(r'anthem|blue\s+cross.*anthem|anthem.*blue\s+cross', company_name, re.IGNORECASE):
+    if re.search(
+        r"anthem|blue\s+cross.*anthem|anthem.*blue\s+cross", company_name, re.IGNORECASE
+    ):
         return "Anthem"
-    
+
     # Handle BCBS variations
-    elif re.search(r'bcbs|bc/bs|bc\s+of|blue\s+cross|blue\s+shield|bcbbs', company_name, re.IGNORECASE):
+    elif re.search(
+        r"bcbs|bc/bs|bc\s+of|blue\s+cross|blue\s+shield|bcbbs",
+        company_name,
+        re.IGNORECASE,
+    ):
         # Check for full "Blue Cross Blue Shield" pattern first
-        if re.search(r'blue\s+cross\s+blue\s+shield', company_name, re.IGNORECASE):
+        if re.search(r"blue\s+cross\s+blue\s+shield", company_name, re.IGNORECASE):
             # Extract state from "Blue Cross Blue Shield of [State]"
-            bcbs_match = re.search(r'blue\s+cross\s+blue\s+shield\s+(?:of\s+)?(.+)', company_name, re.IGNORECASE)
+            bcbs_match = re.search(
+                r"blue\s+cross\s+blue\s+shield\s+(?:of\s+)?(.+)",
+                company_name,
+                re.IGNORECASE,
+            )
             if bcbs_match:
                 state = bcbs_match.group(1).strip()
                 # Expand state abbreviations
@@ -1550,8 +1606,10 @@ def format_insurance_name(insurance_text):
             else:
                 return "BCBS"
         # Handle BC/BS patterns
-        elif re.search(r'bc/bs', company_name, re.IGNORECASE):
-            bcbs_match = re.search(r'bc/bs\s+(?:of\s+)?(.+)', company_name, re.IGNORECASE)
+        elif re.search(r"bc/bs", company_name, re.IGNORECASE):
+            bcbs_match = re.search(
+                r"bc/bs\s+(?:of\s+)?(.+)", company_name, re.IGNORECASE
+            )
             if bcbs_match:
                 state = bcbs_match.group(1).strip()
                 # Expand state abbreviations
@@ -1560,8 +1618,8 @@ def format_insurance_name(insurance_text):
             else:
                 return "BCBS"
         # Handle BC Of patterns
-        elif re.search(r'bc\s+of', company_name, re.IGNORECASE):
-            bcbs_match = re.search(r'bc\s+of\s+(.+)', company_name, re.IGNORECASE)
+        elif re.search(r"bc\s+of", company_name, re.IGNORECASE):
+            bcbs_match = re.search(r"bc\s+of\s+(.+)", company_name, re.IGNORECASE)
             if bcbs_match:
                 state = bcbs_match.group(1).strip()
                 # Expand state abbreviations
@@ -1570,11 +1628,15 @@ def format_insurance_name(insurance_text):
             else:
                 return "BCBS"
         # Handle BCBBS typo
-        elif re.search(r'bcbbs', company_name, re.IGNORECASE):
+        elif re.search(r"bcbbs", company_name, re.IGNORECASE):
             return "BCBS"
         # Handle other BCBS patterns
         else:
-            bcbs_match = re.search(r'(?:bcbs|blue\s+cross|blue\s+shield)\s+(?:of\s+)?(.+)', company_name, re.IGNORECASE)
+            bcbs_match = re.search(
+                r"(?:bcbs|blue\s+cross|blue\s+shield)\s+(?:of\s+)?(.+)",
+                company_name,
+                re.IGNORECASE,
+            )
             if bcbs_match:
                 state = bcbs_match.group(1).strip()
                 # Expand state abbreviations
@@ -1582,194 +1644,217 @@ def format_insurance_name(insurance_text):
                 return f"BCBS {state}"
             else:
                 return "BCBS"
-    
+
     # Handle other specific companies
-    elif re.search(r'metlife|met\s+life', company_name, re.IGNORECASE):
+    elif re.search(r"metlife|met\s+life", company_name, re.IGNORECASE):
         return "Metlife"
-    elif re.search(r'cigna', company_name, re.IGNORECASE):
+    elif re.search(r"cigna", company_name, re.IGNORECASE):
         return "Cigna"
-    elif re.search(r'aarp', company_name, re.IGNORECASE):
+    elif re.search(r"aarp", company_name, re.IGNORECASE):
         return "AARP"
-    elif re.search(r'adn\s+administrators', company_name, re.IGNORECASE):
+    elif re.search(r"adn\s+administrators", company_name, re.IGNORECASE):
         return "ADN Administrators"
-    elif re.search(r'beam', company_name, re.IGNORECASE):
+    elif re.search(r"beam", company_name, re.IGNORECASE):
         return "Beam"
-    elif re.search(r'uhc|united.*health|united.*heal|unitedhelathcare', company_name, re.IGNORECASE):
+    elif re.search(
+        r"uhc|united.*health|united.*heal|unitedhelathcare", company_name, re.IGNORECASE
+    ):
         return "UHC"
-    elif re.search(r'teamcare', company_name, re.IGNORECASE):
+    elif re.search(r"teamcare", company_name, re.IGNORECASE):
         return "Teamcare"
-    elif re.search(r'humana', company_name, re.IGNORECASE):
+    elif re.search(r"humana", company_name, re.IGNORECASE):
         return "Humana"
-    elif re.search(r'aetna', company_name, re.IGNORECASE):
+    elif re.search(r"aetna", company_name, re.IGNORECASE):
         return "Aetna"
-    elif re.search(r'guardian', company_name, re.IGNORECASE):
+    elif re.search(r"guardian", company_name, re.IGNORECASE):
         return "Guardian"
-    elif re.search(r'g\s*e\s*h\s*a', company_name, re.IGNORECASE):
+    elif re.search(r"g\s*e\s*h\s*a", company_name, re.IGNORECASE):
         return "GEHA"
-    elif re.search(r'principal', company_name, re.IGNORECASE):
+    elif re.search(r"principal", company_name, re.IGNORECASE):
         return "Principal"
-    elif re.search(r'ameritas', company_name, re.IGNORECASE):
+    elif re.search(r"ameritas", company_name, re.IGNORECASE):
         return "Ameritas"
-    elif re.search(r'physicians\s+mutual', company_name, re.IGNORECASE):
+    elif re.search(r"physicians\s+mutual", company_name, re.IGNORECASE):
         return "Physicians Mutual"
-    elif re.search(r'mutual\s+of\s+omaha', company_name, re.IGNORECASE):
+    elif re.search(r"mutual\s+of\s+omaha", company_name, re.IGNORECASE):
         return "Mutual Omaha"
-    elif re.search(r'sunlife|sun\s+life', company_name, re.IGNORECASE):
+    elif re.search(r"sunlife|sun\s+life", company_name, re.IGNORECASE):
         return "Sunlife"
-    elif re.search(r'liberty(?:\s+dental)?', company_name, re.IGNORECASE):
+    elif re.search(r"liberty(?:\s+dental)?", company_name, re.IGNORECASE):
         return "Liberty Dental Plan"
-    elif re.search(r'careington', company_name, re.IGNORECASE):
+    elif re.search(r"careington", company_name, re.IGNORECASE):
         return "Careington Benefit Solutions"
-    elif re.search(r'automated\s+benefit', company_name, re.IGNORECASE):
+    elif re.search(r"automated\s+benefit", company_name, re.IGNORECASE):
         return "Automated Benefit Services Inc"
-    elif re.search(r'network\s+health', company_name, re.IGNORECASE):
+    elif re.search(r"network\s+health", company_name, re.IGNORECASE):
         # Check if it has "Wisconsin" in the name
-        if re.search(r'wisconsin', company_name, re.IGNORECASE):
+        if re.search(r"wisconsin", company_name, re.IGNORECASE):
             return "Network Health Wisconsin"
         else:
             return "Network Health Go"
-    elif re.search(r'regence', company_name, re.IGNORECASE):
+    elif re.search(r"regence", company_name, re.IGNORECASE):
         return "REGENCE BCBS"
-    elif re.search(r'united\s+concordia', company_name, re.IGNORECASE):
+    elif re.search(r"united\s+concordia", company_name, re.IGNORECASE):
         return "United Concordia"
-    elif re.search(r'medical\s+mutual', company_name, re.IGNORECASE):
+    elif re.search(r"medical\s+mutual", company_name, re.IGNORECASE):
         return "Medical Mutual"
-    elif re.search(r'blue\s+care\s+dental', company_name, re.IGNORECASE):
+    elif re.search(r"blue\s+care\s+dental", company_name, re.IGNORECASE):
         return "Blue Care Dental"
-    elif re.search(r'dominion\s+dental', company_name, re.IGNORECASE):
+    elif re.search(r"dominion\s+dental", company_name, re.IGNORECASE):
         return "Dominion Dental"
-    elif re.search(r'carefirst', company_name, re.IGNORECASE):
+    elif re.search(r"carefirst", company_name, re.IGNORECASE):
         return "CareFirst BCBS"
-    elif re.search(r'health\s*partners', company_name, re.IGNORECASE):
+    elif re.search(r"health\s*partners", company_name, re.IGNORECASE):
         # Check if it has "of [State]" pattern
-        if re.search(r'health\s*partners\s+of\s+(.+)', company_name, re.IGNORECASE):
-            state_match = re.search(r'health\s*partners\s+of\s+(.+)', company_name, re.IGNORECASE)
+        if re.search(r"health\s*partners\s+of\s+(.+)", company_name, re.IGNORECASE):
+            state_match = re.search(
+                r"health\s*partners\s+of\s+(.+)", company_name, re.IGNORECASE
+            )
             state = state_match.group(1).strip()
             return f"Health Partners {state}"
         else:
             return "Health Partners"
-    elif re.search(r'keenan', company_name, re.IGNORECASE):
+    elif re.search(r"keenan", company_name, re.IGNORECASE):
         return "Keenan"
-    elif re.search(r'wilson\s+mcshane', company_name, re.IGNORECASE):
+    elif re.search(r"wilson\s+mcshane", company_name, re.IGNORECASE):
         return "Wilson McShane- Delta Dental"
-    elif re.search(r'standard\s+(?:life\s+)?insurance', company_name, re.IGNORECASE):
+    elif re.search(r"standard\s+(?:life\s+)?insurance", company_name, re.IGNORECASE):
         return "Standard Life Insurance"
-    elif re.search(r'plan\s+for\s+health', company_name, re.IGNORECASE):
+    elif re.search(r"plan\s+for\s+health", company_name, re.IGNORECASE):
         return "Plan for Health"
-    elif re.search(r'kansas\s+city', company_name, re.IGNORECASE):
+    elif re.search(r"kansas\s+city", company_name, re.IGNORECASE):
         return "Kansas City"
-    elif re.search(r'the\s+guardian', company_name, re.IGNORECASE):
+    elif re.search(r"the\s+guardian", company_name, re.IGNORECASE):
         return "The Guardian"
-    elif re.search(r'community\s+dental', company_name, re.IGNORECASE):
+    elif re.search(r"community\s+dental", company_name, re.IGNORECASE):
         return "Community Dental Associates"
-    elif re.search(r'northeast\s+delta\s+dental', company_name, re.IGNORECASE):
+    elif re.search(r"northeast\s+delta\s+dental", company_name, re.IGNORECASE):
         return "Northeast Delta Dental"
-    elif re.search(r'say\s+cheese\s+dental', company_name, re.IGNORECASE):
+    elif re.search(r"say\s+cheese\s+dental", company_name, re.IGNORECASE):
         return "Say Cheese Dental Network"
-    elif re.search(r'dentaquest', company_name, re.IGNORECASE):
+    elif re.search(r"dentaquest", company_name, re.IGNORECASE):
         return "Dentaquest"
-    elif re.search(r'umr', company_name, re.IGNORECASE):
+    elif re.search(r"umr", company_name, re.IGNORECASE):
         return "UMR"
-    elif re.search(r'mhbp', company_name, re.IGNORECASE):
+    elif re.search(r"mhbp", company_name, re.IGNORECASE):
         return "MHBP"
-    elif re.search(r'united\s+states\s+army', company_name, re.IGNORECASE):
+    elif re.search(r"united\s+states\s+army", company_name, re.IGNORECASE):
         return "United States Army"
-    elif re.search(r'conversion\s+default', company_name, re.IGNORECASE):
+    elif re.search(r"conversion\s+default", company_name, re.IGNORECASE):
         return "CONVERSION DEFAULT - Do NOT Delete! Change Pt Ins!"
-    elif re.search(r'equitable', company_name, re.IGNORECASE):
+    elif re.search(r"equitable", company_name, re.IGNORECASE):
         return "Equitable"
-    elif re.search(r'manhattan\s+life', company_name, re.IGNORECASE):
+    elif re.search(r"manhattan\s+life", company_name, re.IGNORECASE):
         return "Manhattan Life"
-    elif re.search(r'ucci', company_name, re.IGNORECASE):
+    elif re.search(r"ucci", company_name, re.IGNORECASE):
         return "UCCI"
-    elif re.search(r'ccpoa|cc\s*poa|c\s+c\s+p\s+o\s+a', company_name, re.IGNORECASE):
+    elif re.search(r"ccpoa|cc\s*poa|c\s+c\s+p\s+o\s+a", company_name, re.IGNORECASE):
         return "CCPOA"
-    elif re.search(r'dd\s+of|dd\s+[a-z]{2}|delta\s+dental|dental\s+dental|denta\s+dental|dleta\s+dental|dektal?\s+dental', company_name, re.IGNORECASE):
+    elif re.search(
+        r"dd\s+of|dd\s+[a-z]{2}|delta\s+dental|dental\s+dental|denta\s+dental|dleta\s+dental|dektal?\s+dental",
+        company_name,
+        re.IGNORECASE,
+    ):
         # Extract state from various Delta Dental patterns
         # Handle DD OF [State] pattern
-        if re.search(r'dd\s+of\s+([a-z]{2})', company_name, re.IGNORECASE):
-            state_match = re.search(r'dd\s+of\s+([a-z]{2})', company_name, re.IGNORECASE)
+        if re.search(r"dd\s+of\s+([a-z]{2})", company_name, re.IGNORECASE):
+            state_match = re.search(
+                r"dd\s+of\s+([a-z]{2})", company_name, re.IGNORECASE
+            )
             state = state_match.group(1).upper()
             state = expand_state_abbreviations(state)
-            return f'DD {state}'
+            return f"DD {state}"
         # Handle DD [State] pattern - only match if it's exactly 2 letters (abbreviation) followed by word boundary
-        elif re.search(r'dd\s+([a-z]{2})\b', company_name, re.IGNORECASE):
-            state_match = re.search(r'dd\s+([a-z]{2})\b', company_name, re.IGNORECASE)
+        elif re.search(r"dd\s+([a-z]{2})\b", company_name, re.IGNORECASE):
+            state_match = re.search(r"dd\s+([a-z]{2})\b", company_name, re.IGNORECASE)
             state = state_match.group(1).upper()
             state = expand_state_abbreviations(state)
-            return f'DD {state}'
+            return f"DD {state}"
         # Handle DD [Full State Name] pattern - for cases like "DD Pennsylvania"
-        elif re.search(r'^dd\s+([a-z]{3,})', company_name, re.IGNORECASE):
-            state_match = re.search(r'^dd\s+([a-z]{3,})', company_name, re.IGNORECASE)
+        elif re.search(r"^dd\s+([a-z]{3,})", company_name, re.IGNORECASE):
+            state_match = re.search(r"^dd\s+([a-z]{3,})", company_name, re.IGNORECASE)
             state = state_match.group(1).strip()
             # Remove any trailing text after state (like "Ph#" or other info)
-            state = re.split(r'\s*[,\|;]\s*|\s+Ph#', state, flags=re.IGNORECASE)[0].strip()
+            state = re.split(r"\s*[,\|;]\s*|\s+Ph#", state, flags=re.IGNORECASE)[
+                0
+            ].strip()
             # Don't expand abbreviations - preserve full state name
             # Capitalize properly (Title Case)
             if state and not state.isupper():
                 state = state.title()
-            return f'DD {state}'
+            return f"DD {state}"
         # Handle Delta Dental of [State] pattern
-        elif re.search(r'delta\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE):
-            state_match = re.search(r'delta\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE)
+        elif re.search(r"delta\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE):
+            state_match = re.search(
+                r"delta\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE
+            )
             state = state_match.group(1).strip()
             state = expand_state_abbreviations(state)
-            return f'DD {state}'
+            return f"DD {state}"
         # Handle Dental Dental Of [State] pattern
-        elif re.search(r'dental\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE):
-            state_match = re.search(r'dental\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE)
+        elif re.search(r"dental\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE):
+            state_match = re.search(
+                r"dental\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE
+            )
             state = state_match.group(1).strip()
             state = expand_state_abbreviations(state)
-            return f'DD {state}'
+            return f"DD {state}"
         # Handle Denta Dental Of [State] pattern
-        elif re.search(r'denta\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE):
-            state_match = re.search(r'denta\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE)
+        elif re.search(r"denta\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE):
+            state_match = re.search(
+                r"denta\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE
+            )
             state = state_match.group(1).strip()
             state = expand_state_abbreviations(state)
-            return f'DD {state}'
+            return f"DD {state}"
         # Handle Dleta Dental of [State] pattern
-        elif re.search(r'dleta\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE):
-            state_match = re.search(r'dleta\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE)
+        elif re.search(r"dleta\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE):
+            state_match = re.search(
+                r"dleta\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE
+            )
             state = state_match.group(1).strip()
             state = expand_state_abbreviations(state)
-            return f'DD {state}'
+            return f"DD {state}"
         # Handle Dekta Dental of [State] pattern
-        elif re.search(r'dektal?\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE):
-            state_match = re.search(r'dektal?\s+dental\s+of\s+(.+)', company_name, re.IGNORECASE)
+        elif re.search(r"dektal?\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE):
+            state_match = re.search(
+                r"dektal?\s+dental\s+of\s+(.+)", company_name, re.IGNORECASE
+            )
             state = state_match.group(1).strip()
             state = expand_state_abbreviations(state)
-            return f'DD {state}'
+            return f"DD {state}"
         # Handle Dental of [State] pattern
-        elif re.search(r'dental\s+of\s+(.+)', company_name, re.IGNORECASE):
-            state_match = re.search(r'dental\s+of\s+(.+)', company_name, re.IGNORECASE)
+        elif re.search(r"dental\s+of\s+(.+)", company_name, re.IGNORECASE):
+            state_match = re.search(r"dental\s+of\s+(.+)", company_name, re.IGNORECASE)
             state = state_match.group(1).strip()
             state = expand_state_abbreviations(state)
-            return f'DD {state}'
+            return f"DD {state}"
         # Handle Dental Network of America
-        elif re.search(r'dental\s+network\s+of\s+america', company_name, re.IGNORECASE):
-            return 'DD Network of America'
+        elif re.search(r"dental\s+network\s+of\s+america", company_name, re.IGNORECASE):
+            return "DD Network of America"
         # Default DD
         else:
-            return 'DD'
-    
+            return "DD"
+
     # If no specific pattern matches, return the cleaned company name
     return company_name.strip()
+
 
 def normalize_patient_id(patient_id_val):
     """Normalize patient ID for consistent matching - handles numeric, string, whitespace, leading zeros"""
     if pd.isna(patient_id_val):
         return None
-    
+
     # Convert to string first
     patient_id_str = str(patient_id_val).strip()
-    
+
     if not patient_id_str:
         return None
-    
+
     # Try to convert to number to remove leading zeros and scientific notation
     try:
         # If it's a number, convert to int (removes leading zeros and decimals)
-        if '.' in patient_id_str:
+        if "." in patient_id_str:
             num_val = float(patient_id_str)
             # If it's a whole number, convert to int
             if num_val.is_integer():
@@ -1783,13 +1868,14 @@ def normalize_patient_id(patient_id_val):
         # If it's not a number, return the cleaned string
         return patient_id_str.strip()
 
+
 def compare_patient_names(raw_df, previous_df):
     """Compare Patient ID from Appointment report with PATID from Smart Assist and add insurance columns"""
     try:
         # Debug: Show available columns
         raw_columns = list(raw_df.columns)
         previous_columns = list(previous_df.columns)
-        
+
         # Function to find specific column names
         def find_column(columns, target_names):
             """Find column matching any of the target names (case-insensitive)"""
@@ -1799,78 +1885,132 @@ def compare_patient_names(raw_df, previous_df):
                     if col_lower == target.lower().strip():
                         return col
             return None
-        
+
         # Find Patient ID in raw file (Appointment report)
-        raw_patient_col = find_column(raw_columns, ['Patient ID', 'PatientID', 'patient id'])
+        raw_patient_col = find_column(
+            raw_columns, ["Patient ID", "PatientID", "patient id"]
+        )
         if not raw_patient_col:
             # Try flexible search as fallback
             for col in raw_columns:
-                if 'patient' in col.lower() and 'id' in col.lower():
+                if "patient" in col.lower() and "id" in col.lower():
                     raw_patient_col = col
                     break
-        
+
         # Find PATID in previous file (Smart Assist) - now also checking for "Patient ID"
-        previous_patient_col = find_column(previous_columns, ['PATID', 'PatID', 'patid', 'PAT ID', 'Patient ID', 'PatientID', 'patient id'])
+        previous_patient_col = find_column(
+            previous_columns,
+            [
+                "PATID",
+                "PatID",
+                "patid",
+                "PAT ID",
+                "Patient ID",
+                "PatientID",
+                "patient id",
+            ],
+        )
         if not previous_patient_col:
             # Try flexible search as fallback
             for col in previous_columns:
                 col_lower = col.lower().strip()
-                if ('patid' in col_lower or 'pat id' in col_lower or 
-                    ('patient' in col_lower and 'id' in col_lower)):
+                if (
+                    "patid" in col_lower
+                    or "pat id" in col_lower
+                    or ("patient" in col_lower and "id" in col_lower)
+                ):
                     previous_patient_col = col
                     break
-        
+
         if not previous_patient_col:
-            return f"❌ Error: 'PATID' or 'Patient ID' column not found in Smart Assist file.\nAvailable columns: {previous_columns}", None
-        
+            return (
+                f"❌ Error: 'PATID' or 'Patient ID' column not found in Smart Assist file.\nAvailable columns: {previous_columns}",
+                None,
+            )
+
         # Find insurance columns in Smart Assist file, or create them if missing
-        primary_ins_col = find_column(previous_columns, ['Dental Primary Ins Carr', 'DentalPrimaryInsCarr', 'Dental Primary Insurance Carrier'])
-        secondary_ins_col = find_column(previous_columns, ['Dental Secondary Ins Carr', 'DentalSecondaryInsCarr', 'Dental Secondary Insurance Carrier'])
-        
+        primary_ins_col = find_column(
+            previous_columns,
+            [
+                "Dental Primary Ins Carr",
+                "DentalPrimaryInsCarr",
+                "Dental Primary Insurance Carrier",
+            ],
+        )
+        secondary_ins_col = find_column(
+            previous_columns,
+            [
+                "Dental Secondary Ins Carr",
+                "DentalSecondaryInsCarr",
+                "Dental Secondary Insurance Carrier",
+            ],
+        )
+
         # Create a working copy of the Smart Assist DataFrame
         smart_assist_df = previous_df.copy()
-        
+
         # Track if columns were added
         columns_added = []
-        
+
         # Add missing insurance columns if they don't exist
         if not primary_ins_col:
-            primary_ins_col = 'Dental Primary Ins Carr'
-            smart_assist_df[primary_ins_col] = ''
+            primary_ins_col = "Dental Primary Ins Carr"
+            smart_assist_df[primary_ins_col] = ""
             columns_added.append(primary_ins_col)
-        
+
         if not secondary_ins_col:
-            secondary_ins_col = 'Dental Secondary Ins Carr'
-            smart_assist_df[secondary_ins_col] = ''
+            secondary_ins_col = "Dental Secondary Ins Carr"
+            smart_assist_df[secondary_ins_col] = ""
             columns_added.append(secondary_ins_col)
-        
+
         # Check if Patient ID column exists in raw file
         if not raw_patient_col:
-            return f"❌ Error: 'Patient ID' column not found in Appointment report file.\nAvailable columns: {raw_columns}", None
-        
+            return (
+                f"❌ Error: 'Patient ID' column not found in Appointment report file.\nAvailable columns: {raw_columns}",
+                None,
+            )
+
         # Find insurance columns in Appointment Report file (more flexible search)
         appointment_primary_col = None
         appointment_secondary_col = None
-        
+
         # Try exact matches first
-        appointment_primary_col = find_column(raw_columns, ['Dental Primary Ins Carr', 'DentalPrimaryInsCarr', 'Dental Primary Insurance Carrier'])
-        appointment_secondary_col = find_column(raw_columns, ['Dental Secondary Ins Carr', 'DentalSecondaryInsCarr', 'Dental Secondary Insurance Carrier'])
-        
+        appointment_primary_col = find_column(
+            raw_columns,
+            [
+                "Dental Primary Ins Carr",
+                "DentalPrimaryInsCarr",
+                "Dental Primary Insurance Carrier",
+            ],
+        )
+        appointment_secondary_col = find_column(
+            raw_columns,
+            [
+                "Dental Secondary Ins Carr",
+                "DentalSecondaryInsCarr",
+                "Dental Secondary Insurance Carrier",
+            ],
+        )
+
         # If not found, try partial matches
         if not appointment_primary_col:
             for col in raw_columns:
                 col_lower = col.lower()
-                if ('primary' in col_lower and 'ins' in col_lower) or ('primary' in col_lower and 'insurance' in col_lower):
+                if ("primary" in col_lower and "ins" in col_lower) or (
+                    "primary" in col_lower and "insurance" in col_lower
+                ):
                     appointment_primary_col = col
                     break
-        
+
         if not appointment_secondary_col:
             for col in raw_columns:
                 col_lower = col.lower()
-                if ('secondary' in col_lower and 'ins' in col_lower) or ('secondary' in col_lower and 'insurance' in col_lower):
+                if ("secondary" in col_lower and "ins" in col_lower) or (
+                    "secondary" in col_lower and "insurance" in col_lower
+                ):
                     appointment_secondary_col = col
                     break
-        
+
         # Create a mapping from Patient ID to insurance data in Appointment Report
         appointment_insurance_map = {}
         for idx, row in raw_df.iterrows():
@@ -1878,53 +2018,53 @@ def compare_patient_names(raw_df, previous_df):
             # Normalize patient ID for consistent matching
             patient_id = normalize_patient_id(patient_id_val)
             if patient_id:
-                primary_value = ''
-                secondary_value = ''
-                
+                primary_value = ""
+                secondary_value = ""
+
                 if appointment_primary_col:
                     primary_val = row[appointment_primary_col]
                     if pd.notna(primary_val):
                         primary_value = str(primary_val).strip()
-                
+
                 if appointment_secondary_col:
                     secondary_val = row[appointment_secondary_col]
                     if pd.notna(secondary_val):
                         secondary_value = str(secondary_val).strip()
-                
+
                 appointment_insurance_map[patient_id] = {
-                    'primary': primary_value,
-                    'secondary': secondary_value
+                    "primary": primary_value,
+                    "secondary": secondary_value,
                 }
-        
+
         # Use Smart Assist file as the result file (base)
         result_df = smart_assist_df.copy()
-        
+
         # Find the position of the PATID column in Smart Assist
         patid_col_index = result_df.columns.get_loc(previous_patient_col)
-        
+
         # Check if insurance columns already exist, if not create them
-        primary_col_name = 'Dental Primary Ins Carr'
-        secondary_col_name = 'Dental Secondary Ins Carr'
-        
+        primary_col_name = "Dental Primary Ins Carr"
+        secondary_col_name = "Dental Secondary Ins Carr"
+
         if primary_col_name not in result_df.columns:
-            result_df.insert(patid_col_index + 1, primary_col_name, '')
+            result_df.insert(patid_col_index + 1, primary_col_name, "")
         else:
             # Column already exists, initialize empty values if needed
-            result_df[primary_col_name] = result_df[primary_col_name].fillna('')
-        
+            result_df[primary_col_name] = result_df[primary_col_name].fillna("")
+
         if secondary_col_name not in result_df.columns:
             # Insert after primary column (or after PATID if primary doesn't exist)
             if primary_col_name in result_df.columns:
                 # Find the position of primary column and insert after it
                 primary_col_index = result_df.columns.get_loc(primary_col_name)
-                result_df.insert(primary_col_index + 1, secondary_col_name, '')
+                result_df.insert(primary_col_index + 1, secondary_col_name, "")
             else:
                 # Primary column doesn't exist, insert after PATID
-                result_df.insert(patid_col_index + 1, secondary_col_name, '')
+                result_df.insert(patid_col_index + 1, secondary_col_name, "")
         else:
             # Column already exists, initialize empty values if needed
-            result_df[secondary_col_name] = result_df[secondary_col_name].fillna('')
-        
+            result_df[secondary_col_name] = result_df[secondary_col_name].fillna("")
+
         # Compare and populate insurance columns in Smart Assist file from Appointment Report
         matched_count = 0
         unmatched_patids = []  # Track unmatched PATIDs for debugging
@@ -1937,29 +2077,33 @@ def compare_patient_names(raw_df, previous_df):
                 # Copy insurance data FROM Appointment Report TO Smart Assist file
                 # Format the insurance names before adding
                 insurance_data = appointment_insurance_map[patid]
-                result_df.at[idx, primary_col_name] = format_insurance_name(insurance_data['primary'])
-                result_df.at[idx, secondary_col_name] = format_insurance_name(insurance_data['secondary'])
+                result_df.at[idx, primary_col_name] = format_insurance_name(
+                    insurance_data["primary"]
+                )
+                result_df.at[idx, secondary_col_name] = format_insurance_name(
+                    insurance_data["secondary"]
+                )
                 matched_count += 1
             elif patid:
                 # Track unmatched PATIDs (limit to first 10 for display)
                 if len(unmatched_patids) < 10:
                     unmatched_patids.append(str(patid_val))
-        
+
         # Count statistics
         total_patients = len(result_df)
         not_matched_patients = total_patients - matched_count
-        
+
         # Generate result message
         columns_info = ""
         if columns_added:
             columns_info = f"\n⚠️ Note: The following columns were added to Smart Assist file (with empty values): {', '.join(columns_added)}"
-        
+
         # Add debugging info for unmatched records
         unmatched_info = ""
         if unmatched_patids and not_matched_patients > 0:
             unmatched_info = f"\n\n🔍 Sample unmatched PATIDs from Smart Assist (first 10): {', '.join(unmatched_patids)}"
             unmatched_info += f"\n💡 Tip: Check if these Patient IDs exist in the Appointment Report file with the same values."
-        
+
         result_message = f"""✅ Comparison completed successfully!
 
 📊 Statistics:
@@ -1987,17 +2131,19 @@ def compare_patient_names(raw_df, previous_df):
 - Empty cells for records not found in Appointment report
 
 💾 Ready to download the result file!"""
-        
+
         return result_message, result_df
-        
+
     except Exception as e:
         return f"❌ Error during comparison: {str(e)}", None
 
-@app.route('/')
-def root():
-    return redirect('/comparison')
 
-@app.route('/comparison')
+@app.route("/")
+def root():
+    return redirect("/comparison")
+
+
+@app.route("/comparison")
 def comparison_index():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
     global conversion_data, conversion_filename, conversion_result
@@ -2005,140 +2151,149 @@ def comparison_index():
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
-    
-    # Get the active tab from URL parameter
-    active_tab = request.args.get('tab', 'comparison')
-    
-    return render_template_string(HTML_TEMPLATE, 
-                                raw_data=raw_data, 
-                                previous_data=previous_data,
-                                raw_filename=raw_filename,
-                                previous_filename=previous_filename,
-                                comparison_result=comparison_result,
-                                conversion_data=conversion_data,
-                                conversion_filename=conversion_filename,
-                                conversion_result=conversion_result,
-                                insurance_formatting_data=insurance_formatting_data,
-                                insurance_formatting_filename=insurance_formatting_filename,
-                                insurance_formatting_result=insurance_formatting_result,
-                                insurance_formatting_output=insurance_formatting_output,
-                                remarks_appointments_data=remarks_appointments_data,
-                                remarks_excel_data=remarks_excel_data,
-                                remarks_appointments_filename=remarks_appointments_filename,
-                                remarks_remarks_filename=remarks_remarks_filename,
-                                remarks_result=remarks_result,
-                                remarks_updated_count=remarks_updated_count,
-                                appointment_report_data=appointment_report_data,
-                                appointment_report_filename=appointment_report_filename,
-                                appointment_report_result=appointment_report_result,
-                                appointment_report_output=appointment_report_output,
-                                smart_assist_data=smart_assist_data,
-                                smart_assist_filename=smart_assist_filename,
-                                smart_assist_result=smart_assist_result,
-                                smart_assist_output=smart_assist_output,
-                                active_tab=active_tab)
 
-@app.route('/upload_raw', methods=['POST'])
+    # Get the active tab from URL parameter
+    active_tab = request.args.get("tab", "comparison")
+
+    return render_template_string(
+        HTML_TEMPLATE,
+        raw_data=raw_data,
+        previous_data=previous_data,
+        raw_filename=raw_filename,
+        previous_filename=previous_filename,
+        comparison_result=comparison_result,
+        conversion_data=conversion_data,
+        conversion_filename=conversion_filename,
+        conversion_result=conversion_result,
+        insurance_formatting_data=insurance_formatting_data,
+        insurance_formatting_filename=insurance_formatting_filename,
+        insurance_formatting_result=insurance_formatting_result,
+        insurance_formatting_output=insurance_formatting_output,
+        remarks_appointments_data=remarks_appointments_data,
+        remarks_excel_data=remarks_excel_data,
+        remarks_appointments_filename=remarks_appointments_filename,
+        remarks_remarks_filename=remarks_remarks_filename,
+        remarks_result=remarks_result,
+        remarks_updated_count=remarks_updated_count,
+        appointment_report_data=appointment_report_data,
+        appointment_report_filename=appointment_report_filename,
+        appointment_report_result=appointment_report_result,
+        appointment_report_output=appointment_report_output,
+        smart_assist_data=smart_assist_data,
+        smart_assist_filename=smart_assist_filename,
+        smart_assist_result=smart_assist_result,
+        smart_assist_output=smart_assist_output,
+        active_tab=active_tab,
+    )
+
+
+@app.route("/upload_raw", methods=["POST"])
 def upload_raw_file():
     global raw_data, raw_filename, comparison_result
-    
-    if 'file' not in request.files:
+
+    if "file" not in request.files:
         comparison_result = "❌ Error: No file provided"
-        return redirect('/comparison')
-    
-    file = request.files['file']
-    if file.filename == '':
+        return redirect("/comparison")
+
+    file = request.files["file"]
+    if file.filename == "":
         comparison_result = "❌ Error: No file selected"
-        return redirect('/comparison')
-    
+        return redirect("/comparison")
+
     try:
         # Get filename without saving to disk
         filename = secure_filename(file.filename)
-        
+
         # Read Excel file directly from memory (no disk storage)
         file.seek(0)  # Reset file pointer to beginning
-        raw_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
-        
+        raw_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+
         # Remove "Unnamed:" columns from all sheets
         cleaned_data = {}
         for sheet_name, df in raw_data.items():
             # Convert column names to strings first, then remove columns that start with "Unnamed:"
             df.columns = df.columns.astype(str)
-            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            df_cleaned = df.loc[
+                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+            ]
             cleaned_data[sheet_name] = df_cleaned
         raw_data = cleaned_data
-        
+
         raw_filename = filename
-        
+
         comparison_result = f"✅ Appointment Report uploaded successfully! Loaded {len(raw_data)} sheets: {', '.join(list(raw_data.keys()))}"
-        return redirect('/comparison?tab=comparison')
-        
+        return redirect("/comparison?tab=comparison")
+
     except Exception as e:
         comparison_result = f"❌ Error uploading Appointment Report: {str(e)}"
-        return redirect('/comparison?tab=comparison')
+        return redirect("/comparison?tab=comparison")
 
-@app.route('/upload_previous', methods=['POST'])
+
+@app.route("/upload_previous", methods=["POST"])
 def upload_previous_file():
     global previous_data, previous_filename, comparison_result
-    
-    if 'file' not in request.files:
+
+    if "file" not in request.files:
         comparison_result = "❌ Error: No file provided"
-        return redirect('/comparison?tab=comparison')
-    
-    file = request.files['file']
-    if file.filename == '':
+        return redirect("/comparison?tab=comparison")
+
+    file = request.files["file"]
+    if file.filename == "":
         comparison_result = "❌ Error: No file selected"
-        return redirect('/comparison?tab=comparison')
-    
+        return redirect("/comparison?tab=comparison")
+
     try:
         # Get filename without saving to disk
         filename = secure_filename(file.filename)
-        
+
         # Read Excel file directly from memory (no disk storage)
         file.seek(0)  # Reset file pointer to beginning
-        previous_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
-        
+        previous_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+
         # Remove "Unnamed:" columns from all sheets
         cleaned_data = {}
         for sheet_name, df in previous_data.items():
             # Convert column names to strings first, then remove columns that start with "Unnamed:"
             df.columns = df.columns.astype(str)
-            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            df_cleaned = df.loc[
+                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+            ]
             cleaned_data[sheet_name] = df_cleaned
         previous_data = cleaned_data
-        
+
         previous_filename = filename
-        
+
         comparison_result = f"✅ Smart Assist file uploaded successfully! Loaded {len(previous_data)} sheets: {', '.join(list(previous_data.keys()))}"
-        return redirect('/comparison?tab=comparison')
-        
+        return redirect("/comparison?tab=comparison")
+
     except Exception as e:
         comparison_result = f"❌ Error uploading Smart Assist file: {str(e)}"
-        return redirect('/comparison?tab=comparison')
+        return redirect("/comparison?tab=comparison")
 
-@app.route('/compare', methods=['POST'])
+
+@app.route("/compare", methods=["POST"])
 def compare_files():
     global raw_data, previous_data, comparison_result
-    
+
     if not raw_data or not previous_data:
         comparison_result = "❌ Error: Please upload both files first"
-        return redirect('/comparison?tab=comparison')
-    
-    raw_sheet = request.form.get('raw_sheet')
-    previous_sheet = request.form.get('previous_sheet')
-    
+        return redirect("/comparison?tab=comparison")
+
+    raw_sheet = request.form.get("raw_sheet")
+    previous_sheet = request.form.get("previous_sheet")
+
     if not raw_sheet or not previous_sheet:
         comparison_result = "❌ Error: Please select sheets for both files"
-        return redirect('/comparison?tab=comparison')
-    
+        return redirect("/comparison?tab=comparison")
+
     try:
         # Get the selected sheets
         raw_df = raw_data[raw_sheet]
         previous_df = previous_data[previous_sheet]
-        
+
         # Perform comparison
         result_message, result_df = compare_patient_names(raw_df, previous_df)
-        
+
         if result_df is not None:
             # Store the result for download
             comparison_result = result_message
@@ -2146,142 +2301,155 @@ def compare_files():
             previous_data[previous_sheet] = result_df
         else:
             comparison_result = result_message
-        
-        return redirect('/comparison?tab=comparison')
-        
+
+        return redirect("/comparison?tab=comparison")
+
     except Exception as e:
         comparison_result = f"❌ Error comparing files: {str(e)}"
-        return redirect('/comparison?tab=comparison')
+        return redirect("/comparison?tab=comparison")
 
-@app.route('/download_result', methods=['POST'])
+
+@app.route("/download_result", methods=["POST"])
 def download_result():
     global previous_data, previous_filename
-    
+
     if not previous_data:
-        return jsonify({'error': 'No data to download'}), 400
-    
-    filename = request.form.get('filename', '').strip()
+        return jsonify({"error": "No data to download"}), 400
+
+    filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"smart_assist_result_{timestamp}.xlsx"
-    
+
     try:
         # Create a temporary file
         import tempfile
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
-        
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+
         try:
-            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 for sheet_name, df in previous_data.items():
                     df_clean = df.copy()
-                    
+
                     # Format "Appt Date" column to MM/DD/YYYY format (flexible column name search)
                     appt_date_col = None
                     for col in df_clean.columns:
-                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        col_lower = (
+                            col.lower().strip().replace(" ", "").replace("_", "")
+                        )
                         # Check for variations: "appt date", "appointment date", "apptdate", etc.
-                        if 'appt' in col_lower and 'date' in col_lower:
+                        if "appt" in col_lower and "date" in col_lower:
                             appt_date_col = col
                             break
-                    
+
                     if appt_date_col:
                         # Convert dates to MM/DD/YYYY format
                         def format_date(date_val):
-                            if pd.isna(date_val) or date_val == '':
-                                return ''
+                            if pd.isna(date_val) or date_val == "":
+                                return ""
                             try:
                                 # Convert to datetime if not already
                                 if isinstance(date_val, pd.Timestamp):
                                     date_obj = date_val
                                 elif isinstance(date_val, str):
                                     # Try to parse string date
-                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    date_obj = pd.to_datetime(date_val, errors="coerce")
                                     if pd.isna(date_obj):
-                                        return str(date_val)  # Return original if can't parse
+                                        return str(
+                                            date_val
+                                        )  # Return original if can't parse
                                 else:
-                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    date_obj = pd.to_datetime(date_val, errors="coerce")
                                     if pd.isna(date_obj):
-                                        return str(date_val)  # Return original if can't parse
-                                
+                                        return str(
+                                            date_val
+                                        )  # Return original if can't parse
+
                                 # Format as MM/DD/YYYY
-                                return date_obj.strftime('%m/%d/%Y')
+                                return date_obj.strftime("%m/%d/%Y")
                             except (ValueError, TypeError, AttributeError):
                                 # If parsing fails, return as-is
                                 return str(date_val)
-                        
+
                         # Format dates and convert column to string type to prevent Excel auto-formatting
-                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(format_date)
+                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(
+                            format_date
+                        )
                         df_clean[appt_date_col] = df_clean[appt_date_col].astype(str)
-                    
+
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
-                    
+
                     # Set date column format to text in Excel to preserve MM/DD/YYYY format
                     if appt_date_col:
                         ws = writer.sheets[sheet_name]
-                        
+
                         # Find the column index
                         col_idx = None
                         for idx, col_name in enumerate(df_clean.columns, 1):
                             if col_name == appt_date_col:
                                 col_idx = idx
                                 break
-                        
+
                         if col_idx:
                             # Set all cells in this column to text format
                             for row in range(2, ws.max_row + 1):
                                 cell = ws.cell(row=row, column=col_idx)
                                 if cell.value:
-                                    cell.number_format = '@'  # Text format
-            
+                                    cell.number_format = "@"  # Text format
+
             return send_file(temp_path, as_attachment=True, download_name=filename)
-            
+
         finally:
             # Clean up temporary file
             os.close(temp_fd)
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/upload_conversion', methods=['POST'])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/upload_conversion", methods=["POST"])
 def upload_conversion_file():
     global conversion_data, conversion_filename, conversion_result
-    
-    if 'file' not in request.files:
+
+    if "file" not in request.files:
         conversion_result = "❌ Error: No file provided"
-        return redirect('/comparison?tab=conversion')
-    
-    file = request.files['file']
-    if file.filename == '':
+        return redirect("/comparison?tab=conversion")
+
+    file = request.files["file"]
+    if file.filename == "":
         conversion_result = "❌ Error: No file selected"
-        return redirect('/comparison?tab=conversion')
-    
+        return redirect("/comparison?tab=conversion")
+
     try:
         # Get filename without saving to disk
         filename = secure_filename(file.filename)
-        
+
         # Read Excel file directly from memory (no disk storage)
         file.seek(0)  # Reset file pointer to beginning
-        conversion_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
+        conversion_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
         conversion_filename = filename
-        
+
         # Remove "Unnamed:" columns from all sheets
         cleaned_data = {}
         for sheet_name, df in conversion_data.items():
             # Convert column names to strings first, then remove columns that start with "Unnamed:"
             df.columns = df.columns.astype(str)
-            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            df_cleaned = df.loc[
+                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+            ]
             cleaned_data[sheet_name] = df_cleaned
         conversion_data = cleaned_data
-        
+
         # Validate "Insurance Note" column exists in all sheets
         missing_sheets = []
         for sheet_name, df in conversion_data.items():
             columns = [col.lower().strip() for col in df.columns]
-            if 'insurance note' not in columns:
+            if "insurance note" not in columns:
                 missing_sheets.append(sheet_name)
-        
+
         if missing_sheets:
             conversion_result = f"❌ Validation Error: 'Insurance Note' column not found in the following sheets: {', '.join(missing_sheets)}\n\nAvailable columns in first sheet: {list(conversion_data[list(conversion_data.keys())[0]].columns) if conversion_data else 'N/A'}"
             conversion_data = None
@@ -2292,60 +2460,63 @@ def upload_conversion_file():
             total_rows_processed = 0
             patient_name_created = False
             total_duplicates_removed = 0
-            
+
             for sheet_name, df in conversion_data.items():
                 # Find Insurance Note column (case-insensitive)
                 insurance_note_col = None
                 for col in df.columns:
-                    if col.lower().strip() == 'insurance note':
+                    if col.lower().strip() == "insurance note":
                         insurance_note_col = col
                         break
-                
+
                 if insurance_note_col:
                     # Create a copy of the dataframe
                     processed_df = df.copy()
-                    
+
                     # Remove "Conversion" column if it exists (we don't want this column)
-                    if 'Conversion' in processed_df.columns:
-                        processed_df = processed_df.drop(columns=['Conversion'])
-                    
+                    if "Conversion" in processed_df.columns:
+                        processed_df = processed_df.drop(columns=["Conversion"])
+
                     # Extract insurance names and format them
                     def extract_and_format_insurance(note_text):
                         """Extract insurance name from Insurance Note text and format it"""
-                        if pd.isna(note_text) or note_text == '':
-                            return ''
-                        
+                        if pd.isna(note_text) or note_text == "":
+                            return ""
+
                         note_str = str(note_text).strip()
                         import re
-                        
+
                         # Pattern: "From Conversion Carrier: <insurance_name> | ..." or "from conversion carrier: <insurance_name>|..."
                         # Use regex to find "From Conversion Carrier:" (case-insensitive) and extract everything after it until "|" or end of string
-                        pattern = r'from\s+conversion\s+carrier\s*:\s*([^|]+?)(?:\s*\||$)'
+                        pattern = (
+                            r"from\s+conversion\s+carrier\s*:\s*([^|]+?)(?:\s*\||$)"
+                        )
                         match = re.search(pattern, note_str, re.IGNORECASE)
-                        
+
                         if match:
                             insurance_name = match.group(1).strip()
                             # Format the insurance name using existing function
                             return format_insurance_name(insurance_name)
-                        
+
                         # If pattern doesn't match, try to format the whole text
                         return format_insurance_name(note_str)
-                    
+
                     # Extract status from Insurance Note
                     def extract_status(note_text):
                         """Extract status from Insurance Note text - captures only the status value and discards all text after it.
                         Handles multi-word statuses (e.g., "Not Eligible") and stops at the first "-" character after the status.
                         Returns 'Conversion' if no status value is found."""
-                        if pd.isna(note_text) or note_text == '':
-                            return 'Conversion'
-                        
+                        if pd.isna(note_text) or note_text == "":
+                            return "Conversion"
+
                         note_str = str(note_text).strip()
-                        
+
                         # Pattern: "Status - <status>" - capture the status value, stop at first "-" after status or other delimiters
                         # Look for "Status -" or "Status-" followed by the status value
                         # Status value can be multiple words (e.g., "Not Eligible", "Eligible")
                         # Stop at the first "-" character after the status, or at ], |, comma, or end of string
                         import re
+
                         # Match "Status -" or "Status-" followed by the status value
                         # Capture everything (including spaces for multi-word statuses) until we hit:
                         # - A "-" character (not the one after "Status")
@@ -2354,52 +2525,74 @@ def upload_conversion_file():
                         # - A comma
                         # - End of string
                         # Use non-greedy matching to stop at the first delimiter
-                        status_pattern = r'Status\s*-\s*([^-]+?)(?:\s*-|]|\||,|$)'
+                        status_pattern = r"Status\s*-\s*([^-]+?)(?:\s*-|]|\||,|$)"
                         match = re.search(status_pattern, note_str, re.IGNORECASE)
                         if match:
                             status = match.group(1).strip()
                             # Remove any trailing whitespace or delimiters
-                            status = status.rstrip(' ]|,')
+                            status = status.rstrip(" ]|,")
                             return status
-                        
+
                         # If no status found, return 'Conversion' instead of empty string
-                        return 'Conversion'
-                    
+                        return "Conversion"
+
                     # Apply extraction and formatting
-                    processed_df['Formatted Insurance'] = processed_df[insurance_note_col].apply(extract_and_format_insurance)
-                    processed_df['Status'] = processed_df[insurance_note_col].apply(extract_status)
-                    
+                    processed_df["Formatted Insurance"] = processed_df[
+                        insurance_note_col
+                    ].apply(extract_and_format_insurance)
+                    processed_df["Status"] = processed_df[insurance_note_col].apply(
+                        extract_status
+                    )
+
                     # Update Status based on Eligibility column
                     # Find Eligibility column (case-insensitive, flexible matching)
                     eligibility_col = None
                     for col in processed_df.columns:
-                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
-                        if 'eligibility' in col_lower:
+                        col_lower = (
+                            col.lower().strip().replace(" ", "").replace("_", "")
+                        )
+                        if "eligibility" in col_lower:
                             eligibility_col = col
                             break
-                    
+
                     if eligibility_col:
                         # Apply logic: ✗ -> Workable, ✓ -> Completed
                         def set_status_from_eligibility(row):
                             eligibility_val = row[eligibility_col]
                             if pd.notna(eligibility_val):
                                 eligibility_str = str(eligibility_val).strip()
-                                if '✗' in eligibility_str or 'x' in eligibility_str.lower():
-                                    return 'Workable'
-                                elif '✓' in eligibility_str or '√' in eligibility_str or 'check' in eligibility_str.lower():
-                                    return 'Completed'
+                                if (
+                                    "✗" in eligibility_str
+                                    or "x" in eligibility_str.lower()
+                                ):
+                                    return "Workable"
+                                elif (
+                                    "✓" in eligibility_str
+                                    or "√" in eligibility_str
+                                    or "check" in eligibility_str.lower()
+                                ):
+                                    return "Completed"
                             # If no eligibility match, keep existing status
-                            return row['Status']
-                        
-                        processed_df['Status'] = processed_df.apply(set_status_from_eligibility, axis=1)
-                    
+                            return row["Status"]
+
+                        processed_df["Status"] = processed_df.apply(
+                            set_status_from_eligibility, axis=1
+                        )
+
                     # Create "Patient Name" column from "Patient Last Name" and "Patient First Name"
                     def find_column(columns, target_names):
                         """Find column matching any of the target names (case-insensitive, flexible matching)"""
                         for col in columns:
-                            col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                            col_lower = (
+                                col.lower().strip().replace(" ", "").replace("_", "")
+                            )
                             for target in target_names:
-                                target_lower = target.lower().strip().replace(' ', '').replace('_', '')
+                                target_lower = (
+                                    target.lower()
+                                    .strip()
+                                    .replace(" ", "")
+                                    .replace("_", "")
+                                )
                                 if col_lower == target_lower:
                                     return col
                         # Try partial matching as fallback
@@ -2407,19 +2600,48 @@ def upload_conversion_file():
                             col_lower = col.lower().strip()
                             for target in target_names:
                                 target_lower = target.lower().strip()
-                                if target_lower in col_lower or col_lower in target_lower:
+                                if (
+                                    target_lower in col_lower
+                                    or col_lower in target_lower
+                                ):
                                     return col
                         return None
-                    
-                    patient_last_name_col = find_column(processed_df.columns, ['Patient Last Name', 'PatientLastName', 'patient last name', 'Last Name', 'LastName'])
-                    patient_first_name_col = find_column(processed_df.columns, ['Patient First Name', 'PatientFirstName', 'patient first name', 'First Name', 'FirstName'])
-                    
+
+                    patient_last_name_col = find_column(
+                        processed_df.columns,
+                        [
+                            "Patient Last Name",
+                            "PatientLastName",
+                            "patient last name",
+                            "Last Name",
+                            "LastName",
+                        ],
+                    )
+                    patient_first_name_col = find_column(
+                        processed_df.columns,
+                        [
+                            "Patient First Name",
+                            "PatientFirstName",
+                            "patient first name",
+                            "First Name",
+                            "FirstName",
+                        ],
+                    )
+
                     if patient_last_name_col and patient_first_name_col:
                         # Create Patient Name column with format "<last_name>, <first_name>"
                         def combine_names(row):
-                            last_name = str(row[patient_last_name_col]).strip() if pd.notna(row[patient_last_name_col]) else ''
-                            first_name = str(row[patient_first_name_col]).strip() if pd.notna(row[patient_first_name_col]) else ''
-                            
+                            last_name = (
+                                str(row[patient_last_name_col]).strip()
+                                if pd.notna(row[patient_last_name_col])
+                                else ""
+                            )
+                            first_name = (
+                                str(row[patient_first_name_col]).strip()
+                                if pd.notna(row[patient_first_name_col])
+                                else ""
+                            )
+
                             # Format as "<last_name>, <first_name>"
                             if last_name and first_name:
                                 return f"{last_name}, {first_name}"
@@ -2428,275 +2650,326 @@ def upload_conversion_file():
                             elif first_name:
                                 return first_name
                             else:
-                                return ''
-                        
+                                return ""
+
                         # Create the Patient Name column
-                        processed_df['Patient Name'] = processed_df.apply(combine_names, axis=1)
+                        processed_df["Patient Name"] = processed_df.apply(
+                            combine_names, axis=1
+                        )
                         patient_name_created = True
-                        
+
                         # Remove Patient Last Name and Patient First Name columns
-                        processed_df = processed_df.drop(columns=[patient_last_name_col, patient_first_name_col])
-                    
+                        processed_df = processed_df.drop(
+                            columns=[patient_last_name_col, patient_first_name_col]
+                        )
+
                     # Find position of Insurance Note column and insert new columns after it
-                    insurance_note_index = processed_df.columns.get_loc(insurance_note_col)
+                    insurance_note_index = processed_df.columns.get_loc(
+                        insurance_note_col
+                    )
                     # Move the new columns to right after Insurance Note
                     cols = list(processed_df.columns)
                     # Remove new columns from their current position (if they exist)
-                    cols_to_remove = ['Formatted Insurance', 'Status']
-                    if 'Patient Name' in cols:
-                        cols_to_remove.append('Patient Name')
+                    cols_to_remove = ["Formatted Insurance", "Status"]
+                    if "Patient Name" in cols:
+                        cols_to_remove.append("Patient Name")
                     for col_name in cols_to_remove:
                         if col_name in cols:
                             cols.remove(col_name)
                     # Insert new columns after Insurance Note
-                    cols.insert(insurance_note_index + 1, 'Formatted Insurance')
-                    cols.insert(insurance_note_index + 2, 'Status')
+                    cols.insert(insurance_note_index + 1, "Formatted Insurance")
+                    cols.insert(insurance_note_index + 2, "Status")
                     # Insert Patient Name column if it was created (after Status)
-                    if 'Patient Name' in processed_df.columns:
-                        status_index = cols.index('Status')
-                        cols.insert(status_index + 1, 'Patient Name')
-                    
+                    if "Patient Name" in processed_df.columns:
+                        status_index = cols.index("Status")
+                        cols.insert(status_index + 1, "Patient Name")
+
                     # Ensure Patient Name is in cols if it was created
                     if patient_name_created:
-                        if 'Patient Name' not in cols:
+                        if "Patient Name" not in cols:
                             # Add it after Status
-                            if 'Status' in cols:
-                                status_index = cols.index('Status')
-                                cols.insert(status_index + 1, 'Patient Name')
+                            if "Status" in cols:
+                                status_index = cols.index("Status")
+                                cols.insert(status_index + 1, "Patient Name")
                             else:
                                 # If Status not found, add at end
-                                cols.append('Patient Name')
-                    
+                                cols.append("Patient Name")
+
                     # Reorder dataframe with all columns
                     processed_df = processed_df[cols]
-                    
+
                     # Rename "Formatted Insurance" to "Dental Primary Ins Carr" and create "Dental Secondary Ins Carr"
-                    if 'Formatted Insurance' in processed_df.columns:
+                    if "Formatted Insurance" in processed_df.columns:
                         # Find Pat ID column (flexible matching)
                         pat_id_col = None
-                        pat_id_variations = ['Pat ID', 'PATID', 'PatID', 'pat id', 'Patient ID', 'PatientID', 'patient id']
+                        pat_id_variations = [
+                            "Pat ID",
+                            "PATID",
+                            "PatID",
+                            "pat id",
+                            "Patient ID",
+                            "PatientID",
+                            "patient id",
+                        ]
                         for col in processed_df.columns:
-                            col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                            col_lower = (
+                                col.lower().strip().replace(" ", "").replace("_", "")
+                            )
                             for variation in pat_id_variations:
-                                if col_lower == variation.lower().strip().replace(' ', '').replace('_', ''):
+                                if col_lower == variation.lower().strip().replace(
+                                    " ", ""
+                                ).replace("_", ""):
                                     pat_id_col = col
                                     break
                             if pat_id_col:
                                 break
-                        
+
                         if pat_id_col:
                             # Count rows before consolidation
                             rows_before = len(processed_df)
-                            
+
                             # Group by Pat ID and consolidate insurance information
                             def consolidate_by_pat_id(group):
                                 # Get unique insurance names for this Pat ID (preserve order of first occurrence)
                                 insurance_names = []
                                 seen = set()
-                                for ins in group['Formatted Insurance']:
+                                for ins in group["Formatted Insurance"]:
                                     if pd.notna(ins):
                                         ins_str = str(ins).strip()
                                         if ins_str and ins_str not in seen:
                                             insurance_names.append(ins_str)
                                             seen.add(ins_str)
-                                
+
                                 # Take the first row as base
                                 first_row = group.iloc[0].copy()
-                                
+
                                 # Set Primary Insurance (first unique insurance)
                                 if len(insurance_names) > 0:
-                                    first_row['Dental Primary Ins Carr'] = insurance_names[0]
+                                    first_row["Dental Primary Ins Carr"] = (
+                                        insurance_names[0]
+                                    )
                                 else:
-                                    first_row['Dental Primary Ins Carr'] = ''
-                                
+                                    first_row["Dental Primary Ins Carr"] = ""
+
                                 # Set Secondary Insurance (second unique insurance if exists)
                                 if len(insurance_names) > 1:
-                                    first_row['Dental Secondary Ins Carr'] = insurance_names[1]
+                                    first_row["Dental Secondary Ins Carr"] = (
+                                        insurance_names[1]
+                                    )
                                 else:
-                                    first_row['Dental Secondary Ins Carr'] = ''
-                                
+                                    first_row["Dental Secondary Ins Carr"] = ""
+
                                 return first_row.to_dict()
-                            
+
                             # Group by Pat ID and consolidate
                             consolidated_rows = []
                             for pat_id, group in processed_df.groupby(pat_id_col):
                                 consolidated_row = consolidate_by_pat_id(group)
                                 consolidated_rows.append(consolidated_row)
-                            
+
                             # Create new DataFrame from consolidated rows
                             processed_df = pd.DataFrame(consolidated_rows)
-                            
+
                             # Remove the old "Formatted Insurance" column
-                            if 'Formatted Insurance' in processed_df.columns:
-                                processed_df = processed_df.drop(columns=['Formatted Insurance'])
-                            
+                            if "Formatted Insurance" in processed_df.columns:
+                                processed_df = processed_df.drop(
+                                    columns=["Formatted Insurance"]
+                                )
+
                             # Ensure "Dental Primary Ins Carr" and "Dental Secondary Ins Carr" columns exist
-                            if 'Dental Primary Ins Carr' not in processed_df.columns:
-                                processed_df['Dental Primary Ins Carr'] = ''
-                            if 'Dental Secondary Ins Carr' not in processed_df.columns:
-                                processed_df['Dental Secondary Ins Carr'] = ''
-                            
+                            if "Dental Primary Ins Carr" not in processed_df.columns:
+                                processed_df["Dental Primary Ins Carr"] = ""
+                            if "Dental Secondary Ins Carr" not in processed_df.columns:
+                                processed_df["Dental Secondary Ins Carr"] = ""
+
                             # Reorder columns to place insurance columns after Pat ID
                             cols_list = list(processed_df.columns)
                             # Remove insurance columns from their current position
-                            for col_name in ['Dental Primary Ins Carr', 'Dental Secondary Ins Carr']:
+                            for col_name in [
+                                "Dental Primary Ins Carr",
+                                "Dental Secondary Ins Carr",
+                            ]:
                                 if col_name in cols_list:
                                     cols_list.remove(col_name)
-                            
+
                             # Find Pat ID column position
                             if pat_id_col in cols_list:
                                 pat_id_index = cols_list.index(pat_id_col)
                                 # Insert insurance columns after Pat ID
-                                cols_list.insert(pat_id_index + 1, 'Dental Primary Ins Carr')
-                                cols_list.insert(pat_id_index + 2, 'Dental Secondary Ins Carr')
+                                cols_list.insert(
+                                    pat_id_index + 1, "Dental Primary Ins Carr"
+                                )
+                                cols_list.insert(
+                                    pat_id_index + 2, "Dental Secondary Ins Carr"
+                                )
                             else:
                                 # If Pat ID not found, add at the end
-                                cols_list.append('Dental Primary Ins Carr')
-                                cols_list.append('Dental Secondary Ins Carr')
-                            
+                                cols_list.append("Dental Primary Ins Carr")
+                                cols_list.append("Dental Secondary Ins Carr")
+
                             # Ensure Status column is preserved in the column list
-                            if 'Status' in processed_df.columns and 'Status' not in cols_list:
-                                cols_list.append('Status')
-                            
+                            if (
+                                "Status" in processed_df.columns
+                                and "Status" not in cols_list
+                            ):
+                                cols_list.append("Status")
+
                             processed_df = processed_df[cols_list]
-                            
+
                             # Count rows after consolidation
                             rows_after = len(processed_df)
                             rows_consolidated = rows_before - rows_after
                             total_duplicates_removed += rows_consolidated
                         else:
                             # If Pat ID column not found, just rename the column
-                            processed_df = processed_df.rename(columns={'Formatted Insurance': 'Dental Primary Ins Carr'})
-                            processed_df['Dental Secondary Ins Carr'] = ''
+                            processed_df = processed_df.rename(
+                                columns={
+                                    "Formatted Insurance": "Dental Primary Ins Carr"
+                                }
+                            )
+                            processed_df["Dental Secondary Ins Carr"] = ""
                             # Ensure Status column exists
-                            if 'Status' not in processed_df.columns:
-                                processed_df['Status'] = 'Conversion'
+                            if "Status" not in processed_df.columns:
+                                processed_df["Status"] = "Conversion"
                     else:
                         # If Formatted Insurance column doesn't exist, create empty insurance columns
-                        processed_df['Dental Primary Ins Carr'] = ''
-                        processed_df['Dental Secondary Ins Carr'] = ''
+                        processed_df["Dental Primary Ins Carr"] = ""
+                        processed_df["Dental Secondary Ins Carr"] = ""
                         # Ensure Status column exists
-                        if 'Status' not in processed_df.columns:
-                            processed_df['Status'] = 'Conversion'
-                    
+                        if "Status" not in processed_df.columns:
+                            processed_df["Status"] = "Conversion"
+
                     processed_sheets[sheet_name] = processed_df
                     total_rows_processed += len(processed_df)
-                    
+
                     # Debug: Print columns to verify Status is included
-                    print(f"DEBUG - Sheet '{sheet_name}' columns: {list(processed_df.columns)}")
-                    if 'Status' in processed_df.columns:
-                        print(f"DEBUG - Status column exists with values: {processed_df['Status'].unique()[:5]}")
+                    print(
+                        f"DEBUG - Sheet '{sheet_name}' columns: {list(processed_df.columns)}"
+                    )
+                    if "Status" in processed_df.columns:
+                        print(
+                            f"DEBUG - Status column exists with values: {processed_df['Status'].unique()[:5]}"
+                        )
                     else:
                         print("DEBUG - WARNING: Status column NOT FOUND!")
                 else:
                     processed_sheets[sheet_name] = df
-            
+
             # Update conversion_data with processed data
             conversion_data = processed_sheets
-            
+
             # Build columns added message
             columns_added_msg = "- 'Dental Primary Ins Carr' - Extracted and formatted insurance names (first insurance for each Pat ID)\n- 'Dental Secondary Ins Carr' - Second insurance for Pat IDs with multiple insurances\n- 'Status' - Extracted status values (shows 'Conversion' when no status is found)"
             if patient_name_created:
                 columns_added_msg += "\n- 'Patient Name' - Created from 'Patient Last Name' and 'Patient First Name' (format: <last_name>, <first_name>)"
-            
+
             # Build consolidation message
             dedup_msg = ""
             if total_duplicates_removed > 0:
                 dedup_msg = f"\n\n🔄 Row Consolidation:\n- Consolidated {total_duplicates_removed} row(s) with same Pat ID\n- Multiple insurances for same Pat ID: first in 'Dental Primary Ins Carr', second in 'Dental Secondary Ins Carr'"
-            
+
             conversion_result = f"✅ Validation and processing completed successfully!\n\n📊 File loaded: {filename}\n📋 Sheets processed: {len(conversion_data)}\n📋 Sheet names: {', '.join(list(conversion_data.keys()))}\n📊 Total rows processed: {total_rows_processed}{dedup_msg}\n\n✅ New columns added:\n{columns_added_msg}\n💾 Ready to download the processed file!"
-        
-        return redirect('/comparison?tab=conversion')
-        
+
+        return redirect("/comparison?tab=conversion")
+
     except Exception as e:
         conversion_result = f"❌ Error uploading Conversion Report: {str(e)}"
         conversion_data = None
         conversion_filename = None
-        return redirect('/comparison?tab=conversion')
+        return redirect("/comparison?tab=conversion")
 
-@app.route('/download_conversion', methods=['POST'])
+
+@app.route("/download_conversion", methods=["POST"])
 def download_conversion_result():
     global conversion_data, conversion_filename
-    
+
     if not conversion_data:
-        return jsonify({'error': 'No data to download'}), 400
-    
-    filename = request.form.get('filename', '').strip()
+        return jsonify({"error": "No data to download"}), 400
+
+    filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"conversion_report_{timestamp}.xlsx"
-    
+
     try:
         # Create a temporary file
         import tempfile
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
-        
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+
         try:
-            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 for sheet_name, df in conversion_data.items():
                     # Remove "Conversion" column if it exists (safety check)
                     df_clean = df.copy()
-                    if 'Conversion' in df_clean.columns:
-                        df_clean = df_clean.drop(columns=['Conversion'])
-                    
+                    if "Conversion" in df_clean.columns:
+                        df_clean = df_clean.drop(columns=["Conversion"])
+
                     # Format "Appt Date" column to MM/DD/YYYY format
                     appt_date_col = None
                     for col in df_clean.columns:
-                        if col.lower().strip() == 'appt date':
+                        if col.lower().strip() == "appt date":
                             appt_date_col = col
                             break
-                    
+
                     if appt_date_col:
                         # Convert dates to MM/DD/YYYY format
                         def format_date(date_val):
-                            if pd.isna(date_val) or date_val == '':
-                                return ''
+                            if pd.isna(date_val) or date_val == "":
+                                return ""
                             try:
                                 # Convert to datetime if not already
                                 if isinstance(date_val, pd.Timestamp):
                                     date_obj = date_val
                                 elif isinstance(date_val, str):
                                     # Try to parse string date
-                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    date_obj = pd.to_datetime(date_val, errors="coerce")
                                     if pd.isna(date_obj):
-                                        return str(date_val)  # Return original if can't parse
+                                        return str(
+                                            date_val
+                                        )  # Return original if can't parse
                                 else:
-                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    date_obj = pd.to_datetime(date_val, errors="coerce")
                                     if pd.isna(date_obj):
-                                        return str(date_val)  # Return original if can't parse
-                                
+                                        return str(
+                                            date_val
+                                        )  # Return original if can't parse
+
                                 # Format as MM/DD/YYYY
-                                return date_obj.strftime('%m/%d/%Y')
+                                return date_obj.strftime("%m/%d/%Y")
                             except (ValueError, TypeError, AttributeError):
                                 # If parsing fails, return as-is
                                 return str(date_val)
-                        
-                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(format_date)
-                    
+
+                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(
+                            format_date
+                        )
+
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
-            
+
             # Clear data after successful download
             global conversion_result
             conversion_data = None
             conversion_filename = None
             conversion_result = None
-            
+
             return send_file(temp_path, as_attachment=True, download_name=filename)
-            
+
         finally:
             # Clean up temporary file
             os.close(temp_fd)
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/reset_comparison', methods=['POST'])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_comparison", methods=["POST"])
 def reset_comparison():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
     # Explicitly do NOT touch conversion_data, conversion_filename, or conversion_result
-    
+
     try:
         # Reset ONLY comparison tool variables - do not affect conversion tool
         raw_data = {}
@@ -2704,41 +2977,43 @@ def reset_comparison():
         raw_filename = None
         previous_filename = None
         comparison_result = "🔄 Comparison tool reset successfully! All files and data have been cleared."
-        
-        return redirect('/comparison?tab=comparison')
-        
+
+        return redirect("/comparison?tab=comparison")
+
     except Exception as e:
         comparison_result = f"❌ Error resetting comparison tool: {str(e)}"
-        return redirect('/comparison?tab=comparison')
+        return redirect("/comparison?tab=comparison")
 
-@app.route('/reset_conversion', methods=['POST'])
+
+@app.route("/reset_conversion", methods=["POST"])
 def reset_conversion():
     global conversion_data, conversion_filename, conversion_result
     # Explicitly do NOT touch raw_data, previous_data, raw_filename, previous_filename, or comparison_result
-    
+
     try:
         # Reset ONLY conversion tool variables - do not affect comparison tool
         conversion_data = {}
         conversion_filename = None
         conversion_result = "🔄 Conversion tool reset successfully! All files and data have been cleared."
-        
-        return redirect('/comparison?tab=conversion')
-        
+
+        return redirect("/comparison?tab=conversion")
+
     except Exception as e:
         conversion_result = f"❌ Error resetting conversion tool: {str(e)}"
-        return redirect('/comparison?tab=conversion')
+        return redirect("/comparison?tab=conversion")
+
 
 def reformat_insurance_column(df, source_column, new_column_name):
     """Reformat the source column and create a new column next to it"""
     if source_column not in df.columns:
         return None, f"Column '{source_column}' not found in sheet."
-    
+
     # Apply the reformatting
     df[new_column_name] = df[source_column].apply(format_insurance_name)
-    
+
     # Get the position of the source column
     source_col_idx = df.columns.get_loc(source_column)
-    
+
     # Reorder columns to place new column right after source column
     cols = df.columns.tolist()
     # Remove new column from its current position
@@ -2746,213 +3021,251 @@ def reformat_insurance_column(df, source_column, new_column_name):
     # Insert it right after source column
     cols.insert(source_col_idx + 1, new_column_name)
     df = df[cols]
-    
+
     return df, None
 
-def process_insurance_formatting(data_dict, source_column="Dental Primary Ins Carr", new_column_name="formated insurance names"):
+
+def process_insurance_formatting(
+    data_dict,
+    source_column="Dental Primary Ins Carr",
+    new_column_name="formated insurance names",
+):
     """Process all sheets in the Excel file for insurance formatting"""
     output_lines = []
     output_lines.append("=" * 70)
     output_lines.append("PROCESSING EXCEL FILE - REFORMATTING COLUMNS")
     output_lines.append("=" * 70)
     output_lines.append("")
-    
+
     processed_sheets = {}
-    
+
     for sheet_name, df in data_dict.items():
         output_lines.append(f"📋 Processing sheet: {sheet_name}")
-        output_lines.append(f"   Original shape: {df.shape[0]} rows × {df.shape[1]} columns")
-        
+        output_lines.append(
+            f"   Original shape: {df.shape[0]} rows × {df.shape[1]} columns"
+        )
+
         if source_column not in df.columns:
-            output_lines.append(f"   ⚠️  Column '{source_column}' not found. Skipping this sheet.")
+            output_lines.append(
+                f"   ⚠️  Column '{source_column}' not found. Skipping this sheet."
+            )
             processed_sheets[sheet_name] = df
             output_lines.append("")
             continue
-        
+
         # Reformat the column
-        df_processed, error = reformat_insurance_column(df.copy(), source_column, new_column_name)
-        
+        df_processed, error = reformat_insurance_column(
+            df.copy(), source_column, new_column_name
+        )
+
         if error:
             output_lines.append(f"   ❌ Error: {error}")
             processed_sheets[sheet_name] = df
         else:
             processed_sheets[sheet_name] = df_processed
             output_lines.append(f"   ✅ Column reformatted successfully!")
-            output_lines.append(f"   New shape: {df_processed.shape[0]} rows × {df_processed.shape[1]} columns")
-            
+            output_lines.append(
+                f"   New shape: {df_processed.shape[0]} rows × {df_processed.shape[1]} columns"
+            )
+
             # Show sample
             sample_df = df_processed[[source_column, new_column_name]].head(10)
             output_lines.append(f"   Sample of original vs formatted (first 10 rows):")
             output_lines.append(sample_df.to_string(index=False))
-            output_lines.append(f"   Total formatted entries: {df_processed[new_column_name].notna().sum()}")
-            output_lines.append(f"   Unique formatted values: {df_processed[new_column_name].value_counts().head(10).to_string()}")
-        
+            output_lines.append(
+                f"   Total formatted entries: {df_processed[new_column_name].notna().sum()}"
+            )
+            output_lines.append(
+                f"   Unique formatted values: {df_processed[new_column_name].value_counts().head(10).to_string()}"
+            )
+
         output_lines.append("")
-    
+
     output_lines.append("=" * 70)
     output_lines.append("PROCESSING COMPLETE!")
     output_lines.append("=" * 70)
-    
+
     return processed_sheets, "\n".join(output_lines)
 
-@app.route('/upload_insurance_formatting', methods=['POST'])
+
+@app.route("/upload_insurance_formatting", methods=["POST"])
 def upload_insurance_formatting():
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
-    
-    if 'file' not in request.files:
+
+    if "file" not in request.files:
         insurance_formatting_result = "❌ Error: No file provided"
-        return redirect('/comparison?tab=insurance')
-    
-    file = request.files['file']
-    if file.filename == '':
+        return redirect("/comparison?tab=insurance")
+
+    file = request.files["file"]
+    if file.filename == "":
         insurance_formatting_result = "❌ Error: No file selected"
-        return redirect('/comparison?tab=insurance')
-    
+        return redirect("/comparison?tab=insurance")
+
     try:
         # Get filename without saving to disk
         filename = secure_filename(file.filename)
-        
+
         # Read Excel file directly from memory (no disk storage)
         file.seek(0)  # Reset file pointer to beginning
-        excel_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
-        
+        excel_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+
         # Remove "Unnamed:" columns from all sheets
         cleaned_data = {}
         for sheet_name, df in excel_data.items():
             # Convert column names to strings first, then remove columns that start with "Unnamed:"
             df.columns = df.columns.astype(str)
-            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            df_cleaned = df.loc[
+                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+            ]
             cleaned_data[sheet_name] = df_cleaned
-        
+
         # Process all sheets automatically
-        insurance_formatting_data, insurance_formatting_output = process_insurance_formatting(cleaned_data)
+        insurance_formatting_data, insurance_formatting_output = (
+            process_insurance_formatting(cleaned_data)
+        )
         insurance_formatting_filename = filename
-        
+
         # Count sheets processed
         sheets_count = len(insurance_formatting_data)
         insurance_formatting_result = f"✅ Processing complete! Processed {sheets_count} sheet(s). Formatted insurance names column added to all sheets."
-        
-        return redirect('/comparison?tab=insurance')
-        
+
+        return redirect("/comparison?tab=insurance")
+
     except Exception as e:
         insurance_formatting_result = f"❌ Error processing file: {str(e)}"
         insurance_formatting_output = f"Error: {str(e)}"
-        return redirect('/comparison?tab=insurance')
+        return redirect("/comparison?tab=insurance")
 
-@app.route('/download_insurance_formatting', methods=['POST'])
+
+@app.route("/download_insurance_formatting", methods=["POST"])
 def download_insurance_formatting():
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
-    
+
     if not insurance_formatting_data:
-        return jsonify({'error': 'No data to download'}), 400
-    
-    filename = request.form.get('filename', '').strip()
+        return jsonify({"error": "No data to download"}), 400
+
+    filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"formatted_insurance_names_{timestamp}.xlsx"
-    
+
     try:
         # Create a temporary file
         import tempfile
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
-        
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+
         try:
-            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 for sheet_name, df in insurance_formatting_data.items():
                     df_clean = df.copy()
-                    
+
                     # Format "Appointment Date" column to MM/DD/YYYY format (flexible column name search)
                     appt_date_col = None
                     for col in df_clean.columns:
-                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        col_lower = (
+                            col.lower().strip().replace(" ", "").replace("_", "")
+                        )
                         # Check for variations: "appointment date", "appt date", "apptdate", etc.
-                        if ('appointment' in col_lower or 'appt' in col_lower) and 'date' in col_lower:
+                        if (
+                            "appointment" in col_lower or "appt" in col_lower
+                        ) and "date" in col_lower:
                             appt_date_col = col
                             break
-                    
+
                     if appt_date_col:
                         # Convert dates to MM/DD/YYYY format
                         def format_date(date_val):
-                            if pd.isna(date_val) or date_val == '':
-                                return ''
+                            if pd.isna(date_val) or date_val == "":
+                                return ""
                             try:
                                 # Convert to datetime if not already
                                 if isinstance(date_val, pd.Timestamp):
                                     date_obj = date_val
                                 elif isinstance(date_val, str):
                                     # Try to parse string date
-                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    date_obj = pd.to_datetime(date_val, errors="coerce")
                                     if pd.isna(date_obj):
-                                        return str(date_val)  # Return original if can't parse
+                                        return str(
+                                            date_val
+                                        )  # Return original if can't parse
                                 else:
-                                    date_obj = pd.to_datetime(date_val, errors='coerce')
+                                    date_obj = pd.to_datetime(date_val, errors="coerce")
                                     if pd.isna(date_obj):
-                                        return str(date_val)  # Return original if can't parse
-                                
+                                        return str(
+                                            date_val
+                                        )  # Return original if can't parse
+
                                 # Format as MM/DD/YYYY
-                                return date_obj.strftime('%m/%d/%Y')
+                                return date_obj.strftime("%m/%d/%Y")
                             except (ValueError, TypeError, AttributeError):
                                 # If parsing fails, return as-is
                                 return str(date_val)
-                        
+
                         # Format dates and convert column to string type to prevent Excel auto-formatting
-                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(format_date)
+                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(
+                            format_date
+                        )
                         df_clean[appt_date_col] = df_clean[appt_date_col].astype(str)
-                    
+
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
-                    
+
                     # Set date column format to text in Excel to preserve MM/DD/YYYY format
                     if appt_date_col:
                         ws = writer.sheets[sheet_name]
-                        
+
                         # Find the column index
                         col_idx = None
                         for idx, col_name in enumerate(df_clean.columns, 1):
                             if col_name == appt_date_col:
                                 col_idx = idx
                                 break
-                        
+
                         if col_idx:
                             # Set all cells in this column to text format
                             for row in range(2, ws.max_row + 1):
                                 cell = ws.cell(row=row, column=col_idx)
                                 if cell.value:
-                                    cell.number_format = '@'  # Text format
-            
+                                    cell.number_format = "@"  # Text format
+
             # Clear data after successful download
             insurance_formatting_data = None
             insurance_formatting_filename = None
             insurance_formatting_result = None
             insurance_formatting_output = ""
-            
+
             return send_file(temp_path, as_attachment=True, download_name=filename)
-            
+
         finally:
             # Clean up temporary file
             os.close(temp_fd)
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/reset_insurance_formatting', methods=['POST'])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_insurance_formatting", methods=["POST"])
 def reset_insurance_formatting():
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
     # Explicitly do NOT touch other tool variables
-    
+
     try:
         # Reset ONLY insurance formatting tool variables
         insurance_formatting_data = {}
         insurance_formatting_filename = None
         insurance_formatting_result = "🔄 Insurance formatting tool reset successfully! All files and data have been cleared."
         insurance_formatting_output = ""
-        
-        return redirect('/comparison?tab=insurance')
-        
+
+        return redirect("/comparison?tab=insurance")
+
     except Exception as e:
-        insurance_formatting_result = f"❌ Error resetting insurance formatting tool: {str(e)}"
-        return redirect('/comparison?tab=insurance')
+        insurance_formatting_result = (
+            f"❌ Error resetting insurance formatting tool: {str(e)}"
+        )
+        return redirect("/comparison?tab=insurance")
+
 
 # Remarks update functions (from excel-remark)
 def process_remarks_excel_file(file_stream):
@@ -2960,35 +3273,52 @@ def process_remarks_excel_file(file_stream):
     Checks all sheets to find the one with required columns."""
     try:
         from openpyxl import load_workbook
-        
+
         wb = load_workbook(file_stream)
         ws = None
         patient_id_col = None
         remark_col = None
         agent_name_col = None
         header_row = 1
-        
+
         # Try all sheets to find the one with Patient ID, Remark, and Agent Name columns
         for sheet_name in wb.sheetnames:
             current_ws = wb[sheet_name]
-            
+
             # Look for headers in the first few rows
             for row_num in range(1, min(6, current_ws.max_row + 1)):
                 temp_patient_id_col = None
                 temp_remark_col = None
                 temp_agent_name_col = None
-                
+
                 for col in range(1, current_ws.max_column + 1):
-                    cell_value = str(current_ws.cell(row=row_num, column=col).value or '').strip().lower()
-                    cell_value_clean = cell_value.replace(' ', '').replace('_', '').replace('-', '').replace('.', '')
-                    
-                    if ('patient' in cell_value_clean and 'id' in cell_value_clean) or cell_value_clean == 'pid':
+                    cell_value = (
+                        str(current_ws.cell(row=row_num, column=col).value or "")
+                        .strip()
+                        .lower()
+                    )
+                    cell_value_clean = (
+                        cell_value.replace(" ", "")
+                        .replace("_", "")
+                        .replace("-", "")
+                        .replace(".", "")
+                    )
+
+                    if (
+                        "patient" in cell_value_clean and "id" in cell_value_clean
+                    ) or cell_value_clean == "pid":
                         temp_patient_id_col = col
-                    elif 'remark' in cell_value_clean:
-                        temp_remark_col = col
-                    elif 'agent' in cell_value_clean and 'name' in cell_value_clean:
+                    elif (
+                        "remark" in cell_value_clean
+                        or cell_value_clean == "remarks"
+                        or "note" in cell_value_clean
+                    ):
+                        # More flexible remark detection - also check for 'remarks' or 'note'
+                        if not temp_remark_col:  # Only set if not already found
+                            temp_remark_col = col
+                    elif "agent" in cell_value_clean and "name" in cell_value_clean:
                         temp_agent_name_col = col
-                
+
                 # If we found Patient ID and Remark (Agent Name is optional), use this sheet
                 if temp_patient_id_col and temp_remark_col:
                     patient_id_col = temp_patient_id_col
@@ -2997,61 +3327,89 @@ def process_remarks_excel_file(file_stream):
                     header_row = row_num
                     ws = current_ws
                     break
-            
+
             if ws:
                 break
-        
+
         # If still not found, try active sheet
         if not ws:
             ws = wb.active
             for col in range(1, ws.max_column + 1):
-                cell_value = str(ws.cell(row=1, column=col).value or '').strip().lower()
-                cell_value_clean = cell_value.replace(' ', '').replace('_', '').replace('-', '').replace('.', '')
-                
-                if ('patient' in cell_value_clean and 'id' in cell_value_clean) or cell_value_clean == 'pid':
+                cell_value = str(ws.cell(row=1, column=col).value or "").strip().lower()
+                cell_value_clean = (
+                    cell_value.replace(" ", "")
+                    .replace("_", "")
+                    .replace("-", "")
+                    .replace(".", "")
+                )
+
+                if (
+                    "patient" in cell_value_clean and "id" in cell_value_clean
+                ) or cell_value_clean == "pid":
                     patient_id_col = col
-                elif 'remark' in cell_value_clean:
+                elif "remark" in cell_value_clean:
                     remark_col = col
-                elif 'agent' in cell_value_clean and 'name' in cell_value_clean:
+                elif "agent" in cell_value_clean and "name" in cell_value_clean:
                     agent_name_col = col
-        
+
         if not patient_id_col:
-            sheet_names = ', '.join(wb.sheetnames)
-            raise Exception(f"Patient ID column not found in Excel file. Checked sheets: {sheet_names}")
-        
+            sheet_names = ", ".join(wb.sheetnames)
+            raise Exception(
+                f"Patient ID column not found in Excel file. Checked sheets: {sheet_names}"
+            )
+
         if not remark_col:
-            sheet_names = ', '.join(wb.sheetnames)
-            raise Exception(f"Remark column not found in Excel file. Checked sheets: {sheet_names}")
-        
+            sheet_names = ", ".join(wb.sheetnames)
+            raise Exception(
+                f"Remark column not found in Excel file. Checked sheets: {sheet_names}"
+            )
+
         # Extract data - now returns list of records for each patient ID
         excel_data = {}
         data_start_row = header_row + 1
         for row in range(data_start_row, ws.max_row + 1):  # Skip header row
-            patient_id = str(ws.cell(row=row, column=patient_id_col).value or '').strip()
-            remark = str(ws.cell(row=row, column=remark_col).value or '').strip()
-            agent_name = str(ws.cell(row=row, column=agent_name_col).value or '').strip() if agent_name_col else ''
-            
-            # Clean up Patient ID - remove .0 if it's a float
-            if patient_id.endswith('.0'):
-                patient_id = patient_id[:-2]
-            
+            patient_id_raw = ws.cell(row=row, column=patient_id_col).value
+            remark_raw = ws.cell(row=row, column=remark_col).value
+            agent_name_raw = (
+                ws.cell(row=row, column=agent_name_col).value
+                if agent_name_col
+                else None
+            )
+
+            # Normalize Patient ID for consistent matching
+            patient_id = normalize_patient_id(patient_id_raw) if patient_id_raw else ""
+
+            # Ensure remark and agent_name are strings, handling None, empty strings, and whitespace
+            # Convert None to empty string, then strip whitespace
+            if remark_raw is None:
+                remark = ""
+            else:
+                remark = str(remark_raw).strip() if str(remark_raw).strip() else ""
+
+            if agent_name_raw is None:
+                agent_name = ""
+            else:
+                agent_name = (
+                    str(agent_name_raw).strip() if str(agent_name_raw).strip() else ""
+                )
+
             if patient_id:  # Only add non-empty patient IDs
                 if patient_id not in excel_data:
                     excel_data[patient_id] = []
-                
-                excel_data[patient_id].append({
-                    'remark': remark,
-                    'agent_name': agent_name
-                })
-        
+
+                excel_data[patient_id].append(
+                    {"remark": remark, "agent_name": agent_name}
+                )
+
         return excel_data
-        
+
     except Exception as e:
         raise Exception(f"Error processing Excel file: {str(e)}")
 
+
 def process_remarks_appointments_excel(file_stream):
     """Read an appointments Excel and return list of appointment dicts with all columns.
-    
+
     Only requires 'Pat ID' column. All other columns are preserved as-is.
     Checks all sheets to find the one with Pat ID column.
     """
@@ -3062,361 +3420,539 @@ def process_remarks_appointments_excel(file_stream):
     headers = []
     pat_id_col = None
     header_row = 1
-    
+
     # Try all sheets to find the one with Pat ID column
     for sheet_name in wb.sheetnames:
         current_ws = wb[sheet_name]
-        
+
         # Try to find header row (check first 5 rows)
         for row_num in range(1, min(6, current_ws.max_row + 1)):
             temp_headers = []
             for col in range(1, current_ws.max_column + 1):
                 raw = current_ws.cell(row=row_num, column=col).value
-                name = (str(raw or '')).strip()
+                name = (str(raw or "")).strip()
                 temp_headers.append(name)
-            
+
             # Check if this row looks like headers (has a Pat ID column)
             for i, header in enumerate(temp_headers):
-                header_lower = header.lower().replace(' ', '').replace('_', '').replace('-', '').replace('.', '')
+                header_lower = (
+                    header.lower()
+                    .replace(" ", "")
+                    .replace("_", "")
+                    .replace("-", "")
+                    .replace(".", "")
+                )
                 # Check for various patterns: pat id, patient id, patientid, patid, etc.
-                if ('pat' in header_lower and 'id' in header_lower) or header_lower == 'pid':
+                if (
+                    "pat" in header_lower and "id" in header_lower
+                ) or header_lower == "pid":
                     headers = temp_headers
                     header_row = row_num
                     pat_id_col = i + 1  # 1-based column index
                     ws = current_ws
                     break
-            
+
             if pat_id_col:
                 break
-        
+
         if pat_id_col:
             break
-    
+
     # If still not found, use active sheet and check again
     if pat_id_col is None:
         ws = wb.active
         headers = []
         for col in range(1, ws.max_column + 1):
             raw = ws.cell(row=1, column=col).value
-            name = (str(raw or '')).strip()
+            name = (str(raw or "")).strip()
             headers.append(name)
-        
+
         for i, header in enumerate(headers):
-            header_lower = header.lower().replace(' ', '').replace('_', '').replace('-', '').replace('.', '')
-            if ('pat' in header_lower and 'id' in header_lower) or header_lower == 'pid':
+            header_lower = (
+                header.lower()
+                .replace(" ", "")
+                .replace("_", "")
+                .replace("-", "")
+                .replace(".", "")
+            )
+            if (
+                "pat" in header_lower and "id" in header_lower
+            ) or header_lower == "pid":
                 pat_id_col = i + 1
                 header_row = 1
                 break
-    
+
     if pat_id_col is None:
         # Provide helpful error message with found columns
-        sheet_names = ', '.join(wb.sheetnames)
-        found_columns = ', '.join([f"'{h}'" for h in headers if h]) or 'none'
-        raise Exception(f"Pat ID column not found in appointments Excel. Checked sheets: {sheet_names}. Found columns: {found_columns}. Please ensure there's a column containing 'Pat ID', 'Patient ID', or similar.")
+        sheet_names = ", ".join(wb.sheetnames)
+        found_columns = ", ".join([f"'{h}'" for h in headers if h]) or "none"
+        raise Exception(
+            f"Pat ID column not found in appointments Excel. Checked sheets: {sheet_names}. Found columns: {found_columns}. Please ensure there's a column containing 'Pat ID', 'Patient ID', or similar."
+        )
 
     # Read all rows starting after the header row
     appointments = []
     data_start_row = header_row + 1
     for row in range(data_start_row, ws.max_row + 1):
         record = {}
-        
+
         # Read all columns
         for col, header in enumerate(headers, 1):
             value = ws.cell(row=row, column=col).value
-            record[header] = '' if value is None else str(value)
-        
+            record[header] = "" if value is None else str(value)
+
         # Normalize Patient ID to string without trailing .0
-        pat_id_value = record.get(headers[pat_id_col - 1], '')
+        pat_id_value = record.get(headers[pat_id_col - 1], "")
         pid = str(pat_id_value).strip()
-        if pid.endswith('.0'):
+        if pid.endswith(".0"):
             pid = pid[:-2]
-        record['Pat ID'] = pid  # Standardize the key name
-        
+        record["Pat ID"] = pid  # Standardize the key name
+
         # Ensure Remark and Agent Name exist
-        if 'Remark' not in record:
-            record['Remark'] = ''
-        if 'Agent Name' not in record:
-            record['Agent Name'] = ''
-        
+        if "Remark" not in record:
+            record["Remark"] = ""
+        if "Agent Name" not in record:
+            record["Agent Name"] = ""
+
         # Skip empty rows (no Pat ID)
         if pid:
             appointments.append(record)
 
     return appointments
 
+
 def update_appointments_with_remarks(appointments, excel_data):
     """Update appointments with remarks and agent names from Excel data based on Patient ID matching.
     Creates separate rows for each match when Patient ID appears multiple times."""
     updated_appointments = []
     updated_count = 0
-    
+
+    # Normalize all Patient IDs in excel_data for better matching
+    normalized_excel_data = {}
+    for pid, data_list in excel_data.items():
+        normalized_pid = normalize_patient_id(pid)
+        if normalized_pid:
+            if normalized_pid not in normalized_excel_data:
+                normalized_excel_data[normalized_pid] = []
+            normalized_excel_data[normalized_pid].extend(data_list)
+
     for appointment in appointments:
-        patient_id = str(appointment.get('Pat ID', '')).strip()
+        patient_id_raw = appointment.get("Pat ID", "")
+        patient_id = normalize_patient_id(patient_id_raw) if patient_id_raw else ""
         matches_found = False
-        
-        # Try exact match first
-        if patient_id and patient_id in excel_data:
+
+        # Try normalized match first
+        if patient_id and patient_id in normalized_excel_data:
             # Create a separate row for each match
-            for match_data in excel_data[patient_id]:
+            for match_data in normalized_excel_data[patient_id]:
                 new_appointment = appointment.copy()  # Copy all original data
-                new_appointment['Remark'] = match_data['remark']
-                new_appointment['Agent Name'] = match_data['agent_name']
+
+                # Remove any existing remark/Remark keys to avoid conflicts
+                keys_to_remove = [
+                    k for k in new_appointment.keys() if k.lower() == "remark"
+                ]
+                for key in keys_to_remove:
+                    del new_appointment[key]
+
+                # Ensure Remark and Agent Name are set as strings, handling None and empty values
+                remark_raw = match_data.get("remark", "")
+                if remark_raw is None:
+                    remark_value = ""
+                else:
+                    remark_value = str(remark_raw).strip()
+
+                agent_raw = match_data.get("agent_name", "")
+                if agent_raw is None:
+                    agent_value = ""
+                else:
+                    agent_value = str(agent_raw).strip()
+
+                # Explicitly set with uppercase keys
+                new_appointment["Remark"] = remark_value
+                new_appointment["Agent Name"] = agent_value
                 updated_appointments.append(new_appointment)
                 updated_count += 1
                 matches_found = True
-        # Try with .0 suffix (in case Excel has float format)
-        elif patient_id and f"{patient_id}.0" in excel_data:
-            for match_data in excel_data[f"{patient_id}.0"]:
-                new_appointment = appointment.copy()  # Copy all original data
-                new_appointment['Remark'] = match_data['remark']
-                new_appointment['Agent Name'] = match_data['agent_name']
-                updated_appointments.append(new_appointment)
-                updated_count += 1
-                matches_found = True
-        
+        # Fallback: Try exact match (original format)
+        elif patient_id_raw:
+            patient_id_str = str(patient_id_raw).strip()
+            if patient_id_str and patient_id_str in excel_data:
+                for match_data in excel_data[patient_id_str]:
+                    new_appointment = appointment.copy()
+
+                    # Remove any existing remark/Remark keys to avoid conflicts
+                    keys_to_remove = [
+                        k for k in new_appointment.keys() if k.lower() == "remark"
+                    ]
+                    for key in keys_to_remove:
+                        del new_appointment[key]
+
+                    # Ensure Remark and Agent Name are set as strings, handling None and empty values
+                    remark_raw = match_data.get("remark", "")
+                    if remark_raw is None:
+                        remark_value = ""
+                    else:
+                        remark_value = str(remark_raw).strip()
+
+                    agent_raw = match_data.get("agent_name", "")
+                    if agent_raw is None:
+                        agent_value = ""
+                    else:
+                        agent_value = str(agent_raw).strip()
+
+                    # Explicitly set with uppercase keys
+                    new_appointment["Remark"] = remark_value
+                    new_appointment["Agent Name"] = agent_value
+                    updated_appointments.append(new_appointment)
+                    updated_count += 1
+                    matches_found = True
+            # Try with .0 suffix (in case Excel has float format)
+            elif patient_id_str and f"{patient_id_str}.0" in excel_data:
+                for match_data in excel_data[f"{patient_id_str}.0"]:
+                    new_appointment = appointment.copy()
+
+                    # Remove any existing remark/Remark keys to avoid conflicts
+                    keys_to_remove = [
+                        k for k in new_appointment.keys() if k.lower() == "remark"
+                    ]
+                    for key in keys_to_remove:
+                        del new_appointment[key]
+
+                    # Ensure Remark and Agent Name are set as strings, handling None and empty values
+                    remark_raw = match_data.get("remark", "")
+                    if remark_raw is None:
+                        remark_value = ""
+                    else:
+                        remark_value = str(remark_raw).strip()
+
+                    agent_raw = match_data.get("agent_name", "")
+                    if agent_raw is None:
+                        agent_value = ""
+                    else:
+                        agent_value = str(agent_raw).strip()
+
+                    # Explicitly set with uppercase keys
+                    new_appointment["Remark"] = remark_value
+                    new_appointment["Agent Name"] = agent_value
+                    updated_appointments.append(new_appointment)
+                    updated_count += 1
+                    matches_found = True
+
         # If no matches found, add original appointment with empty remark and agent name
         if not matches_found:
-            appointment['Remark'] = ''
-            appointment['Agent Name'] = ''
-            updated_appointments.append(appointment)
-    
+            new_appointment = appointment.copy()
+            new_appointment["Remark"] = ""
+            new_appointment["Agent Name"] = ""
+            updated_appointments.append(new_appointment)
+
     return updated_appointments, updated_count
+
 
 def create_excel_from_appointments(appointments, filename):
     """Create Excel file from processed appointment data with all columns."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, Alignment
     import io
-    
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Appointment Data"
-    
+
     if not appointments:
         return wb
-    
+
     # Get all unique headers from all appointments
     all_headers = set()
     for appointment in appointments:
         all_headers.update(appointment.keys())
-    
+
     # Convert to list and ensure Pat ID, Insurance Name, Remark, and Agent Name are at the end for visibility
     headers = list(all_headers)
-    if 'Pat ID' in headers:
-        headers.remove('Pat ID')
-    if 'Insurance Name' in headers:
-        headers.remove('Insurance Name')
-    if 'Remark' in headers:
-        headers.remove('Remark')
-    if 'Agent Name' in headers:
-        headers.remove('Agent Name')
-    headers.extend(['Pat ID', 'Insurance Name', 'Remark', 'Agent Name'])  # Put these at the end
-    
+    if "Pat ID" in headers:
+        headers.remove("Pat ID")
+    if "Insurance Name" in headers:
+        headers.remove("Insurance Name")
+    if "Remark" in headers:
+        headers.remove("Remark")
+    if "Agent Name" in headers:
+        headers.remove("Agent Name")
+    headers.extend(
+        ["Pat ID", "Insurance Name", "Remark", "Agent Name"]
+    )  # Put these at the end
+
     # Set headers
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True)
-        cell.alignment = Alignment(horizontal='center')
-    
+        cell.alignment = Alignment(horizontal="center")
+
     # Find "Time" column index for formatting
     time_col_idx = None
     for col, header in enumerate(headers, 1):
-        if header.lower().strip() == 'time':
+        if header.lower().strip() == "time":
             time_col_idx = col
             break
-    
+
     # Format date function for Time column
     def format_time_value(time_val):
         """Format Time column value to MM/DD/YYYY format"""
-        if not time_val or time_val == '':
-            return ''
+        if not time_val or time_val == "":
+            return ""
         try:
             # Convert to datetime if not already
             if isinstance(time_val, pd.Timestamp):
                 date_obj = time_val
             elif isinstance(time_val, str):
                 # Try to parse string date
-                date_obj = pd.to_datetime(time_val, errors='coerce')
+                date_obj = pd.to_datetime(time_val, errors="coerce")
                 if pd.isna(date_obj):
                     return str(time_val)  # Return original if can't parse
             else:
-                date_obj = pd.to_datetime(time_val, errors='coerce')
+                date_obj = pd.to_datetime(time_val, errors="coerce")
                 if pd.isna(date_obj):
                     return str(time_val)  # Return original if can't parse
-            
+
             # Format as MM/DD/YYYY
-            return date_obj.strftime('%m/%d/%Y')
+            return date_obj.strftime("%m/%d/%Y")
         except (ValueError, TypeError, AttributeError):
             # If parsing fails, return as-is
             return str(time_val)
-    
+
     # Add appointment data
     for row, appointment in enumerate(appointments, 2):
         for col, header in enumerate(headers, 1):
-            value = appointment.get(header, '')
-            
+            value = appointment.get(header, "")
+
+            # Ensure value is not None - convert to string if needed
+            if value is None:
+                value = ""
+            elif not isinstance(value, str):
+                value = str(value)
+
             # Format Time column if this is the Time column
             if time_col_idx and col == time_col_idx:
                 value = format_time_value(value)
-            
+
+            # Write the value to the cell
             cell = ws.cell(row=row, column=col, value=value)
-            
+
             # Set Time column format to text to preserve MM/DD/YYYY format
             if time_col_idx and col == time_col_idx and value:
-                cell.number_format = '@'  # Text format
-    
+                cell.number_format = "@"  # Text format
+
+            # Ensure Remark and Agent Name columns are written as text
+            if header in ["Remark", "Agent Name"] and value:
+                cell.number_format = "@"  # Text format to preserve content
+
     # Auto-adjust column widths
     for column in ws.columns:
         max_length = 0
         column_letter = column[0].column_letter
-        
+
         for cell in column:
             try:
                 if len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
             except:
                 pass
-        
+
         adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
         ws.column_dimensions[column_letter].width = adjusted_width
-    
+
     # Save to memory
     excel_buffer = io.BytesIO()
     wb.save(excel_buffer)
     excel_buffer.seek(0)
-    
+
     return excel_buffer
 
-@app.route('/upload_remarks', methods=['POST'])
+
+@app.route("/upload_remarks", methods=["POST"])
 def upload_remarks():
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
-    
-    appointments_file = request.files.get('appointments_file')
-    remarks_file = request.files.get('remarks_file')
-    
+
+    appointments_file = request.files.get("appointments_file")
+    remarks_file = request.files.get("remarks_file")
+
     # Require both Excel files
-    if not appointments_file or appointments_file.filename == '':
+    if not appointments_file or appointments_file.filename == "":
         remarks_result = "❌ Error: Please upload the Appointments Excel file."
-        return redirect('/comparison?tab=remarks')
-    
-    if not remarks_file or remarks_file.filename == '':
+        return redirect("/comparison?tab=remarks")
+
+    if not remarks_file or remarks_file.filename == "":
         remarks_result = "❌ Error: Please upload the Remarks Excel file."
-        return redirect('/comparison?tab=remarks')
-    
+        return redirect("/comparison?tab=remarks")
+
     try:
         # Process appointments Excel directly from memory
         appointments_filename_raw = secure_filename(appointments_file.filename)
         appointments_file.seek(0)  # Reset file pointer
-        remarks_appointments_data = process_remarks_appointments_excel(appointments_file)
+        remarks_appointments_data = process_remarks_appointments_excel(
+            appointments_file
+        )
         remarks_appointments_filename = appointments_filename_raw
-        
+
         # Process remarks Excel
         remarks_file.seek(0)  # Reset file pointer
         remarks_excel_data = process_remarks_excel_file(remarks_file)
         remarks_remarks_filename = secure_filename(remarks_file.filename)
-        
+
+        # Debug: Check what remarks data we have
+        sample_remarks_count = 0
+        sample_remarks_with_data = 0
+        for pid, data_list in list(remarks_excel_data.items())[
+            :5
+        ]:  # Check first 5 patient IDs
+            sample_remarks_count += len(data_list)
+            for data in data_list:
+                if data.get("remark") and str(data.get("remark")).strip():
+                    sample_remarks_with_data += 1
+
         # Update appointments with remarks
-        updated_appointments, updated_count = update_appointments_with_remarks(remarks_appointments_data, remarks_excel_data)
-        
+        updated_appointments, updated_count = update_appointments_with_remarks(
+            remarks_appointments_data, remarks_excel_data
+        )
+
+        # Debug: Verify remarks were set
+        remarks_set_count = 0
+        for appt in updated_appointments[:10]:  # Check first 10 appointments
+            if appt.get("Remark") and str(appt.get("Remark")).strip():
+                remarks_set_count += 1
+
         # Format Insurance Note column to create Insurance Name column
         for appointment in updated_appointments:
             # Find Insurance Note column (case-insensitive search)
             insurance_note_value = None
             insurance_note_key = None
-            
+
             for key, value in appointment.items():
-                if key.lower().strip() == 'insurance note':
+                if key.lower().strip() == "insurance note":
                     insurance_note_key = key
                     insurance_note_value = value
                     break
-            
+
             # Format the insurance note value using existing format_insurance_name function
             if insurance_note_value:
                 # Handle None, empty string, or NaN values
-                insurance_str = str(insurance_note_value).strip() if insurance_note_value else ''
-                if insurance_str and insurance_str.lower() not in ['nan', 'none', '']:
+                insurance_str = (
+                    str(insurance_note_value).strip() if insurance_note_value else ""
+                )
+                if insurance_str and insurance_str.lower() not in ["nan", "none", ""]:
                     try:
                         # Extract insurance name from "from conversion carrier:" pattern (case-insensitive)
                         # Example 1: "from conversion carrier: <insurance_name> | Plan #684 | ..."
                         # Example 2: "2025-10-29 18:34:01 PT, By - 5240HSHINDE, Status - Eligible ] From conversion carrier: <insurance_name>"
                         # We want to extract only the insurance name after "from conversion carrier:" and before the first "|" (if present)
                         extracted_insurance_name = None
-                        
+
                         # Check for "from conversion carrier:" pattern (case-insensitive)
-                        if 'from conversion carrier:' in insurance_str.lower():
+                        if "from conversion carrier:" in insurance_str.lower():
                             # Find the position of "from conversion carrier:" (case-insensitive)
                             import re
-                            pattern_match = re.search(r'from conversion carrier:\s*(.+?)(?:\s*\||$)', insurance_str, re.IGNORECASE)
-                            
+
+                            pattern_match = re.search(
+                                r"from conversion carrier:\s*(.+?)(?:\s*\||$)",
+                                insurance_str,
+                                re.IGNORECASE,
+                            )
+
                             if pattern_match:
                                 # Extract the insurance name (everything after "from conversion carrier:" until "|" or end of string)
                                 insurance_name = pattern_match.group(1).strip()
                                 # Remove any trailing characters like "]" if present
-                                insurance_name = insurance_name.rstrip(' ]|')
+                                insurance_name = insurance_name.rstrip(" ]|")
                                 extracted_insurance_name = insurance_name
                             else:
                                 # Fallback: Split by "|" to get only the part before the first pipe
-                                parts = insurance_str.split('|', 1)  # Split only on first "|"
+                                parts = insurance_str.split(
+                                    "|", 1
+                                )  # Split only on first "|"
                                 if len(parts) > 0:
                                     carrier_part = parts[0].strip()
                                     # Find "from conversion carrier:" in this part (case-insensitive)
-                                    carrier_match = re.search(r'from conversion carrier:\s*(.+?)$', carrier_part, re.IGNORECASE)
+                                    carrier_match = re.search(
+                                        r"from conversion carrier:\s*(.+?)$",
+                                        carrier_part,
+                                        re.IGNORECASE,
+                                    )
                                     if carrier_match:
                                         insurance_name = carrier_match.group(1).strip()
-                                        insurance_name = insurance_name.rstrip(' ]|')
+                                        insurance_name = insurance_name.rstrip(" ]|")
                                         extracted_insurance_name = insurance_name
-                                    elif 'from conversion carrier:' in carrier_part.lower():
+                                    elif (
+                                        "from conversion carrier:"
+                                        in carrier_part.lower()
+                                    ):
                                         # Extract everything after "from conversion carrier:"
-                                        insurance_name = carrier_part.split(':', 1)[1].strip() if ':' in carrier_part else carrier_part
-                                        insurance_name = insurance_name.rstrip(' ]|')
+                                        insurance_name = (
+                                            carrier_part.split(":", 1)[1].strip()
+                                            if ":" in carrier_part
+                                            else carrier_part
+                                        )
+                                        insurance_name = insurance_name.rstrip(" ]|")
                                         extracted_insurance_name = insurance_name
-                        
+
                         # If we extracted a name, use it; otherwise use the full text
-                        insurance_to_format = extracted_insurance_name if extracted_insurance_name else insurance_str
-                        
+                        insurance_to_format = (
+                            extracted_insurance_name
+                            if extracted_insurance_name
+                            else insurance_str
+                        )
+
                         # Format the insurance name using existing function
                         formatted_insurance = format_insurance_name(insurance_to_format)
-                        appointment['Insurance Name'] = formatted_insurance if formatted_insurance and not (isinstance(formatted_insurance, float) and pd.isna(formatted_insurance)) else ''
+                        appointment["Insurance Name"] = (
+                            formatted_insurance
+                            if formatted_insurance
+                            and not (
+                                isinstance(formatted_insurance, float)
+                                and pd.isna(formatted_insurance)
+                            )
+                            else ""
+                        )
                     except Exception as e:
                         # If formatting fails, use empty string
-                        appointment['Insurance Name'] = ''
+                        appointment["Insurance Name"] = ""
                 else:
-                    appointment['Insurance Name'] = ''
+                    appointment["Insurance Name"] = ""
             else:
-                appointment['Insurance Name'] = ''
-        
+                appointment["Insurance Name"] = ""
+
         # Update the global processed_appointments with the new data
         remarks_appointments_data = updated_appointments
         remarks_updated_count = updated_count
-        
+
         remarks_result = f"✅ Successfully processed {len(remarks_appointments_data)} appointment(s) and updated {updated_count} appointment(s) with remarks and agent names. Insurance Name column added based on Insurance Note formatting."
-        
-        return redirect('/comparison?tab=remarks')
-        
+
+        return redirect("/comparison?tab=remarks")
+
     except Exception as e:
         remarks_result = f"❌ Error processing files: {str(e)}"
-        return redirect('/comparison?tab=remarks')
+        return redirect("/comparison?tab=remarks")
 
-@app.route('/download_remarks', methods=['POST'])
+
+@app.route("/download_remarks", methods=["POST"])
 def download_remarks():
     global remarks_appointments_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
-    
+
     if not remarks_appointments_data:
-        return jsonify({'error': 'No data to download'}), 400
-    
-    filename = request.form.get('filename', '').strip()
+        return jsonify({"error": "No data to download"}), 400
+
+    filename = request.form.get("filename", "").strip()
     if not filename:
         if remarks_appointments_filename:
             base_name = os.path.splitext(remarks_appointments_filename)[0]
             filename = f"{base_name}_appointments.xlsx"
         else:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"appointments_with_remarks_{timestamp}.xlsx"
-    
+
     try:
         # Create Excel file
-        excel_buffer = create_excel_from_appointments(remarks_appointments_data, filename)
-        
+        excel_buffer = create_excel_from_appointments(
+            remarks_appointments_data, filename
+        )
+
         # Clear data after successful download
         remarks_appointments_data = None
         remarks_excel_data = None
@@ -3424,36 +3960,42 @@ def download_remarks():
         remarks_remarks_filename = None
         remarks_result = None
         remarks_updated_count = 0
-        
-        return send_file(excel_buffer, 
-                        as_attachment=True, 
-                        download_name=filename,
-                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/reset_remarks', methods=['POST'])
+        return send_file(
+            excel_buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_remarks", methods=["POST"])
 def reset_remarks():
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
     # Explicitly do NOT touch other tool variables
-    
+
     try:
         # Reset ONLY remarks tool variables
         remarks_appointments_data = None
         remarks_excel_data = None
         remarks_appointments_filename = None
         remarks_remarks_filename = None
-        remarks_result = "🔄 Remarks tool reset successfully! All files and data have been cleared."
+        remarks_result = (
+            "🔄 Remarks tool reset successfully! All files and data have been cleared."
+        )
         remarks_updated_count = 0
-        
-        return redirect('/comparison?tab=remarks')
-        
+
+        return redirect("/comparison?tab=remarks")
+
     except Exception as e:
         remarks_result = f"❌ Error resetting remarks tool: {str(e)}"
-        return redirect('/comparison?tab=remarks')
+        return redirect("/comparison?tab=remarks")
 
-@app.route('/reset_app', methods=['POST'])
+
+@app.route("/reset_app", methods=["POST"])
 def reset_app():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
     global conversion_data, conversion_filename, conversion_result
@@ -3461,26 +4003,28 @@ def reset_app():
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
-    
+
     try:
         # Reset all global variables
         raw_data = {}
         previous_data = {}
         raw_filename = None
         previous_filename = None
-        comparison_result = "🔄 Application reset successfully! All files and data have been cleared."
-        
+        comparison_result = (
+            "🔄 Application reset successfully! All files and data have been cleared."
+        )
+
         # Reset conversion data
         conversion_data = {}
         conversion_filename = None
         conversion_result = None
-        
+
         # Reset insurance formatting data
         insurance_formatting_data = {}
         insurance_formatting_filename = None
         insurance_formatting_result = None
         insurance_formatting_output = ""
-        
+
         # Reset remarks data
         remarks_appointments_data = None
         remarks_excel_data = None
@@ -3488,141 +4032,177 @@ def reset_app():
         remarks_remarks_filename = None
         remarks_result = None
         remarks_updated_count = 0
-        
+
         # Reset appointment report data
         appointment_report_data = None
         appointment_report_filename = None
         appointment_report_result = None
         appointment_report_output = ""
-        
+
         # Reset smart assist data
         smart_assist_data = None
         smart_assist_filename = None
         smart_assist_result = None
         smart_assist_output = ""
-        
-        return redirect('/comparison')
-        
+
+        return redirect("/comparison")
+
     except Exception as e:
         comparison_result = f"❌ Error resetting application: {str(e)}"
-        return redirect('/comparison')
+        return redirect("/comparison")
 
-@app.route('/upload_appointment_report', methods=['POST'])
+
+@app.route("/upload_appointment_report", methods=["POST"])
 def upload_appointment_report():
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
-    
-    if 'file' not in request.files:
+
+    if "file" not in request.files:
         appointment_report_result = "❌ Error: No file provided"
-        return redirect('/comparison?tab=appointment')
-    
-    file = request.files['file']
-    if file.filename == '':
+        return redirect("/comparison?tab=appointment")
+
+    file = request.files["file"]
+    if file.filename == "":
         appointment_report_result = "❌ Error: No file selected"
-        return redirect('/comparison?tab=appointment')
-    
+        return redirect("/comparison?tab=appointment")
+
     try:
         # Get filename without saving to disk
         filename = secure_filename(file.filename)
-        
+
         # Read Excel file directly from memory (no disk storage)
         file.seek(0)  # Reset file pointer to beginning
-        excel_data = pd.read_excel(file, sheet_name=None, engine='openpyxl')
-        
+        excel_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+
         # Remove "Unnamed:" columns from all sheets
         cleaned_data = {}
         for sheet_name, df in excel_data.items():
             # Convert column names to strings first, then remove columns that start with "Unnamed:"
             df.columns = df.columns.astype(str)
-            df_cleaned = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
+            df_cleaned = df.loc[
+                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+            ]
             cleaned_data[sheet_name] = df_cleaned
-        
+
         # Process all sheets - format both Primary and Secondary insurance columns
         processed_sheets = {}
         total_rows_processed = 0
         output_lines = []
         output_lines.append("=" * 70)
-        output_lines.append("PROCESSING APPOINTMENT REPORT - FORMATTING INSURANCE COLUMNS")
+        output_lines.append(
+            "PROCESSING APPOINTMENT REPORT - FORMATTING INSURANCE COLUMNS"
+        )
         output_lines.append("=" * 70)
         output_lines.append("")
-        
+
         for sheet_name, df in cleaned_data.items():
             output_lines.append(f"📋 Processing sheet: {sheet_name}")
-            output_lines.append(f"   Original shape: {df.shape[0]} rows × {df.shape[1]} columns")
-            
+            output_lines.append(
+                f"   Original shape: {df.shape[0]} rows × {df.shape[1]} columns"
+            )
+
             # Find the Patient ID column (case-insensitive search)
             patient_id_col = None
             for col in df.columns:
-                col_lower = col.lower().strip().replace(' ', '').replace('_', '')
-                if ('patient' in col_lower or 'pat' in col_lower) and 'id' in col_lower:
+                col_lower = col.lower().strip().replace(" ", "").replace("_", "")
+                if ("patient" in col_lower or "pat" in col_lower) and "id" in col_lower:
                     patient_id_col = col
                     break
-            
+
             # Find the insurance columns (case-insensitive search)
             primary_col = None
             secondary_col = None
-            
+
             for col in df.columns:
                 col_lower = col.lower().strip()
-                if 'dental' in col_lower and 'primary' in col_lower and 'ins' in col_lower:
+                if (
+                    "dental" in col_lower
+                    and "primary" in col_lower
+                    and "ins" in col_lower
+                ):
                     primary_col = col
-                elif 'dental' in col_lower and 'secondary' in col_lower and 'ins' in col_lower:
+                elif (
+                    "dental" in col_lower
+                    and "secondary" in col_lower
+                    and "ins" in col_lower
+                ):
                     secondary_col = col
-            
+
             df_processed = df.copy()
             formatted_primary = 0
             formatted_secondary = 0
-            
+
             if primary_col:
                 # Format primary insurance column
-                df_processed[primary_col] = df_processed[primary_col].apply(format_insurance_name)
+                df_processed[primary_col] = df_processed[primary_col].apply(
+                    format_insurance_name
+                )
                 formatted_primary = df_processed[primary_col].notna().sum()
-                output_lines.append(f"   ✅ Formatted '{primary_col}' column ({formatted_primary} entries)")
+                output_lines.append(
+                    f"   ✅ Formatted '{primary_col}' column ({formatted_primary} entries)"
+                )
             else:
                 output_lines.append(f"   ⚠️  'Dental Primary Ins Carr' column not found")
-            
+
             if secondary_col:
                 # Format secondary insurance column
-                df_processed[secondary_col] = df_processed[secondary_col].apply(format_insurance_name)
+                df_processed[secondary_col] = df_processed[secondary_col].apply(
+                    format_insurance_name
+                )
                 formatted_secondary = df_processed[secondary_col].notna().sum()
-                output_lines.append(f"   ✅ Formatted '{secondary_col}' column ({formatted_secondary} entries)")
+                output_lines.append(
+                    f"   ✅ Formatted '{secondary_col}' column ({formatted_secondary} entries)"
+                )
             else:
-                output_lines.append(f"   ⚠️  'Dental Secondary Ins Carr' column not found")
-            
+                output_lines.append(
+                    f"   ⚠️  'Dental Secondary Ins Carr' column not found"
+                )
+
             # Handle duplicate Patient IDs
             duplicates_removed = 0
             if patient_id_col and primary_col:
                 output_lines.append("")
                 output_lines.append(f"   🔍 Checking for duplicate Patient IDs...")
-                
+
                 # Normalize Patient IDs for comparison
-                df_processed['_normalized_patient_id'] = df_processed[patient_id_col].apply(normalize_patient_id)
-                
+                df_processed["_normalized_patient_id"] = df_processed[
+                    patient_id_col
+                ].apply(normalize_patient_id)
+
                 # Find duplicates
                 rows_before = len(df_processed)
-                
+
                 # Group by normalized Patient ID and Primary Insurance
                 # Keep only first occurrence when Patient ID + Primary Insurance are the same
                 df_processed = df_processed.drop_duplicates(
-                    subset=['_normalized_patient_id', primary_col], 
-                    keep='first'
+                    subset=["_normalized_patient_id", primary_col], keep="first"
                 )
-                
+
                 # Remove the temporary normalized column
-                df_processed = df_processed.drop(columns=['_normalized_patient_id'])
-                
+                df_processed = df_processed.drop(columns=["_normalized_patient_id"])
+
                 rows_after = len(df_processed)
                 duplicates_removed = rows_before - rows_after
-                
+
                 if duplicates_removed > 0:
-                    output_lines.append(f"   ✅ Removed {duplicates_removed} duplicate record(s) with same Patient ID and same insurance")
-                    output_lines.append(f"   ℹ️  Kept records with same Patient ID but different insurance names")
+                    output_lines.append(
+                        f"   ✅ Removed {duplicates_removed} duplicate record(s) with same Patient ID and same insurance"
+                    )
+                    output_lines.append(
+                        f"   ℹ️  Kept records with same Patient ID but different insurance names"
+                    )
                 else:
-                    output_lines.append(f"   ℹ️  No duplicates found (or all duplicates have different insurance)")
+                    output_lines.append(
+                        f"   ℹ️  No duplicates found (or all duplicates have different insurance)"
+                    )
             elif patient_id_col:
-                output_lines.append(f"   ⚠️  Cannot check duplicates: Primary insurance column not found")
+                output_lines.append(
+                    f"   ⚠️  Cannot check duplicates: Primary insurance column not found"
+                )
             else:
-                output_lines.append(f"   ⚠️  Cannot check duplicates: Patient ID column not found")
-            
+                output_lines.append(
+                    f"   ⚠️  Cannot check duplicates: Patient ID column not found"
+                )
+
             # Show sample if columns were found
             if primary_col or secondary_col:
                 output_lines.append("")
@@ -3633,291 +4213,349 @@ def upload_appointment_report():
                     sample_cols.append(primary_col)
                 if secondary_col:
                     sample_cols.append(secondary_col)
-                
+
                 sample_df = df_processed[sample_cols].head(5)
                 output_lines.append(f"   Sample of formatted data (first 5 rows):")
                 output_lines.append(sample_df.to_string(index=False))
-            
+
             processed_sheets[sheet_name] = df_processed
             total_rows_processed += len(df_processed)
             output_lines.append("")
-            output_lines.append(f"   Final shape: {df_processed.shape[0]} rows × {df_processed.shape[1]} columns")
+            output_lines.append(
+                f"   Final shape: {df_processed.shape[0]} rows × {df_processed.shape[1]} columns"
+            )
             output_lines.append("")
-        
+
         output_lines.append("=" * 70)
         output_lines.append("PROCESSING COMPLETE!")
         output_lines.append("=" * 70)
-        
+
         # Update global variables
         appointment_report_data = processed_sheets
         appointment_report_filename = filename
         appointment_report_output = "\n".join(output_lines)
-        
+
         # Count sheets processed
         sheets_count = len(processed_sheets)
         appointment_report_result = f"✅ Processing complete! Formatted insurance columns in {sheets_count} sheet(s). Total rows processed: {total_rows_processed}"
-        
-        return redirect('/comparison?tab=appointment')
-        
+
+        return redirect("/comparison?tab=appointment")
+
     except Exception as e:
         appointment_report_result = f"❌ Error processing file: {str(e)}"
         appointment_report_output = f"Error: {str(e)}"
-        return redirect('/comparison?tab=appointment')
+        return redirect("/comparison?tab=appointment")
 
-@app.route('/download_appointment_report', methods=['POST'])
+
+@app.route("/download_appointment_report", methods=["POST"])
 def download_appointment_report():
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
-    
+
     if not appointment_report_data:
-        return jsonify({'error': 'No data to download'}), 400
-    
-    filename = request.form.get('filename', '').strip()
+        return jsonify({"error": "No data to download"}), 400
+
+    filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"formatted_appointment_report_{timestamp}.xlsx"
-    
+
     try:
         # Create a temporary file
         import tempfile
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
-        
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+
         try:
-            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 for sheet_name, df in appointment_report_data.items():
                     df_clean = df.copy()
-                    
+
                     # Format date columns to MM/DD/YYYY format (flexible column name search)
                     for col in df_clean.columns:
-                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
+                        col_lower = (
+                            col.lower().strip().replace(" ", "").replace("_", "")
+                        )
                         # Check for date columns
-                        if 'date' in col_lower or 'time' in col_lower:
+                        if "date" in col_lower or "time" in col_lower:
                             # Convert dates to MM/DD/YYYY format
                             def format_date(date_val):
-                                if pd.isna(date_val) or date_val == '':
-                                    return ''
+                                if pd.isna(date_val) or date_val == "":
+                                    return ""
                                 try:
                                     # Convert to datetime if not already
                                     if isinstance(date_val, pd.Timestamp):
                                         date_obj = date_val
                                     elif isinstance(date_val, str):
                                         # Try to parse string date
-                                        date_obj = pd.to_datetime(date_val, errors='coerce')
+                                        date_obj = pd.to_datetime(
+                                            date_val, errors="coerce"
+                                        )
                                         if pd.isna(date_obj):
-                                            return str(date_val)  # Return original if can't parse
+                                            return str(
+                                                date_val
+                                            )  # Return original if can't parse
                                     else:
-                                        date_obj = pd.to_datetime(date_val, errors='coerce')
+                                        date_obj = pd.to_datetime(
+                                            date_val, errors="coerce"
+                                        )
                                         if pd.isna(date_obj):
-                                            return str(date_val)  # Return original if can't parse
-                                    
+                                            return str(
+                                                date_val
+                                            )  # Return original if can't parse
+
                                     # Format as MM/DD/YYYY
-                                    return date_obj.strftime('%m/%d/%Y')
+                                    return date_obj.strftime("%m/%d/%Y")
                                 except (ValueError, TypeError, AttributeError):
                                     # If parsing fails, return as-is
                                     return str(date_val)
-                            
+
                             # Format dates and convert column to string type to prevent Excel auto-formatting
                             df_clean[col] = df_clean[col].apply(format_date)
                             df_clean[col] = df_clean[col].astype(str)
-                    
+
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
-                    
+
                     # Set date column format to text in Excel to preserve MM/DD/YYYY format
                     ws = writer.sheets[sheet_name]
                     for col in df_clean.columns:
-                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
-                        if 'date' in col_lower or 'time' in col_lower:
+                        col_lower = (
+                            col.lower().strip().replace(" ", "").replace("_", "")
+                        )
+                        if "date" in col_lower or "time" in col_lower:
                             # Find the column index
                             col_idx = None
                             for idx, col_name in enumerate(df_clean.columns, 1):
                                 if col_name == col:
                                     col_idx = idx
                                     break
-                            
+
                             if col_idx:
                                 # Set all cells in this column to text format
                                 for row in range(2, ws.max_row + 1):
                                     cell = ws.cell(row=row, column=col_idx)
                                     if cell.value:
-                                        cell.number_format = '@'  # Text format
-            
+                                        cell.number_format = "@"  # Text format
+
             # Clear data after successful download
             appointment_report_data = None
             appointment_report_filename = None
             appointment_report_result = None
             appointment_report_output = ""
-            
+
             return send_file(temp_path, as_attachment=True, download_name=filename)
-            
+
         finally:
             # Clean up temporary file
             os.close(temp_fd)
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/reset_appointment_report', methods=['POST'])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_appointment_report", methods=["POST"])
 def reset_appointment_report():
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
     # Explicitly do NOT touch other tool variables
-    
+
     try:
         # Reset ONLY appointment report tool variables
         appointment_report_data = None
         appointment_report_filename = None
         appointment_report_result = "🔄 Appointment report formatting tool reset successfully! All files and data have been cleared."
         appointment_report_output = ""
-        
-        return redirect('/comparison?tab=appointment')
-        
-    except Exception as e:
-        appointment_report_result = f"❌ Error resetting appointment report formatting tool: {str(e)}"
-        return redirect('/comparison?tab=appointment')
 
-@app.route('/upload_smart_assist', methods=['POST'])
+        return redirect("/comparison?tab=appointment")
+
+    except Exception as e:
+        appointment_report_result = (
+            f"❌ Error resetting appointment report formatting tool: {str(e)}"
+        )
+        return redirect("/comparison?tab=appointment")
+
+
+@app.route("/upload_smart_assist", methods=["POST"])
 def upload_smart_assist():
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
-    
-    if 'file' not in request.files:
+
+    if "file" not in request.files:
         smart_assist_result = "❌ Error: No file provided"
-        return redirect('/comparison?tab=smartassist')
-    
-    file = request.files['file']
-    if file.filename == '':
+        return redirect("/comparison?tab=smartassist")
+
+    file = request.files["file"]
+    if file.filename == "":
         smart_assist_result = "❌ Error: No file selected"
-        return redirect('/comparison?tab=smartassist')
-    
+        return redirect("/comparison?tab=smartassist")
+
     try:
         filename = secure_filename(file.filename)
         file.seek(0)
-        
+
         # Read raw Excel data without headers first to analyze structure
         from openpyxl import load_workbook
+
         wb = load_workbook(file)
-        
+
         processed_sheets = {}
         output_lines = []
         output_lines.append("=" * 70)
         output_lines.append("PROCESSING SMART ASSIST REPORT - ADVANCED FORMATTING")
         output_lines.append("=" * 70)
         output_lines.append("")
-        
+
         for sheet_name in wb.sheetnames:
             output_lines.append(f"📋 Processing sheet: {sheet_name}")
             ws = wb[sheet_name]
-            
+
             # Step 1: Read all data as raw values
             all_rows = []
             for row in ws.iter_rows(values_only=True):
                 all_rows.append(row)
-            
+
             output_lines.append(f"   Original rows: {len(all_rows)}")
-            
+
             # Step 2: Find header rows (rows that look like headers)
             header_rows = []
             header_indices = []
-            
+
             for idx, row in enumerate(all_rows):
                 # Check if row looks like a header (has text values, not mostly empty)
                 if row and any(row):
-                    non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip() != '')
+                    non_empty_count = sum(
+                        1
+                        for cell in row
+                        if cell is not None and str(cell).strip() != ""
+                    )
                     # If more than 30% of cells are filled, could be a header or data row
                     if non_empty_count > 0:
                         # Check if it looks like a header (contains common header keywords)
-                        row_text = ' '.join([str(cell).lower() for cell in row if cell is not None])
+                        row_text = " ".join(
+                            [str(cell).lower() for cell in row if cell is not None]
+                        )
                         # Look for header patterns
-                        if any(keyword in row_text for keyword in ['patient', 'name', 'date', 'time', 'insurance', 'carrier', 'id', 'appt']):
+                        if any(
+                            keyword in row_text
+                            for keyword in [
+                                "patient",
+                                "name",
+                                "date",
+                                "time",
+                                "insurance",
+                                "carrier",
+                                "id",
+                                "appt",
+                            ]
+                        ):
                             # Check if next few rows are data (to confirm this is a header)
                             is_likely_header = False
-                            
+
                             # First occurrence or significant gap from last header
                             if not header_indices or (idx - header_indices[-1]) > 5:
                                 is_likely_header = True
-                            
+
                             if is_likely_header:
                                 header_rows.append(row)
                                 header_indices.append(idx)
-            
-            output_lines.append(f"   Found {len(header_rows)} potential header row(s) at positions: {header_indices}")
-            
+
+            output_lines.append(
+                f"   Found {len(header_rows)} potential header row(s) at positions: {header_indices}"
+            )
+
             # Step 3: Use the first valid header row
             if not header_rows:
-                output_lines.append(f"   ⚠️  No valid header row found, using first row as header")
+                output_lines.append(
+                    f"   ⚠️  No valid header row found, using first row as header"
+                )
                 header_row = all_rows[0] if all_rows else []
                 data_start_idx = 1
             else:
                 header_row = header_rows[0]
                 data_start_idx = header_indices[0] + 1
-            
+
             # Clean header row - remove None and empty strings
             headers = []
             for cell in header_row:
-                if cell is not None and str(cell).strip() != '':
+                if cell is not None and str(cell).strip() != "":
                     headers.append(str(cell).strip())
                 else:
                     headers.append(f"Column_{len(headers)}")
-            
+
             output_lines.append(f"   Headers identified: {len(headers)} columns")
-            
+
             # Step 4: Collect all data rows (skip blank rows and intermediate header rows)
             data_rows = []
             blank_rows_removed = 0
             duplicate_headers_removed = 0
             summary_rows_removed = 0
-            
+
             for idx in range(data_start_idx, len(all_rows)):
                 row = all_rows[idx]
-                
+
                 # Skip completely blank rows
-                if not row or all(cell is None or str(cell).strip() == '' for cell in row):
+                if not row or all(
+                    cell is None or str(cell).strip() == "" for cell in row
+                ):
                     blank_rows_removed += 1
                     continue
-                
+
                 # Skip rows that look like duplicate headers (middle section headers)
-                row_text = ' '.join([str(cell).lower() for cell in row if cell is not None])
+                row_text = " ".join(
+                    [str(cell).lower() for cell in row if cell is not None]
+                )
                 is_duplicate_header = False
-                
+
                 # Check if this row matches any header pattern
                 if idx in header_indices[1:]:  # Skip first header
                     is_duplicate_header = True
                     duplicate_headers_removed += 1
                     continue
-                
+
                 # Additional check: if row closely matches header row, skip it
                 if len(row) == len(header_row):
-                    matches = sum(1 for i, cell in enumerate(row) if cell == header_row[i])
+                    matches = sum(
+                        1 for i, cell in enumerate(row) if cell == header_row[i]
+                    )
                     if matches > len(header_row) * 0.5:  # More than 50% match
                         is_duplicate_header = True
                         duplicate_headers_removed += 1
                         continue
-                
+
                 # Skip summary/total rows
                 # Check first few cells for total/summary indicators
-                first_cells_text = ' '.join([str(cell).lower().strip() for cell in row[:3] if cell is not None])
-                
-                if any(pattern in first_cells_text for pattern in [
-                    'total appointments for office',
-                    'office :',
-                    'office:',
-                    'grand total'
-                ]):
+                first_cells_text = " ".join(
+                    [str(cell).lower().strip() for cell in row[:3] if cell is not None]
+                )
+
+                if any(
+                    pattern in first_cells_text
+                    for pattern in [
+                        "total appointments for office",
+                        "office :",
+                        "office:",
+                        "grand total",
+                    ]
+                ):
                     summary_rows_removed += 1
                     continue
-                
+
                 # Valid data row - add it
                 data_rows.append(row)
-            
+
             output_lines.append(f"   ✅ Removed {blank_rows_removed} blank row(s)")
-            output_lines.append(f"   ✅ Removed {duplicate_headers_removed} duplicate header row(s)")
-            output_lines.append(f"   ✅ Removed {summary_rows_removed} summary/total row(s)")
+            output_lines.append(
+                f"   ✅ Removed {duplicate_headers_removed} duplicate header row(s)"
+            )
+            output_lines.append(
+                f"   ✅ Removed {summary_rows_removed} summary/total row(s)"
+            )
             output_lines.append(f"   Data rows collected: {len(data_rows)}")
-            
+
             # Step 5: Create DataFrame with consolidated data
             if not data_rows:
                 output_lines.append(f"   ⚠️  No data rows found in sheet")
                 continue
-            
+
             # Ensure all rows have same length as headers
             normalized_rows = []
             for row in data_rows:
@@ -3926,170 +4564,270 @@ def upload_smart_assist():
                     row = list(row) + [None] * (len(headers) - len(row))
                 elif len(row) > len(headers):
                     # Trim
-                    row = row[:len(headers)]
+                    row = row[: len(headers)]
                 normalized_rows.append(row)
-            
+
             df = pd.DataFrame(normalized_rows, columns=headers)
-            
+
             # Step 6: Remove "Unnamed:" columns
             df.columns = df.columns.astype(str)
-            df = df.loc[:, ~df.columns.str.contains('^Unnamed:', na=False, regex=True)]
-            df = df.loc[:, ~df.columns.str.startswith('Column_')]
-            
+            df = df.loc[:, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)]
+            df = df.loc[:, ~df.columns.str.startswith("Column_")]
+
             # Step 7: Remove any remaining rows that are all NaN
-            df = df.dropna(how='all')
-            
-            output_lines.append(f"   Cleaned shape: {df.shape[0]} rows × {df.shape[1]} columns")
-            
+            df = df.dropna(how="all")
+
+            output_lines.append(
+                f"   Cleaned shape: {df.shape[0]} rows × {df.shape[1]} columns"
+            )
+
             # Step 8: Build standardized output with requested columns
             standard_columns = [
-                'Office Name','Appointment Date','Patient ID','Patient Name','Chart#',
-                'Dental Primary Ins Carr','Dental Secondary Ins Carr','Provider Name','Received date','Source',
-                'Type','Status Code','Comment','Group Number','Category','Agent Name','Work Date','Remark',
-                'Priority Status','QC Agent','QC Status','QC Comments','QC Date'
+                "Office Name",
+                "Appointment Date",
+                "Patient ID",
+                "Patient Name",
+                "Chart#",
+                "Dental Primary Ins Carr",
+                "Dental Secondary Ins Carr",
+                "Provider Name",
+                "Received date",
+                "Source",
+                "Type",
+                "Status Code",
+                "Comment",
+                "Group Number",
+                "Category",
+                "Agent Name",
+                "Work Date",
+                "Remark",
+                "Priority Status",
+                "QC Agent",
+                "QC Status",
+                "QC Comments",
+                "QC Date",
             ]
-            output_lines.append(f"   Standardizing to {len(standard_columns)} predefined column(s)")
+            output_lines.append(
+                f"   Standardizing to {len(standard_columns)} predefined column(s)"
+            )
 
             # Helper to fuzzy-find a column by keywords
             def find_col(keywords):
                 for col in df.columns:
-                    col_norm = col.lower().strip().replace(' ', '').replace('_', '')
+                    col_norm = col.lower().strip().replace(" ", "").replace("_", "")
                     if all(k in col_norm for k in keywords):
                         return col
                 return None
 
-            office_col = find_col(['office'])
-            appt_date_col = find_col(['appt','date']) or find_col(['appointment','date'])
-            patid_col = find_col(['patid']) or find_col(['patient','id'])
-            last_name_col = find_col(['patient','last']) or find_col(['last','name'])
-            first_name_col = find_col(['patient','first']) or find_col(['first','name'])
-            chart_col = find_col(['chart'])
-            provider_col = find_col(['provider']) or find_col(['dr'])
-            received_date_col = find_col(['received','date'])
-            source_col = find_col(['source'])
-            type_col = find_col(['type'])
-            status_code_col = find_col(['status','code']) or find_col(['code'])
-            comment_col = find_col(['comment']) or find_col(['notes'])
-            group_number_col = find_col(['group','number']) or find_col(['group#'])
-            category_col = find_col(['category'])
-            agent_name_col = find_col(['agent','name']) or find_col(['agent'])
-            work_date_col = find_col(['work','date'])
-            remark_col = find_col(['remark'])
-            priority_status_col = find_col(['priority','status']) or find_col(['priority'])
-            qc_agent_col = find_col(['qc','agent'])
-            qc_status_col = find_col(['qc','status'])
-            qc_comments_col = find_col(['qc','comment']) or find_col(['qc','notes'])
-            qc_date_col = find_col(['qc','date'])
+            office_col = find_col(["office"])
+            appt_date_col = find_col(["appt", "date"]) or find_col(
+                ["appointment", "date"]
+            )
+            patid_col = find_col(["patid"]) or find_col(["patient", "id"])
+            last_name_col = find_col(["patient", "last"]) or find_col(["last", "name"])
+            first_name_col = find_col(["patient", "first"]) or find_col(
+                ["first", "name"]
+            )
+            chart_col = find_col(["chart"])
+            provider_col = find_col(["provider"]) or find_col(["dr"])
+            received_date_col = find_col(["received", "date"])
+            source_col = find_col(["source"])
+            type_col = find_col(["type"])
+            status_code_col = find_col(["status", "code"]) or find_col(["code"])
+            comment_col = find_col(["comment"]) or find_col(["notes"])
+            group_number_col = find_col(["group", "number"]) or find_col(["group#"])
+            category_col = find_col(["category"])
+            agent_name_col = find_col(["agent", "name"]) or find_col(["agent"])
+            work_date_col = find_col(["work", "date"])
+            remark_col = find_col(["remark"])
+            priority_status_col = find_col(["priority", "status"]) or find_col(
+                ["priority"]
+            )
+            qc_agent_col = find_col(["qc", "agent"])
+            qc_status_col = find_col(["qc", "status"])
+            qc_comments_col = find_col(["qc", "comment"]) or find_col(["qc", "notes"])
+            qc_date_col = find_col(["qc", "date"])
 
             # Find insurance columns
-            primary_ins_col = find_col(['dental','primary','ins']) or find_col(['primary','insurance'])
-            secondary_ins_col = find_col(['dental','secondary','ins']) or find_col(['secondary','insurance'])
+            primary_ins_col = find_col(["dental", "primary", "ins"]) or find_col(
+                ["primary", "insurance"]
+            )
+            secondary_ins_col = find_col(["dental", "secondary", "ins"]) or find_col(
+                ["secondary", "insurance"]
+            )
 
             standardized = pd.DataFrame(index=df.index, columns=standard_columns)
-            standardized['Office Name'] = df[office_col] if office_col else ''
-            standardized['Appointment Date'] = df[appt_date_col] if appt_date_col else ''
-            standardized['Patient ID'] = df[patid_col] if patid_col else ''
+            standardized["Office Name"] = df[office_col] if office_col else ""
+            standardized["Appointment Date"] = (
+                df[appt_date_col] if appt_date_col else ""
+            )
+            standardized["Patient ID"] = df[patid_col] if patid_col else ""
             if last_name_col or first_name_col:
-                ln = df[last_name_col] if last_name_col else ''
-                fn = df[first_name_col] if first_name_col else ''
-                standardized['Patient Name'] = ln.fillna('').astype(str).str.strip() + ', ' + fn.fillna('').astype(str).str.strip()
-                standardized['Patient Name'] = standardized['Patient Name'].str.strip(', ').replace(', $','', regex=True)
+                ln = df[last_name_col] if last_name_col else ""
+                fn = df[first_name_col] if first_name_col else ""
+                standardized["Patient Name"] = (
+                    ln.fillna("").astype(str).str.strip()
+                    + ", "
+                    + fn.fillna("").astype(str).str.strip()
+                )
+                standardized["Patient Name"] = (
+                    standardized["Patient Name"]
+                    .str.strip(", ")
+                    .replace(", $", "", regex=True)
+                )
             else:
-                standardized['Patient Name'] = ''
-            standardized['Chart#'] = df[chart_col] if chart_col else ''
-            standardized['Dental Primary Ins Carr'] = df[primary_ins_col] if primary_ins_col else ''
-            standardized['Dental Secondary Ins Carr'] = df[secondary_ins_col] if secondary_ins_col else ''
-            standardized['Provider Name'] = df[provider_col] if provider_col else ''
-            standardized['Received date'] = df[received_date_col] if received_date_col else ''
-            standardized['Source'] = df[source_col] if source_col else ''
-            standardized['Type'] = df[type_col] if type_col else ''
-            standardized['Status Code'] = df[status_code_col] if status_code_col else ''
-            
+                standardized["Patient Name"] = ""
+            standardized["Chart#"] = df[chart_col] if chart_col else ""
+            standardized["Dental Primary Ins Carr"] = (
+                df[primary_ins_col] if primary_ins_col else ""
+            )
+            standardized["Dental Secondary Ins Carr"] = (
+                df[secondary_ins_col] if secondary_ins_col else ""
+            )
+            standardized["Provider Name"] = df[provider_col] if provider_col else ""
+            standardized["Received date"] = (
+                df[received_date_col] if received_date_col else ""
+            )
+            standardized["Source"] = df[source_col] if source_col else ""
+            standardized["Type"] = df[type_col] if type_col else ""
+            standardized["Status Code"] = df[status_code_col] if status_code_col else ""
+
             # Clean Comment column - remove special characters
             if comment_col:
+
                 def clean_comment(text):
-                    if pd.isna(text) or text == '':
-                        return ''
+                    if pd.isna(text) or text == "":
+                        return ""
                     text_str = str(text)
                     # Remove non-printable characters and keep only standard ASCII and common punctuation
                     import re
+
                     # Keep letters, numbers, spaces, and common punctuation
-                    cleaned = re.sub(r'[^\x20-\x7E\n\r\t]', '', text_str)
+                    cleaned = re.sub(r"[^\x20-\x7E\n\r\t]", "", text_str)
                     return cleaned.strip()
-                
-                standardized['Comment'] = df[comment_col].apply(clean_comment)
+
+                standardized["Comment"] = df[comment_col].apply(clean_comment)
             else:
-                standardized['Comment'] = ''
-            
-            standardized['Group Number'] = df[group_number_col] if group_number_col else ''
-            standardized['Category'] = df[category_col] if category_col else ''
-            standardized['Agent Name'] = df[agent_name_col] if agent_name_col else ''
-            standardized['Work Date'] = df[work_date_col] if work_date_col else ''
-            standardized['Remark'] = df[remark_col] if remark_col else ''
-            standardized['Priority Status'] = df[priority_status_col] if priority_status_col else ''
-            standardized['QC Agent'] = df[qc_agent_col] if qc_agent_col else ''
-            standardized['QC Status'] = df[qc_status_col] if qc_status_col else ''
-            standardized['QC Comments'] = df[qc_comments_col] if qc_comments_col else ''
-            standardized['QC Date'] = df[qc_date_col] if qc_date_col else ''
-            
+                standardized["Comment"] = ""
+
+            standardized["Group Number"] = (
+                df[group_number_col] if group_number_col else ""
+            )
+            standardized["Category"] = df[category_col] if category_col else ""
+            standardized["Agent Name"] = df[agent_name_col] if agent_name_col else ""
+            standardized["Work Date"] = df[work_date_col] if work_date_col else ""
+            standardized["Remark"] = df[remark_col] if remark_col else ""
+            standardized["Priority Status"] = (
+                df[priority_status_col] if priority_status_col else ""
+            )
+            standardized["QC Agent"] = df[qc_agent_col] if qc_agent_col else ""
+            standardized["QC Status"] = df[qc_status_col] if qc_status_col else ""
+            standardized["QC Comments"] = df[qc_comments_col] if qc_comments_col else ""
+            standardized["QC Date"] = df[qc_date_col] if qc_date_col else ""
+
             # Find Eligibility column and set Remark based on its value
-            eligibility_col = find_col(['eligibility'])
+            eligibility_col = find_col(["eligibility"])
             print(f"DEBUG - Looking for Eligibility column. Found: {eligibility_col}")
             print(f"DEBUG - Available columns in df: {list(df.columns)}")
-            
+
             # Create a temporary status column for filtering
-            temp_status = pd.Series('', index=standardized.index)
-            
+            temp_status = pd.Series("", index=standardized.index)
+
             if eligibility_col:
                 output_lines.append(f"   Found Eligibility column: '{eligibility_col}'")
                 workable_count = 0
                 completed_count = 0
                 for idx in standardized.index:
-                    eligibility_val = df.loc[idx, eligibility_col] if eligibility_col and idx in df.index else None
+                    eligibility_val = (
+                        df.loc[idx, eligibility_col]
+                        if eligibility_col and idx in df.index
+                        else None
+                    )
                     if pd.notna(eligibility_val):
                         eligibility_str = str(eligibility_val).strip()
-                        print(f"DEBUG - Row {idx}: Eligibility value = '{eligibility_str}'")
+                        print(
+                            f"DEBUG - Row {idx}: Eligibility value = '{eligibility_str}'"
+                        )
                         # Check for X marks (✗, x, û - encoded version)
-                        if '✗' in eligibility_str or 'x' in eligibility_str.lower() or 'û' in eligibility_str:
-                            standardized.at[idx, 'Remark'] = 'Workable'
-                            temp_status.at[idx] = 'Workable'
+                        if (
+                            "✗" in eligibility_str
+                            or "x" in eligibility_str.lower()
+                            or "û" in eligibility_str
+                        ):
+                            standardized.at[idx, "Remark"] = "Workable"
+                            temp_status.at[idx] = "Workable"
                             workable_count += 1
                         # Check for check marks (✓, √, ü - encoded version)
-                        elif '✓' in eligibility_str or '√' in eligibility_str or 'ü' in eligibility_str or 'check' in eligibility_str.lower():
-                            temp_status.at[idx] = 'Completed'
+                        elif (
+                            "✓" in eligibility_str
+                            or "√" in eligibility_str
+                            or "ü" in eligibility_str
+                            or "check" in eligibility_str.lower()
+                        ):
+                            temp_status.at[idx] = "Completed"
                             completed_count += 1
-                print(f"DEBUG - Remark set: {workable_count} Workable, {completed_count} Completed")
-                output_lines.append(f"   ✅ Remark column populated: {workable_count} Workable rows")
+                print(
+                    f"DEBUG - Remark set: {workable_count} Workable, {completed_count} Completed"
+                )
+                output_lines.append(
+                    f"   ✅ Remark column populated: {workable_count} Workable rows"
+                )
             else:
-                output_lines.append(f"   ⚠️  Eligibility column not found - Remark column will be empty")
+                output_lines.append(
+                    f"   ⚠️  Eligibility column not found - Remark column will be empty"
+                )
 
             # Filter: Remove rows where temp_status is blank or "Completed" (keep only Workable)
             rows_before_filter = len(standardized)
-            keep_mask = (temp_status == 'Workable')
+            keep_mask = temp_status == "Workable"
             standardized = standardized[keep_mask]
             rows_removed = rows_before_filter - len(standardized)
-            
+
             if rows_removed > 0:
-                output_lines.append(f"   🗑️  Removed {rows_removed} row(s) with blank or 'Completed' eligibility")
-                output_lines.append(f"   ✅ Kept {len(standardized)} row(s) with 'Workable' in Remark")
-            
+                output_lines.append(
+                    f"   🗑️  Removed {rows_removed} row(s) with blank or 'Completed' eligibility"
+                )
+                output_lines.append(
+                    f"   ✅ Kept {len(standardized)} row(s) with 'Workable' in Remark"
+                )
+
             df = standardized
 
             # Report which source columns were mapped
             mapped_sources = []
             for label, src in [
-                ('Office Name', office_col), ('Appointment Date', appt_date_col), ('Patient ID', patid_col), ('Patient Name', (last_name_col, first_name_col)),
-                ('Chart#', chart_col), ('Dental Primary Ins Carr', primary_ins_col), ('Dental Secondary Ins Carr', secondary_ins_col), ('Provider Name', provider_col),
-                ('Received date', received_date_col), ('Source', source_col), ('Type', type_col), ('Status Code', status_code_col), ('Comment', comment_col),
-                ('Group Number', group_number_col), ('Category', category_col), ('Agent Name', agent_name_col), ('Work Date', work_date_col), ('Remark', remark_col),
-                ('Priority Status', priority_status_col), ('QC Agent', qc_agent_col), ('QC Status', qc_status_col), ('QC Comments', qc_comments_col), ('QC Date', qc_date_col)
+                ("Office Name", office_col),
+                ("Appointment Date", appt_date_col),
+                ("Patient ID", patid_col),
+                ("Patient Name", (last_name_col, first_name_col)),
+                ("Chart#", chart_col),
+                ("Dental Primary Ins Carr", primary_ins_col),
+                ("Dental Secondary Ins Carr", secondary_ins_col),
+                ("Provider Name", provider_col),
+                ("Received date", received_date_col),
+                ("Source", source_col),
+                ("Type", type_col),
+                ("Status Code", status_code_col),
+                ("Comment", comment_col),
+                ("Group Number", group_number_col),
+                ("Category", category_col),
+                ("Agent Name", agent_name_col),
+                ("Work Date", work_date_col),
+                ("Remark", remark_col),
+                ("Priority Status", priority_status_col),
+                ("QC Agent", qc_agent_col),
+                ("QC Status", qc_status_col),
+                ("QC Comments", qc_comments_col),
+                ("QC Date", qc_date_col),
             ]:
                 if isinstance(src, tuple):
                     if any(s for s in src):
                         mapped_sources.append(label)
                 elif src:
                     mapped_sources.append(label)
-            output_lines.append(f"   ✅ Mapped {len(mapped_sources)}/{len(standard_columns)} column(s) from source data")
+            output_lines.append(
+                f"   ✅ Mapped {len(mapped_sources)}/{len(standard_columns)} column(s) from source data"
+            )
 
             df = standardized
 
@@ -4102,136 +4840,160 @@ def upload_smart_assist():
                 output_lines.append(sample_df.to_string(index=False))
 
             output_lines.append("")
-            output_lines.append(f"   ✅ Final standardized shape: {df.shape[0]} rows × {df.shape[1]} columns")
-            output_lines.append(f"   Summary: Removed {blank_rows_removed + duplicate_headers_removed + summary_rows_removed} total unwanted rows")
+            output_lines.append(
+                f"   ✅ Final standardized shape: {df.shape[0]} rows × {df.shape[1]} columns"
+            )
+            output_lines.append(
+                f"   Summary: Removed {blank_rows_removed + duplicate_headers_removed + summary_rows_removed} total unwanted rows"
+            )
             output_lines.append("")
 
             processed_sheets[sheet_name] = df
-        
+
         output_lines.append("=" * 70)
         output_lines.append("PROCESSING COMPLETE! FILE READY FOR DOWNLOAD")
         output_lines.append("=" * 70)
-        
+
         smart_assist_data = processed_sheets
         smart_assist_filename = filename
         smart_assist_output = "\n".join(output_lines)
-        
+
         total_rows = sum(len(df) for df in processed_sheets.values())
         sheets_count = len(processed_sheets)
         smart_assist_result = f"✅ Processing complete! Formatted {sheets_count} sheet(s) with {total_rows} total rows. All sections combined, blank rows removed, and headers consolidated."
-        
-        return redirect('/comparison?tab=smartassist')
-        
+
+        return redirect("/comparison?tab=smartassist")
+
     except Exception as e:
         import traceback
+
         error_details = traceback.format_exc()
         smart_assist_result = f"❌ Error processing file: {str(e)}"
         smart_assist_output = f"Error: {str(e)}\n\nDetails:\n{error_details}"
-        return redirect('/comparison?tab=smartassist')
+        return redirect("/comparison?tab=smartassist")
 
-@app.route('/download_smart_assist', methods=['POST'])
+
+@app.route("/download_smart_assist", methods=["POST"])
 def download_smart_assist():
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
-    
+
     if not smart_assist_data:
-        return jsonify({'error': 'No data to download'}), 400
-    
-    filename = request.form.get('filename', '').strip()
+        return jsonify({"error": "No data to download"}), 400
+
+    filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"formatted_smart_assist_{timestamp}.xlsx"
-    
+
     try:
         import tempfile
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
-        
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+
         try:
-            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 for sheet_name, df in smart_assist_data.items():
                     df_clean = df.copy()
-                    
+
                     # Format date columns
                     for col in df_clean.columns:
-                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
-                        if 'date' in col_lower or 'time' in col_lower:
+                        col_lower = (
+                            col.lower().strip().replace(" ", "").replace("_", "")
+                        )
+                        if "date" in col_lower or "time" in col_lower:
+
                             def format_date(date_val):
-                                if pd.isna(date_val) or date_val == '':
-                                    return ''
+                                if pd.isna(date_val) or date_val == "":
+                                    return ""
                                 try:
                                     if isinstance(date_val, pd.Timestamp):
                                         date_obj = date_val
                                     elif isinstance(date_val, str):
-                                        date_obj = pd.to_datetime(date_val, errors='coerce')
+                                        date_obj = pd.to_datetime(
+                                            date_val, errors="coerce"
+                                        )
                                         if pd.isna(date_obj):
                                             return str(date_val)
                                     else:
-                                        date_obj = pd.to_datetime(date_val, errors='coerce')
+                                        date_obj = pd.to_datetime(
+                                            date_val, errors="coerce"
+                                        )
                                         if pd.isna(date_obj):
                                             return str(date_val)
-                                    return date_obj.strftime('%m/%d/%Y')
+                                    return date_obj.strftime("%m/%d/%Y")
                                 except (ValueError, TypeError, AttributeError):
                                     return str(date_val)
-                            
+
                             df_clean[col] = df_clean[col].apply(format_date)
                             df_clean[col] = df_clean[col].astype(str)
-                    
+
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
-                    
+
                     # Set date column format to text
                     ws = writer.sheets[sheet_name]
                     for col in df_clean.columns:
-                        col_lower = col.lower().strip().replace(' ', '').replace('_', '')
-                        if 'date' in col_lower or 'time' in col_lower:
+                        col_lower = (
+                            col.lower().strip().replace(" ", "").replace("_", "")
+                        )
+                        if "date" in col_lower or "time" in col_lower:
                             col_idx = None
                             for idx, col_name in enumerate(df_clean.columns, 1):
                                 if col_name == col:
                                     col_idx = idx
                                     break
-                            
+
                             if col_idx:
                                 for row in range(2, ws.max_row + 1):
                                     cell = ws.cell(row=row, column=col_idx)
                                     if cell.value:
-                                        cell.number_format = '@'
-            
+                                        cell.number_format = "@"
+
             smart_assist_data = None
             smart_assist_filename = None
             smart_assist_result = None
             smart_assist_output = ""
-            
+
             return send_file(temp_path, as_attachment=True, download_name=filename)
-            
+
         finally:
             os.close(temp_fd)
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/reset_smart_assist', methods=['POST'])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_smart_assist", methods=["POST"])
 def reset_smart_assist():
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
-    
+
     try:
         smart_assist_data = None
         smart_assist_filename = None
         smart_assist_result = "🔄 Smart assist report formatting tool reset successfully! All files and data have been cleared."
         smart_assist_output = ""
-        
-        return redirect('/comparison?tab=smartassist')
-        
-    except Exception as e:
-        smart_assist_result = f"❌ Error resetting smart assist report formatting tool: {str(e)}"
-        return redirect('/comparison?tab=smartassist')
 
-if __name__ == '__main__':
+        return redirect("/comparison?tab=smartassist")
+
+    except Exception as e:
+        smart_assist_result = (
+            f"❌ Error resetting smart assist report formatting tool: {str(e)}"
+        )
+        return redirect("/comparison?tab=smartassist")
+
+
+if __name__ == "__main__":
     import os
-    port = int(os.environ.get('PORT', 5002))
+
+    port = int(os.environ.get("PORT", 5002))
     # Enable debug mode for auto-reload during development
-    debug = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
-    
+    debug = (
+        os.environ.get("FLASK_ENV") == "development"
+        or os.environ.get("FLASK_DEBUG", "True").lower() == "true"
+    )
+
     print("🚀 Starting Excel Comparison Tool...")
     print(f"📱 Open your browser and go to: http://localhost:{port}")
     print(f"🔄 Debug mode: {debug} (auto-reload enabled)")
-    app.run(debug=debug, host='0.0.0.0', port=port, use_reloader=True)
+    app.run(debug=debug, host="0.0.0.0", port=port, use_reloader=True)
