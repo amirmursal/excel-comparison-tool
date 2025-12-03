@@ -3280,60 +3280,58 @@ def process_remarks_excel_file(file_stream):
         remark_col = None
         agent_name_col = None
         header_row = 1
+        selected_sheet_name = None  # Track which sheet was selected
 
-        # Try all sheets to find the one with Patient ID, Remark, and Agent Name columns
-        for sheet_name in wb.sheetnames:
-            current_ws = wb[sheet_name]
+        # Check if "Today" sheet exists
+        if "Today" not in wb.sheetnames:
+            available_sheets = ", ".join(wb.sheetnames)
+            raise Exception(
+                f'Sheet "Today" not found in Excel file. Available sheets: {available_sheets}'
+            )
 
-            # Look for headers in the first few rows
-            for row_num in range(1, min(6, current_ws.max_row + 1)):
-                temp_patient_id_col = None
-                temp_remark_col = None
-                temp_agent_name_col = None
+        # Use only the "Today" sheet
+        ws = wb["Today"]
+        selected_sheet_name = "Today"
 
-                for col in range(1, current_ws.max_column + 1):
-                    cell_value = (
-                        str(current_ws.cell(row=row_num, column=col).value or "")
-                        .strip()
-                        .lower()
-                    )
-                    cell_value_clean = (
-                        cell_value.replace(" ", "")
-                        .replace("_", "")
-                        .replace("-", "")
-                        .replace(".", "")
-                    )
+        # Look for headers in the first few rows
+        for row_num in range(1, min(6, ws.max_row + 1)):
+            temp_patient_id_col = None
+            temp_remark_col = None
+            temp_agent_name_col = None
 
-                    if (
-                        "patient" in cell_value_clean and "id" in cell_value_clean
-                    ) or cell_value_clean == "pid":
-                        temp_patient_id_col = col
-                    elif (
-                        "remark" in cell_value_clean
-                        or cell_value_clean == "remarks"
-                        or "note" in cell_value_clean
-                    ):
-                        # More flexible remark detection - also check for 'remarks' or 'note'
-                        if not temp_remark_col:  # Only set if not already found
-                            temp_remark_col = col
-                    elif "agent" in cell_value_clean and "name" in cell_value_clean:
-                        temp_agent_name_col = col
+            for col in range(1, ws.max_column + 1):
+                cell_value = (
+                    str(ws.cell(row=row_num, column=col).value or "").strip().lower()
+                )
+                cell_value_clean = (
+                    cell_value.replace(" ", "")
+                    .replace("_", "")
+                    .replace("-", "")
+                    .replace(".", "")
+                )
 
-                # If we found Patient ID and Remark (Agent Name is optional), use this sheet
-                if temp_patient_id_col and temp_remark_col:
-                    patient_id_col = temp_patient_id_col
-                    remark_col = temp_remark_col
-                    agent_name_col = temp_agent_name_col
-                    header_row = row_num
-                    ws = current_ws
-                    break
+                if (
+                    "patient" in cell_value_clean and "id" in cell_value_clean
+                ) or cell_value_clean == "pid":
+                    temp_patient_id_col = col
+                elif (
+                    "remark" in cell_value_clean
+                    or cell_value_clean == "remarks"
+                    or "note" in cell_value_clean
+                ):
+                    # More flexible remark detection - also check for 'remarks' or 'note'
+                    if not temp_remark_col:  # Only set if not already found
+                        temp_remark_col = col
+                elif "agent" in cell_value_clean and "name" in cell_value_clean:
+                    temp_agent_name_col = col
 
-            if ws:
+            # If we found Patient ID and Remark (Agent Name is optional), use this header row
+            if temp_patient_id_col and temp_remark_col:
+                patient_id_col = temp_patient_id_col
+                remark_col = temp_remark_col
+                agent_name_col = temp_agent_name_col
+                header_row = row_num
                 break
-
-        # If still not found, try active sheet
-        if not ws:
-            ws = wb.active
             for col in range(1, ws.max_column + 1):
                 cell_value = str(ws.cell(row=1, column=col).value or "").strip().lower()
                 cell_value_clean = (
@@ -3353,15 +3351,13 @@ def process_remarks_excel_file(file_stream):
                     agent_name_col = col
 
         if not patient_id_col:
-            sheet_names = ", ".join(wb.sheetnames)
             raise Exception(
-                f"Patient ID column not found in Excel file. Checked sheets: {sheet_names}"
+                f'Patient ID column not found in "Today" sheet. Please ensure the sheet contains a Patient ID column.'
             )
 
         if not remark_col:
-            sheet_names = ", ".join(wb.sheetnames)
             raise Exception(
-                f"Remark column not found in Excel file. Checked sheets: {sheet_names}"
+                f'Remark column not found in "Today" sheet. Please ensure the sheet contains a Remark column.'
             )
 
         # Extract data - now returns list of records for each patient ID
@@ -3400,6 +3396,9 @@ def process_remarks_excel_file(file_stream):
                 excel_data[patient_id].append(
                     {"remark": remark, "agent_name": agent_name}
                 )
+
+        # Store sheet name as metadata (will be removed in update_appointments_with_remarks)
+        excel_data["_debug_sheet_name"] = selected_sheet_name
 
         return excel_data
 
@@ -3501,12 +3500,16 @@ def process_remarks_appointments_excel(file_stream):
             value = ws.cell(row=row, column=col).value
             record[header] = "" if value is None else str(value)
 
-        # Normalize Patient ID to string without trailing .0
+        # Normalize Patient ID using the same normalization function as remarks
         pat_id_value = record.get(headers[pat_id_col - 1], "")
-        pid = str(pat_id_value).strip()
-        if pid.endswith(".0"):
-            pid = pid[:-2]
-        record["Pat ID"] = pid  # Standardize the key name
+        # Use normalize_patient_id for consistent matching with remarks file
+        pid_normalized = normalize_patient_id(pat_id_value) if pat_id_value else ""
+        # Store both normalized and original for maximum compatibility
+        record["Pat ID"] = (
+            pid_normalized if pid_normalized else str(pat_id_value).strip()
+        )
+        # Also store original for reference
+        record["Pat ID Original"] = str(pat_id_value).strip() if pat_id_value else ""
 
         # Ensure Remark and Agent Name exist
         if "Remark" not in record:
@@ -3515,7 +3518,7 @@ def process_remarks_appointments_excel(file_stream):
             record["Agent Name"] = ""
 
         # Skip empty rows (no Pat ID)
-        if pid:
+        if pid_normalized or pat_id_value:
             appointments.append(record)
 
     return appointments
@@ -3527,57 +3530,137 @@ def update_appointments_with_remarks(appointments, excel_data):
     updated_appointments = []
     updated_count = 0
 
-    # Normalize all Patient IDs in excel_data for better matching
-    normalized_excel_data = {}
+    # Remove debug metadata if present
+    excel_data.pop("_debug_sheet_name", None)
+
+    # Create a comprehensive lookup dictionary with all possible Patient ID formats
+    # Note: excel_data keys are already normalized from process_remarks_excel_file
+    # But we'll create variations to handle any edge cases
+    lookup_dict = {}
+
+    # First, build lookup dictionary with all possible variations
+    # Convert all keys to strings for consistent matching
     for pid, data_list in excel_data.items():
-        normalized_pid = normalize_patient_id(pid)
-        if normalized_pid:
-            if normalized_pid not in normalized_excel_data:
-                normalized_excel_data[normalized_pid] = []
-            normalized_excel_data[normalized_pid].extend(data_list)
+        if not pid:
+            continue
+
+        # Convert to string first for consistency
+        pid_str_base = str(pid).strip()
+        if not pid_str_base:
+            continue
+
+        # Store with string version (primary key)
+        if pid_str_base not in lookup_dict:
+            lookup_dict[pid_str_base] = []
+        lookup_dict[pid_str_base].extend(data_list)
+
+        # Also store with original key if it's different (for type matching)
+        if pid != pid_str_base and pid not in lookup_dict:
+            lookup_dict[pid] = []
+            lookup_dict[pid].extend(data_list)
+
+        # Store with .0 suffix removed (if it's a float string)
+        if pid_str_base.endswith(".0"):
+            pid_no_suffix = pid_str_base[:-2]
+            if pid_no_suffix and pid_no_suffix not in lookup_dict:
+                lookup_dict[pid_no_suffix] = []
+            lookup_dict[pid_no_suffix].extend(data_list)
+
+        # Store with .0 suffix added (in case appointments have it)
+        if not pid_str_base.endswith(".0"):
+            pid_with_suffix = f"{pid_str_base}.0"
+            if pid_with_suffix not in lookup_dict:
+                lookup_dict[pid_with_suffix] = []
+            lookup_dict[pid_with_suffix].extend(data_list)
+
+        # Re-normalize (in case there are any edge cases)
+        # But only if it's different from what we already have
+        renormalized = normalize_patient_id(pid) if pid else None
+        if (
+            renormalized
+            and renormalized != pid_str_base
+            and renormalized not in lookup_dict
+        ):
+            lookup_dict[renormalized] = []
+            lookup_dict[renormalized].extend(data_list)
+
+        # Also try normalizing the string version
+        renormalized_str = normalize_patient_id(pid_str_base) if pid_str_base else None
+        if (
+            renormalized_str
+            and renormalized_str != pid_str_base
+            and renormalized_str not in lookup_dict
+        ):
+            lookup_dict[renormalized_str] = []
+            lookup_dict[renormalized_str].extend(data_list)
 
     for appointment in appointments:
-        patient_id_raw = appointment.get("Pat ID", "")
-        patient_id = normalize_patient_id(patient_id_raw) if patient_id_raw else ""
+        # Get both normalized and original Patient ID
+        patient_id_normalized = appointment.get("Pat ID", "")
+        patient_id_original = appointment.get("Pat ID Original", "")
+        # Fallback to normalized if original not available
+        patient_id_raw = (
+            patient_id_original if patient_id_original else patient_id_normalized
+        )
+
         matches_found = False
 
-        # Try normalized match first
-        if patient_id and patient_id in normalized_excel_data:
-            # Create a separate row for each match
-            for match_data in normalized_excel_data[patient_id]:
-                new_appointment = appointment.copy()  # Copy all original data
+        # Try multiple matching strategies
+        match_keys_to_try = []
 
-                # Remove any existing remark/Remark keys to avoid conflicts
-                keys_to_remove = [
-                    k for k in new_appointment.keys() if k.lower() == "remark"
-                ]
-                for key in keys_to_remove:
-                    del new_appointment[key]
+        if patient_id_normalized:
+            # Strategy 1: Use the normalized version (primary)
+            match_keys_to_try.append(patient_id_normalized)
 
-                # Ensure Remark and Agent Name are set as strings, handling None and empty values
-                remark_raw = match_data.get("remark", "")
-                if remark_raw is None:
-                    remark_value = ""
-                else:
-                    remark_value = str(remark_raw).strip()
+        if patient_id_raw:
+            # Strategy 2: Normalize the original (in case it wasn't normalized during reading)
+            normalized_from_original = normalize_patient_id(patient_id_raw)
+            if (
+                normalized_from_original
+                and normalized_from_original not in match_keys_to_try
+            ):
+                match_keys_to_try.append(normalized_from_original)
 
-                agent_raw = match_data.get("agent_name", "")
-                if agent_raw is None:
-                    agent_value = ""
-                else:
-                    agent_value = str(agent_raw).strip()
+            # Strategy 3: Original string version
+            pid_str = str(patient_id_raw).strip()
+            if pid_str and pid_str not in match_keys_to_try:
+                match_keys_to_try.append(pid_str)
 
-                # Explicitly set with uppercase keys
-                new_appointment["Remark"] = remark_value
-                new_appointment["Agent Name"] = agent_value
-                updated_appointments.append(new_appointment)
-                updated_count += 1
-                matches_found = True
-        # Fallback: Try exact match (original format)
-        elif patient_id_raw:
-            patient_id_str = str(patient_id_raw).strip()
-            if patient_id_str and patient_id_str in excel_data:
-                for match_data in excel_data[patient_id_str]:
+            # Strategy 4: Remove .0 suffix if present
+            if pid_str.endswith(".0"):
+                pid_no_suffix = pid_str[:-2]
+                if pid_no_suffix and pid_no_suffix not in match_keys_to_try:
+                    match_keys_to_try.append(pid_no_suffix)
+
+            # Strategy 5: Add .0 suffix (in case original doesn't have it)
+            if not pid_str.endswith(".0"):
+                pid_with_suffix = f"{pid_str}.0"
+                if pid_with_suffix not in match_keys_to_try:
+                    match_keys_to_try.append(pid_with_suffix)
+
+        # Convert all match keys to strings for consistent comparison
+        match_keys_to_try_str = [
+            str(k).strip() if k else "" for k in match_keys_to_try if k
+        ]
+        # Also try the original keys (in case of type matching)
+        match_keys_to_try_all = list(set(match_keys_to_try + match_keys_to_try_str))
+
+        # Try all matching strategies
+        for match_key in match_keys_to_try_all:
+            if not match_key:
+                continue
+            # Try both the key as-is and as string
+            match_found = False
+            if match_key in lookup_dict:
+                match_found = True
+                lookup_key = match_key
+            elif str(match_key).strip() in lookup_dict:
+                match_found = True
+                lookup_key = str(match_key).strip()
+
+            if match_found:
+                # Match found!
+                for match_data in lookup_dict[lookup_key]:
                     new_appointment = appointment.copy()
 
                     # Remove any existing remark/Remark keys to avoid conflicts
@@ -3606,44 +3689,10 @@ def update_appointments_with_remarks(appointments, excel_data):
                     updated_appointments.append(new_appointment)
                     updated_count += 1
                     matches_found = True
-            # Try with .0 suffix (in case Excel has float format)
-            elif patient_id_str and f"{patient_id_str}.0" in excel_data:
-                for match_data in excel_data[f"{patient_id_str}.0"]:
-                    new_appointment = appointment.copy()
+                break  # Found a match, no need to try other keys
 
-                    # Remove any existing remark/Remark keys to avoid conflicts
-                    keys_to_remove = [
-                        k for k in new_appointment.keys() if k.lower() == "remark"
-                    ]
-                    for key in keys_to_remove:
-                        del new_appointment[key]
-
-                    # Ensure Remark and Agent Name are set as strings, handling None and empty values
-                    remark_raw = match_data.get("remark", "")
-                    if remark_raw is None:
-                        remark_value = ""
-                    else:
-                        remark_value = str(remark_raw).strip()
-
-                    agent_raw = match_data.get("agent_name", "")
-                    if agent_raw is None:
-                        agent_value = ""
-                    else:
-                        agent_value = str(agent_raw).strip()
-
-                    # Explicitly set with uppercase keys
-                    new_appointment["Remark"] = remark_value
-                    new_appointment["Agent Name"] = agent_value
-                    updated_appointments.append(new_appointment)
-                    updated_count += 1
-                    matches_found = True
-
-        # If no matches found, add original appointment with empty remark and agent name
-        if not matches_found:
-            new_appointment = appointment.copy()
-            new_appointment["Remark"] = ""
-            new_appointment["Agent Name"] = ""
-            updated_appointments.append(new_appointment)
+        # Only add appointments that have matches - skip unmatched ones
+        # (Previously we were adding all appointments with empty remarks, but user wants only matched ones)
 
     return updated_appointments, updated_count
 
@@ -3800,13 +3849,26 @@ def upload_remarks():
         # Debug: Check what remarks data we have
         sample_remarks_count = 0
         sample_remarks_with_data = 0
+        sample_patient_ids = []
         for pid, data_list in list(remarks_excel_data.items())[
-            :5
-        ]:  # Check first 5 patient IDs
+            :10
+        ]:  # Check first 10 patient IDs
+            sample_patient_ids.append(str(pid))
             sample_remarks_count += len(data_list)
             for data in data_list:
                 if data.get("remark") and str(data.get("remark")).strip():
                     sample_remarks_with_data += 1
+
+        # Debug: Check appointment Patient IDs (both normalized and original)
+        sample_appointment_pids = []
+        sample_appointment_pids_orig = []
+        for appt in remarks_appointments_data[:10]:  # Check first 10 appointments
+            pid_norm = appt.get("Pat ID", "")
+            pid_orig = appt.get("Pat ID Original", "")
+            if pid_norm:
+                sample_appointment_pids.append(str(pid_norm))
+            if pid_orig:
+                sample_appointment_pids_orig.append(str(pid_orig))
 
         # Update appointments with remarks
         updated_appointments, updated_count = update_appointments_with_remarks(
@@ -3922,7 +3984,23 @@ def upload_remarks():
         remarks_appointments_data = updated_appointments
         remarks_updated_count = updated_count
 
-        remarks_result = f"✅ Successfully processed {len(remarks_appointments_data)} appointment(s) and updated {updated_count} appointment(s) with remarks and agent names. Insurance Name column added based on Insurance Note formatting."
+        # Build result message with debug info
+        result_msg = f"✅ Successfully processed {len(remarks_appointments_data)} appointment(s) and updated {updated_count} appointment(s) with remarks and agent names. Insurance Name column added based on Insurance Note formatting."
+
+        # Add debug information if matching rate is low
+        if (
+            updated_count < len(remarks_appointments_data) * 0.5
+        ):  # Less than 50% matched
+            unmatched_count = len(remarks_appointments_data) - updated_count
+            result_msg += f"\n\n⚠️ Warning: Only {updated_count} out of {len(remarks_appointments_data)} appointments were matched with remarks."
+            result_msg += f"\n🔍 Sample Patient IDs from Remarks file (normalized): {', '.join(sample_patient_ids[:5]) if sample_patient_ids else 'None'}"
+            result_msg += f"\n🔍 Sample Patient IDs from Appointments file (normalized): {', '.join(sample_appointment_pids[:5]) if sample_appointment_pids else 'None'}"
+            if sample_appointment_pids_orig:
+                result_msg += f"\n🔍 Sample Patient IDs from Appointments file (original): {', '.join(sample_appointment_pids_orig[:5])}"
+            result_msg += f"\n📊 Total unique Patient IDs in Remarks file: {len(remarks_excel_data)}"
+            result_msg += f"\n💡 Tip: Check if Patient IDs in both files match exactly. Check the console/terminal for detailed debug output."
+
+        remarks_result = result_msg
 
         return redirect("/comparison?tab=remarks")
 
