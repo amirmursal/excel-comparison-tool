@@ -3691,8 +3691,22 @@ def update_appointments_with_remarks(appointments, excel_data):
                     matches_found = True
                 break  # Found a match, no need to try other keys
 
-        # Only add appointments that have matches - skip unmatched ones
-        # (Previously we were adding all appointments with empty remarks, but user wants only matched ones)
+        # If no match was found, still include the appointment with empty remarks
+        # This ensures all appointments are included in the output, even if they don't have matching remarks
+        if not matches_found:
+            new_appointment = appointment.copy()
+            
+            # Remove any existing remark/Remark keys to avoid conflicts
+            keys_to_remove = [
+                k for k in new_appointment.keys() if k.lower() == "remark"
+            ]
+            for key in keys_to_remove:
+                del new_appointment[key]
+            
+            # Ensure Remark and Agent Name are set as empty strings for unmatched appointments
+            new_appointment["Remark"] = ""
+            new_appointment["Agent Name"] = ""
+            updated_appointments.append(new_appointment)
 
     return updated_appointments, updated_count
 
