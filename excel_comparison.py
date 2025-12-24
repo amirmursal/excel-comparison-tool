@@ -52,6 +52,65 @@ smart_assist_filename = None
 smart_assist_result = None
 smart_assist_output = ""
 
+# Global variables for consolidate report
+consolidate_master_data = None
+consolidate_daily_data = None
+consolidate_master_filename = None
+consolidate_daily_filename = None
+consolidate_result = None
+consolidate_output = ""
+
+# Global variables for reallocation data generation
+reallocation_consolidate_data = None
+reallocation_blank_data = None
+reallocation_consolidate_filename = None
+reallocation_blank_filename = None
+reallocation_result = None
+reallocation_output = ""
+reallocation_merged_data = None
+
+
+def align_remark(remark_value):
+    """
+    Align remark values to standardized forms.
+    Maps various remark variations to their standardized equivalents.
+    """
+    if pd.isna(remark_value) or remark_value == "":
+        return remark_value
+    
+    # Convert to string and strip whitespace
+    remark_str = str(remark_value).strip()
+    
+    # Define mapping rules (case-insensitive)
+    remark_lower = remark_str.lower()
+    
+    # Direct exact matches first
+    exact_mappings = {
+        "ast": "ATS",
+        "ntpb": "NTBP",
+    }
+    
+    if remark_lower in exact_mappings:
+        return exact_mappings[remark_lower]
+    
+    # Pattern-based mappings (handle variations with slashes and spaces)
+    if "ats" in remark_lower and "qcp" in remark_lower:
+        return "ATS"
+    
+    if "qcp" in remark_lower and "ats" in remark_lower:
+        return "ATS"
+    
+    if "qcp" in remark_lower and "hold" in remark_lower:
+        return "QCP"
+    
+    # QCP variations (with or without slashes/spaces)
+    if remark_lower.startswith("qcp") and (remark_lower.endswith("qcp") or "/" in remark_lower):
+        return "QCP"
+    
+    # Keep original if no match found
+    return remark_value
+
+
 # HTML Template for Excel Comparison
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -572,6 +631,14 @@ HTML_TEMPLATE = """
                     <span class="menu-item-icon">🤖</span>
                     <span>Smart Assist Report</span>
                 </div>
+                <div class="menu-item {% if active_tab == 'consolidate' %}active{% endif %}" onclick="switchTab('consolidate')">
+                    <span class="menu-item-icon">📊</span>
+                    <span>Consolidate Report</span>
+                </div>
+                <div class="menu-item {% if active_tab == 'reallocation' %}active{% endif %}" onclick="switchTab('reallocation')">
+                    <span class="menu-item-icon">♻️</span>
+                    <span>Generate Reallocation Data</span>
+                </div>
             </nav>
         </div>
 
@@ -585,6 +652,8 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'remarks' %}📝 Update Remarks
                     {% elif active_tab == 'appointment' %}📅 Appointment Report Formatting
                     {% elif active_tab == 'smartassist' %}🤖 Smart Assist Report Formatting
+                    {% elif active_tab == 'consolidate' %}📊 Consolidate Report
+                    {% elif active_tab == 'reallocation' %}♻️ Generate Reallocation Data
                     {% else %}🔄 Comparison Tool
                     {% endif %}
                 </h2>
@@ -595,6 +664,8 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'remarks' %}Add remarks to appointments
                     {% elif active_tab == 'appointment' %}Format appointment report insurance columns
                     {% elif active_tab == 'smartassist' %}Format smart assist report insurance columns
+                    {% elif active_tab == 'consolidate' %}Consolidate master and daily report files
+                    {% elif active_tab == 'reallocation' %}Generate reallocation data from consolidate file
                     {% else %}Compare Patient IDs and add insurance columns
                     {% endif %}
                 </p>
@@ -1167,6 +1238,238 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
+            <!-- Tab 7: Consolidate Report -->
+            <div id="consolidate-tab" class="tab-content {% if active_tab == 'consolidate' %}active{% endif %}">
+                <div class="section">
+                    <h3>📊 Consolidate Report</h3>
+                    <p>Upload two Excel files: Master Consolidate file and Daily Consolidated file to merge and consolidate the data.</p>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="section">
+                    <h3>📁 Upload Excel Files</h3>
+                    <form action="/upload_consolidate" method="post" enctype="multipart/form-data" id="consolidate-form">
+                        <div class="two-column">
+                            <div>
+                                <h4>Master Consolidate File</h4>
+                                <div class="form-group">
+                                    <label for="consolidate_master_file">Select Master Consolidate Excel File:</label>
+                                    <input type="file" id="consolidate_master_file" name="master_file" accept=".xlsx,.xls" required>
+                                </div>
+                                {% if consolidate_master_filename %}
+                                <div class="file-status">
+                                    <div class="status-success">
+                                        ✅ {{ consolidate_master_filename }}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div>
+                                <h4>Daily Consolidated File</h4>
+                                <div class="form-group">
+                                    <label for="consolidate_daily_file">Select Daily Consolidated Excel File:</label>
+                                    <input type="file" id="consolidate_daily_file" name="daily_file" accept=".xlsx,.xls" required>
+                                </div>
+                                {% if consolidate_daily_filename %}
+                                <div class="file-status">
+                                    <div class="status-success">
+                                        ✅ {{ consolidate_daily_filename }}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <button type="submit" id="consolidate-btn">📤 Upload & Consolidate Files</button>
+                    </form>
+                    <div class="loading" id="consolidate-loading">
+                        <div class="spinner"></div>
+                        <p>Processing and consolidating files...</p>
+                    </div>
+                </div>
+
+                <!-- Status Messages -->
+                {% if consolidate_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ consolidate_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- File Status -->
+                {% if consolidate_master_filename %}
+                <div class="section">
+                    <h3>📊 File Status</h3>
+                    <div class="file-status">
+                        <div class="status-success">
+                            ✅ Master File: {{ consolidate_master_filename }}<br>
+                            {% if consolidate_daily_filename %}
+                            ✅ Daily File: {{ consolidate_daily_filename }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Processing Output -->
+                {% if consolidate_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ consolidate_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if consolidate_master_data and consolidate_result and 'consolidation complete' in consolidate_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Consolidated File</h3>
+                    <form action="/download_consolidate" method="post">
+                        <div class="form-group">
+                            <label for="consolidate_output_filename">Output filename (optional):</label>
+                            <input type="text" id="consolidate_output_filename" name="filename" 
+                                   placeholder="consolidated_report.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Consolidated File</button>
+                    </form>
+                </div>
+                <div class="section">
+                    <h3>💾 Download Merged Sheet Only</h3>
+                    <p>Downloads just the merged <strong>consolidated</strong> sheet.</p>
+                    <form action="/download_consolidate_consolidated_only" method="post">
+                        <div class="form-group">
+                            <label for="consolidate_only_output_filename">Output filename (optional):</label>
+                            <input type="text" id="consolidate_only_output_filename" name="filename" 
+                                   placeholder="consolidated_only.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Consolidated Sheet</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Consolidate Report Tool</h3>
+                    <p>Clear all uploaded files and reset the consolidate report tool to start fresh.</p>
+                    <form action="/reset_consolidate" method="post" onsubmit="return confirm('Are you sure you want to reset the consolidate report tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Consolidate Report Tool</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab 8: Generate Reallocation Data -->
+            <div id="reallocation-tab" class="tab-content {% if active_tab == 'reallocation' %}active{% endif %}">
+                <div class="section">
+                    <h3>♻️ Generate Reallocation Data</h3>
+                    <p>Upload a consolidated file and blank allocation file to generate reallocation data.</p>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="section">
+                    <h3>📁 Upload Excel Files</h3>
+                    <form action="/upload_reallocation" method="post" enctype="multipart/form-data" id="reallocation-form">
+                        <div class="two-column">
+                            <div>
+                                <h4>Current Consolidate File</h4>
+                                <div class="form-group">
+                                    <label for="reallocation_consolidate_file">Select Consolidate Excel File:</label>
+                                    <input type="file" id="reallocation_consolidate_file" name="consolidate_file" accept=".xlsx,.xls" required>
+                                </div>
+                                {% if reallocation_consolidate_filename %}
+                                <div class="file-status">
+                                    <div class="status-success">
+                                        ✅ {{ reallocation_consolidate_filename }}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div>
+                                <h4>Blank Allocation File</h4>
+                                <div class="form-group">
+                                    <label for="reallocation_blank_file">Select Blank Allocation Excel File:</label>
+                                    <input type="file" id="reallocation_blank_file" name="blank_file" accept=".xlsx,.xls" required>
+                                </div>
+                                {% if reallocation_blank_filename %}
+                                <div class="file-status">
+                                    <div class="status-success">
+                                        ✅ {{ reallocation_blank_filename }}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <button type="submit" id="reallocation-btn">📤 Generate Reallocation Data</button>
+                    </form>
+                    <div class="loading" id="reallocation-loading">
+                        <div class="spinner"></div>
+                        <p>Generating reallocation data...</p>
+                    </div>
+                </div>
+
+                <!-- Status Messages -->
+                {% if reallocation_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ reallocation_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- File Status -->
+                {% if reallocation_consolidate_filename %}
+                <div class="section">
+                    <h3>📊 File Status</h3>
+                    <div class="file-status">
+                        <div class="status-success">
+                            ✅ Consolidate File: {{ reallocation_consolidate_filename }}<br>
+                            {% if reallocation_blank_filename %}
+                            ✅ Blank Allocation File: {{ reallocation_blank_filename }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Processing Output -->
+                {% if reallocation_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ reallocation_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if reallocation_merged_data and reallocation_result and 'generation complete' in reallocation_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Reallocation File</h3>
+                    <form action="/download_reallocation" method="post">
+                        <div class="form-group">
+                            <label for="reallocation_output_filename">Output filename (optional):</label>
+                            <input type="text" id="reallocation_output_filename" name="filename" 
+                                   value="reallocation_output.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Reallocation File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Reallocation Tool</h3>
+                    <p>Clear all uploaded files and reset the reallocation tool to start fresh.</p>
+                    <form action="/reset_reallocation" method="post" onsubmit="return confirm('Are you sure you want to reset the reallocation tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Reallocation Tool</button>
+                    </form>
+                </div>
+            </div>
+
             </div> <!-- End content -->
 
             <!-- Footer -->
@@ -1248,7 +1551,9 @@ HTML_TEMPLATE = """
                     (tabName === 'insurance' && itemText.includes('insurance')) ||
                     (tabName === 'remarks' && itemText.includes('remarks')) ||
                     (tabName === 'appointment' && itemText.includes('appointment')) ||
-                    (tabName === 'smartassist' && itemText.includes('smart assist'))) {
+                    (tabName === 'smartassist' && itemText.includes('smart assist')) ||
+                    (tabName === 'consolidate' && itemText.includes('consolidate')) ||
+                    (tabName === 'reallocation' && itemText.includes('reallocation'))) {
                     item.classList.add('active');
                 }
             });
@@ -1260,7 +1565,9 @@ HTML_TEMPLATE = """
                 'insurance': '🦷 Insurance Name Formatting',
                 'remarks': '📝 Update Remarks',
                 'appointment': '📅 Appointment Report Formatting',
-                'smartassist': '🤖 Smart Assist Report Formatting'
+                'smartassist': '🤖 Smart Assist Report Formatting',
+                'consolidate': '📊 Consolidate Report',
+                'reallocation': '♻️ Generate Reallocation Data'
             };
             
             const pageDescriptions = {
@@ -1269,7 +1576,9 @@ HTML_TEMPLATE = """
                 'insurance': 'Standardize insurance carrier names',
                 'remarks': 'Add remarks to appointments',
                 'appointment': 'Format appointment report insurance columns',
-                'smartassist': 'Format smart assist report insurance columns'
+                'smartassist': 'Format smart assist report insurance columns',
+                'consolidate': 'Consolidate master and daily report files',
+                'reallocation': 'Generate reallocation data from consolidate file'
             };
             
             document.getElementById('page-title').textContent = pageTitles[tabName] || pageTitles['comparison'];
@@ -1359,6 +1668,24 @@ HTML_TEMPLATE = """
             });
         }
 
+        // Consolidate report form submission
+        const consolidateForm = document.getElementById('consolidate-form');
+        if (consolidateForm) {
+            consolidateForm.addEventListener('submit', function() {
+                showProcessingModal('Consolidating Files', 'Merging master and daily consolidated files');
+                document.getElementById('consolidate-btn').disabled = true;
+            });
+        }
+
+        // Reallocation form submission
+        const reallocationForm = document.getElementById('reallocation-form');
+        if (reallocationForm) {
+            reallocationForm.addEventListener('submit', function() {
+                showProcessingModal('Generating Reallocation Data', 'Processing consolidate and blank allocation files');
+                document.getElementById('reallocation-btn').disabled = true;
+            });
+        }
+
         // Reset forms - show modal when form is submitted (HTML confirm already handled)
         const resetForms = document.querySelectorAll('form[action*="reset"]');
         resetForms.forEach(form => {
@@ -1394,6 +1721,10 @@ HTML_TEMPLATE = """
                 switchTab('appointment', true);
             } else if (activeTab === 'smartassist') {
                 switchTab('smartassist', true);
+            } else if (activeTab === 'consolidate') {
+                switchTab('consolidate', true);
+            } else if (activeTab === 'reallocation') {
+                switchTab('reallocation', true);
             } else if (activeTab === 'comparison') {
                 switchTab('comparison', true);
             }
@@ -2151,6 +2482,8 @@ def comparison_index():
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
+    global consolidate_master_data, consolidate_daily_data, consolidate_master_filename, consolidate_daily_filename, consolidate_result, consolidate_output
+    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -2183,6 +2516,19 @@ def comparison_index():
         smart_assist_filename=smart_assist_filename,
         smart_assist_result=smart_assist_result,
         smart_assist_output=smart_assist_output,
+        consolidate_master_data=consolidate_master_data,
+        consolidate_daily_data=consolidate_daily_data,
+        consolidate_master_filename=consolidate_master_filename,
+        consolidate_daily_filename=consolidate_daily_filename,
+        consolidate_result=consolidate_result,
+        consolidate_output=consolidate_output,
+        reallocation_consolidate_data=reallocation_consolidate_data,
+        reallocation_blank_data=reallocation_blank_data,
+        reallocation_consolidate_filename=reallocation_consolidate_filename,
+        reallocation_blank_filename=reallocation_blank_filename,
+        reallocation_result=reallocation_result,
+        reallocation_output=reallocation_output,
+        reallocation_merged_data=reallocation_merged_data,
         active_tab=active_tab,
     )
 
@@ -5073,6 +5419,459 @@ def reset_smart_assist():
             f"❌ Error resetting smart assist report formatting tool: {str(e)}"
         )
         return redirect("/comparison?tab=smartassist")
+
+
+@app.route("/upload_consolidate", methods=["POST"])
+def upload_consolidate():
+    global consolidate_master_data, consolidate_daily_data, consolidate_master_filename, consolidate_daily_filename, consolidate_result, consolidate_output
+
+    try:
+        consolidate_output = ""
+        output_lines = []
+        
+        # Check for both files
+        if "master_file" not in request.files or "daily_file" not in request.files:
+            consolidate_result = "❌ Error: Both Master Consolidate file and Daily Consolidated file are required."
+            return redirect("/comparison?tab=consolidate")
+
+        master_file = request.files["master_file"]
+        daily_file = request.files["daily_file"]
+
+        if master_file.filename == "" or daily_file.filename == "":
+            consolidate_result = "❌ Error: Both files must be selected."
+            return redirect("/comparison?tab=consolidate")
+
+        # Save and read master file
+        master_filename = secure_filename(master_file.filename)
+        master_filepath = os.path.join("/tmp", master_filename)
+        master_file.save(master_filepath)
+        
+        # Save and read daily file
+        daily_filename = secure_filename(daily_file.filename)
+        daily_filepath = os.path.join("/tmp", daily_filename)
+        daily_file.save(daily_filepath)
+
+        # Read Excel files (all sheets from master to preserve workbook; specific sheet from daily)
+        output_lines.append("=" * 80)
+        output_lines.append("CONSOLIDATE REPORT - FILE PROCESSING")
+        output_lines.append("=" * 80)
+        output_lines.append(f"\nMaster File: {master_filename}")
+        output_lines.append(f"Daily File: {daily_filename}")
+        output_lines.append(f"Processing Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+        # Load master workbook (all sheets)
+        master_xls = pd.ExcelFile(master_filepath)
+        consolidate_master_data = {}
+        for sheet in master_xls.sheet_names:
+            consolidate_master_data[sheet] = pd.read_excel(master_filepath, sheet_name=sheet)
+
+        # Ensure we have a 'consolidated' sheet in master (create empty if missing)
+        master_has_consolidated = "consolidated" in consolidate_master_data
+        if not master_has_consolidated:
+            consolidate_master_data["consolidated"] = pd.DataFrame()
+
+        # Load only the required sheet from daily
+        try:
+            daily_all_agent_df = pd.read_excel(daily_filepath, sheet_name="All Agent Data")
+        except Exception as e:
+            consolidate_result = f"❌ Error: Could not find/read sheet 'All Agent Data' in Daily Consolidated File. Details: {str(e)}"
+            return redirect("/comparison?tab=consolidate")
+
+        consolidate_master_filename = master_filename
+        consolidate_daily_filename = daily_filename
+
+        output_lines.append(f"\n✅ Master file loaded successfully")
+        output_lines.append(f"   Sheets: {', '.join(consolidate_master_data.keys())}")
+        output_lines.append(f"   Consolidated sheet present: {'Yes' if master_has_consolidated else 'No (created)'}")
+
+        output_lines.append(f"\n✅ Daily file loaded successfully")
+        output_lines.append(f"   Using sheet: All Agent Data")
+        output_lines.append(f"   Rows in daily sheet: {len(daily_all_agent_df)}")
+
+        # Normalize Appointment Date in daily sheet to MM/DD/YYYY if present
+        def normalize_appointment_date(df):
+            col = None
+            # Exact name first, then case-insensitive search fallback
+            if "Appointment Date" in df.columns:
+                col = "Appointment Date"
+            else:
+                for c in df.columns:
+                    if str(c).strip().lower() == "appointment date".lower():
+                        col = c
+                        break
+            if col is not None:
+                try:
+                    df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%m/%d/%Y")
+                except Exception:
+                    # Best-effort; leave values as-is on failure
+                    pass
+            return df
+
+        daily_all_agent_df = normalize_appointment_date(daily_all_agent_df)
+
+        # Append daily data to master's 'consolidated' sheet
+        master_consolidated_df = consolidate_master_data.get("consolidated", pd.DataFrame())
+
+        # Align columns to union of both DataFrames
+        combined_columns = list({*map(str, master_consolidated_df.columns), *map(str, daily_all_agent_df.columns)})
+        master_consolidated_aligned = master_consolidated_df.reindex(columns=combined_columns)
+        daily_all_agent_aligned = daily_all_agent_df.reindex(columns=combined_columns)
+
+        appended_df = pd.concat([master_consolidated_aligned, daily_all_agent_aligned], ignore_index=True)
+
+        # Identify duplicates by 'Patient ID' across the combined data
+        pid_col = None
+        if "Patient ID" in appended_df.columns:
+            pid_col = "Patient ID"
+        else:
+            # Fallbacks commonly used in this project
+            for alt in ["PATID", "Pat ID", "PatientID", "patient id", "patid"]:
+                if alt in appended_df.columns:
+                    pid_col = alt
+                    break
+
+        duplicates_df = pd.DataFrame()
+        if pid_col is not None:
+            dup_mask = appended_df.duplicated(subset=[pid_col], keep=False)
+            duplicates_df = appended_df[dup_mask].copy()
+            # Keep only first occurrence in consolidated sheet
+            consolidated_unique_df = appended_df.drop_duplicates(subset=[pid_col], keep="first").copy()
+        else:
+            # If no patient id column found, proceed without duplicate handling
+            consolidated_unique_df = appended_df.copy()
+            output_lines.append("\n⚠️  'Patient ID' column not found. Skipping duplicate detection.")
+
+        # Update in-memory workbook
+        consolidate_master_data["consolidated"] = consolidated_unique_df
+        if not duplicates_df.empty:
+            consolidate_master_data["Duplicate"] = duplicates_df
+            output_lines.append(f"\n🧬 Duplicates found on '{pid_col}': {len(duplicates_df)} rows (written to 'Duplicate' sheet)")
+        else:
+            output_lines.append("\n✅ No duplicates detected by 'Patient ID'.")
+
+        output_lines.append("\n" + "=" * 80)
+        output_lines.append("✅ CONSOLIDATION COMPLETE")
+        output_lines.append("=" * 80)
+        output_lines.append(f"Rows in master 'consolidated' before: {len(master_consolidated_df)}")
+        output_lines.append(f"Rows appended from daily: {len(daily_all_agent_df)}")
+        output_lines.append(f"Rows in 'consolidated' after: {len(consolidate_master_data['consolidated'])}")
+        output_lines.append("\nReady to download consolidated file.")
+
+        consolidate_output = "\n".join(output_lines)
+        consolidate_result = f"✅ Consolidation complete successfully!\n\n{consolidate_output}"
+
+        return redirect("/comparison?tab=consolidate")
+
+    except Exception as e:
+        consolidate_result = f"❌ Error processing consolidation: {str(e)}"
+        consolidate_output = f"Error: {str(e)}"
+        return redirect("/comparison?tab=consolidate")
+
+
+@app.route("/download_consolidate", methods=["POST"])
+def download_consolidate():
+    global consolidate_master_data, consolidate_master_filename
+
+    try:
+        if not consolidate_master_data:
+            return "No consolidate data available", 400
+
+        filename = request.form.get("filename", "consolidated_report.xlsx")
+        if not filename.endswith(".xlsx"):
+            filename += ".xlsx"
+
+        # Create Excel file with all sheets
+        output_path = os.path.join("/tmp", filename)
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            for sheet_name, df in consolidate_master_data.items():
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        return send_file(output_path, as_attachment=True, download_name=filename)
+
+    except Exception as e:
+        return f"Error downloading file: {str(e)}", 500
+
+
+@app.route("/download_consolidate_consolidated_only", methods=["POST"])
+def download_consolidate_consolidated_only():
+    """Download only the merged 'consolidated' sheet."""
+    global consolidate_master_data
+
+    try:
+        if not consolidate_master_data or "consolidated" not in consolidate_master_data:
+            return "No consolidated data available", 400
+
+        filename = request.form.get("filename", "consolidated_only.xlsx")
+        if not filename.endswith(".xlsx"):
+            filename += ".xlsx"
+
+        output_path = os.path.join("/tmp", filename)
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            consolidate_master_data["consolidated"].to_excel(
+                writer, sheet_name="consolidated", index=False
+            )
+
+        return send_file(output_path, as_attachment=True, download_name=filename)
+
+    except Exception as e:
+        return f"Error downloading consolidated sheet: {str(e)}", 500
+
+
+@app.route("/reset_consolidate", methods=["POST"])
+def reset_consolidate():
+    global consolidate_master_data, consolidate_daily_data, consolidate_master_filename, consolidate_daily_filename, consolidate_result, consolidate_output
+
+    try:
+        consolidate_master_data = None
+        consolidate_daily_data = None
+        consolidate_master_filename = None
+        consolidate_daily_filename = None
+        consolidate_result = "🔄 Consolidate report tool reset successfully! All files and data have been cleared."
+        consolidate_output = ""
+
+        return redirect("/comparison?tab=consolidate")
+
+    except Exception as e:
+        consolidate_result = f"❌ Error resetting consolidate report tool: {str(e)}"
+        return redirect("/comparison?tab=consolidate")
+
+
+@app.route("/upload_reallocation", methods=["POST"])
+def upload_reallocation():
+    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data
+
+    try:
+        reallocation_output = ""
+        reallocation_merged_data = None
+        output_lines = []
+        
+        # Check for both files
+        if "consolidate_file" not in request.files or "blank_file" not in request.files:
+            reallocation_result = "❌ Error: Both Consolidate file and Blank Allocation file are required."
+            return redirect("/comparison?tab=reallocation")
+
+        consolidate_file = request.files["consolidate_file"]
+        blank_file = request.files["blank_file"]
+
+        if consolidate_file.filename == "" or blank_file.filename == "":
+            reallocation_result = "❌ Error: Both files must be selected."
+            return redirect("/comparison?tab=reallocation")
+
+        # Save and read files
+        consolidate_filename = secure_filename(consolidate_file.filename)
+        consolidate_filepath = os.path.join("/tmp", consolidate_filename)
+        consolidate_file.save(consolidate_filepath)
+        
+        blank_filename = secure_filename(blank_file.filename)
+        blank_filepath = os.path.join("/tmp", blank_filename)
+        blank_file.save(blank_filepath)
+
+        # Log processing info
+        output_lines.append("=" * 80)
+        output_lines.append("REALLOCATION DATA GENERATION - FILE PROCESSING")
+        output_lines.append("=" * 80)
+        output_lines.append(f"\nConsolidate File: {consolidate_filename}")
+        output_lines.append(f"Blank Allocation File: {blank_filename}")
+        output_lines.append(f"Processing Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+        # Load consolidate file
+        consolidate_xls = pd.ExcelFile(consolidate_filepath)
+        reallocation_consolidate_data = {}
+        for sheet in consolidate_xls.sheet_names:
+            reallocation_consolidate_data[sheet] = pd.read_excel(consolidate_filepath, sheet_name=sheet)
+
+        # Load blank allocation file
+        blank_xls = pd.ExcelFile(blank_filepath)
+        reallocation_blank_data = {}
+        for sheet in blank_xls.sheet_names:
+            reallocation_blank_data[sheet] = pd.read_excel(blank_filepath, sheet_name=sheet)
+
+        reallocation_consolidate_filename = consolidate_filename
+        reallocation_blank_filename = blank_filename
+
+        output_lines.append(f"\n✅ Consolidate file loaded successfully")
+        output_lines.append(f"   Sheets: {', '.join(reallocation_consolidate_data.keys())}")
+        output_lines.append(f"   Total rows: {sum(len(df) for df in reallocation_consolidate_data.values())}")
+
+        output_lines.append(f"\n✅ Blank allocation file loaded successfully")
+        output_lines.append(f"   Sheets: {', '.join(reallocation_blank_data.keys())}")
+        output_lines.append(f"   Total rows: {sum(len(df) for df in reallocation_blank_data.values())}")
+
+        # STEP 1: Align remarks in consolidate file
+        output_lines.append("\n" + "=" * 80)
+        output_lines.append("STEP 1: ALIGNING REMARKS")
+        output_lines.append("=" * 80)
+
+        total_remarks_aligned = 0
+        for sheet_name, df in reallocation_consolidate_data.items():
+            if "Remark" in df.columns:
+                # Apply remark alignment
+                original_remarks = df["Remark"].copy()
+                df["Remark"] = df["Remark"].apply(align_remark)
+                
+                # Count how many were changed
+                changed_count = (original_remarks != df["Remark"]).sum()
+                total_remarks_aligned += changed_count
+                
+                reallocation_consolidate_data[sheet_name] = df
+                
+                if changed_count > 0:
+                    output_lines.append(f"\n📄 Sheet '{sheet_name}':")
+                    output_lines.append(f"   ✓ Remarks aligned: {changed_count} rows")
+            else:
+                output_lines.append(f"\n⚠️  Sheet '{sheet_name}': 'Remark' column not found")
+
+        output_lines.append(f"\n✅ Total remarks aligned across all sheets: {total_remarks_aligned}")
+
+        # STEP 2: Merge consolidate into blank allocation file
+        output_lines.append("\n" + "=" * 80)
+        output_lines.append("STEP 2: MERGING INTO BLANK ALLOCATION FILE")
+        output_lines.append("=" * 80)
+
+        merged_data = {}
+        
+        # Get the "All Agent Data" sheet from consolidate file
+        if "All Agent Data" not in reallocation_consolidate_data:
+            raise Exception("'All Agent Data' sheet not found in Current Consolidate File")
+        
+        cons_df = reallocation_consolidate_data["All Agent Data"]
+        output_lines.append(f"\n📄 Source: 'All Agent Data' from consolidate ({len(cons_df)} rows)")
+        
+        # Get the first sheet from blank allocation file (either "Today" or "Sheet1")
+        blank_sheet_names = list(reallocation_blank_data.keys())
+        if not blank_sheet_names:
+            raise Exception("Blank Allocation File has no sheets")
+        
+        target_sheet_name = blank_sheet_names[0]
+        blank_df = reallocation_blank_data[target_sheet_name]
+        output_lines.append(f"📄 Target: '{target_sheet_name}' from blank allocation ({len(blank_df)} rows)")
+        
+        # Align columns to the union of both
+        combined_cols = list({*map(str, blank_df.columns), *map(str, cons_df.columns)})
+        blank_aligned = blank_df.reindex(columns=combined_cols)
+        cons_aligned = cons_df.reindex(columns=combined_cols)
+        
+        # Merge: append consolidate data to blank allocation data
+        merged_df = pd.concat([blank_aligned, cons_aligned], ignore_index=True)
+        merged_data[target_sheet_name] = merged_df
+        
+        output_lines.append(f"\n✅ Merged into '{target_sheet_name}': {len(merged_df)} total rows")
+        output_lines.append(f"   - From blank allocation: {len(blank_df)} rows")
+        output_lines.append(f"   - From consolidate (All Agent Data): {len(cons_df)} rows")
+        
+        # STEP 3: Remove duplicates based on composite key
+        output_lines.append("\n" + "=" * 80)
+        output_lines.append("STEP 3: REMOVING DUPLICATES")
+        output_lines.append("=" * 80)
+        
+        rows_before_dedup = len(merged_df)
+        
+        # Check if required columns exist
+        if "Patient ID" not in merged_df.columns or "Dental Primary Ins Carr" not in merged_df.columns:
+            raise Exception("Required columns not found: 'Patient ID' and/or 'Dental Primary Ins Carr'")
+        
+        # Create composite key by concatenating Patient ID + Dental Primary Ins Carr
+        # Store original index to restore order later
+        merged_df['__original_index__'] = range(len(merged_df))
+        merged_df['__composite_key__'] = merged_df["Patient ID"].astype(str) + merged_df["Dental Primary Ins Carr"].astype(str)
+        
+        # Sort by composite key (groups duplicates together)
+        merged_df_sorted = merged_df.sort_values(by='__composite_key__', na_position='last')
+        
+        # Keep last occurrence (remove=first occurrences, keep=last)
+        deduplicated_df = merged_df_sorted.drop_duplicates(subset=['__composite_key__'], keep='last')
+        
+        # Restore original order
+        deduplicated_df = deduplicated_df.sort_values(by='__original_index__')
+        
+        # Remove temporary columns (composite key and original index)
+        deduplicated_df = deduplicated_df.drop(columns=['__composite_key__', '__original_index__'])
+        
+        rows_after_dedup = len(deduplicated_df)
+        rows_removed = rows_before_dedup - rows_after_dedup
+        
+        output_lines.append(f"\n📊 Deduplication Statistics:")
+        output_lines.append(f"   - Rows before deduplication: {rows_before_dedup}")
+        output_lines.append(f"   - Rows after deduplication: {rows_after_dedup}")
+        output_lines.append(f"   - Duplicate rows removed: {rows_removed}")
+        
+        # STEP 4: Clear Agent Name column from merged data
+        if "Agent Name" in deduplicated_df.columns:
+            deduplicated_df["Agent Name"] = ""
+            output_lines.append(f"\n🧹 Cleared 'Agent Name' column in merged data")
+        
+        merged_data[target_sheet_name] = deduplicated_df
+        
+        # Add any other sheets from blank allocation file (keep as-is)
+        for sheet_name, df in reallocation_blank_data.items():
+            if sheet_name not in merged_data:
+                merged_data[sheet_name] = df.copy()
+                output_lines.append(f"\n➕ Kept '{sheet_name}' from blank allocation ({len(df)} rows)")
+
+        reallocation_merged_data = merged_data
+
+        output_lines.append("\n" + "=" * 80)
+        output_lines.append("✅ GENERATION COMPLETE")
+        output_lines.append("=" * 80)
+        output_lines.append(f"Total merged sheets: {len(merged_data)}")
+        output_lines.append(f"Rows in merged workbook: {sum(len(df) for df in merged_data.values())}")
+        output_lines.append("\nReady to download reallocation file.")
+
+        reallocation_output = "\n".join(output_lines)
+        reallocation_result = f"✅ Reallocation data generation complete successfully!\n\n{reallocation_output}"
+
+        return redirect("/comparison?tab=reallocation")
+
+    except Exception as e:
+        reallocation_result = f"❌ Error processing reallocation: {str(e)}"
+        reallocation_output = f"Error: {str(e)}"
+        return redirect("/comparison?tab=reallocation")
+
+
+@app.route("/download_reallocation", methods=["POST"])
+def download_reallocation():
+    global reallocation_merged_data, reallocation_consolidate_data
+
+    try:
+        # Prefer merged data; fallback to consolidate data
+        data_to_write = reallocation_merged_data or reallocation_consolidate_data
+        if not data_to_write:
+            return "No reallocation data available", 400
+
+        filename = request.form.get("filename", "reallocation_data.xlsx")
+        if not filename.endswith(".xlsx"):
+            filename += ".xlsx"
+
+        # Create Excel file with consolidate sheets
+        output_path = os.path.join("/tmp", filename)
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            for sheet_name, df in data_to_write.items():
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        return send_file(output_path, as_attachment=True, download_name=filename)
+
+    except Exception as e:
+        return f"Error downloading file: {str(e)}", 500
+
+
+@app.route("/reset_reallocation", methods=["POST"])
+def reset_reallocation():
+    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data
+
+    try:
+        reallocation_consolidate_data = None
+        reallocation_blank_data = None
+        reallocation_consolidate_filename = None
+        reallocation_blank_filename = None
+        reallocation_result = "🔄 Reallocation tool reset successfully! All files and data have been cleared."
+        reallocation_output = ""
+        reallocation_merged_data = None
+
+        return redirect("/comparison?tab=reallocation")
+
+    except Exception as e:
+        reallocation_result = f"❌ Error resetting reallocation tool: {str(e)}"
+        return redirect("/comparison?tab=reallocation")
 
 
 if __name__ == "__main__":
