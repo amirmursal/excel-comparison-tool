@@ -68,6 +68,63 @@ reallocation_blank_filename = None
 reallocation_result = None
 reallocation_output = ""
 reallocation_merged_data = None
+reallocation_available_remarks = []
+reallocation_available_agents = []
+reallocation_selected_remarks = []
+reallocation_selected_agents = []
+
+
+@app.route("/load_reallocation_consolidate", methods=["POST"])
+def load_reallocation_consolidate():
+    """Load the Current Consolidate File, align remarks, and return available remarks/agents as JSON."""
+    global reallocation_consolidate_data, reallocation_consolidate_filename, reallocation_available_remarks, reallocation_available_agents
+
+    try:
+        if "consolidate_file" not in request.files:
+            return jsonify({"ok": False, "error": "No consolidate file provided."}), 400
+
+        consolidate_file = request.files["consolidate_file"]
+        if not consolidate_file or consolidate_file.filename == "":
+            return jsonify({"ok": False, "error": "Empty consolidate file."}), 400
+
+        consolidate_filename = secure_filename(consolidate_file.filename)
+        consolidate_filepath = os.path.join("/tmp", consolidate_filename)
+        consolidate_file.save(consolidate_filepath)
+
+        # Load and align remarks on all sheets
+        consolidate_xls = pd.ExcelFile(consolidate_filepath)
+        reallocation_consolidate_data = {}
+        for sheet in consolidate_xls.sheet_names:
+            df = pd.read_excel(consolidate_filepath, sheet_name=sheet)
+            if "Remark" in df.columns:
+                df["Remark"] = df["Remark"].apply(align_remark)
+            reallocation_consolidate_data[sheet] = df
+
+        reallocation_consolidate_filename = consolidate_filename
+
+        # Build available remark list from All Agent Data if present
+        remarks = []
+        agents = []
+        if "All Agent Data" in reallocation_consolidate_data:
+            df = reallocation_consolidate_data["All Agent Data"]
+            if "Remark" in df.columns:
+                remarks = sorted(pd.Series(df["Remark"].dropna().astype(str).str.strip().unique()).tolist())
+            # Only include agents who have Workable remark
+            if "Agent Name" in df.columns and "Remark" in df.columns:
+                workable_df = df[df["Remark"].astype(str).str.strip() == "Workable"]
+                agents = sorted(pd.Series(workable_df["Agent Name"].dropna().astype(str).str.strip().unique()).tolist())
+
+        reallocation_available_remarks = remarks
+        reallocation_available_agents = agents
+
+        return jsonify({
+            "ok": True,
+            "filename": reallocation_consolidate_filename,
+            "remarks": reallocation_available_remarks,
+            "agents": reallocation_available_agents,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 def align_remark(remark_value):
@@ -631,10 +688,10 @@ HTML_TEMPLATE = """
                     <span class="menu-item-icon">🤖</span>
                     <span>Smart Assist Report</span>
                 </div>
-                <div class="menu-item {% if active_tab == 'consolidate' %}active{% endif %}" onclick="switchTab('consolidate')">
+                <!-- <div class="menu-item {% if active_tab == 'consolidate' %}active{% endif %}" onclick="switchTab('consolidate')">
                     <span class="menu-item-icon">📊</span>
                     <span>Consolidate Report</span>
-                </div>
+                </div> -->
                 <div class="menu-item {% if active_tab == 'reallocation' %}active{% endif %}" onclick="switchTab('reallocation')">
                     <span class="menu-item-icon">♻️</span>
                     <span>Generate Reallocation Data</span>
@@ -1376,7 +1433,7 @@ HTML_TEMPLATE = """
                                 <h4>Current Consolidate File</h4>
                                 <div class="form-group">
                                     <label for="reallocation_consolidate_file">Select Consolidate Excel File:</label>
-                                    <input type="file" id="reallocation_consolidate_file" name="consolidate_file" accept=".xlsx,.xls" required>
+                                    <input type="file" id="reallocation_consolidate_file" name="consolidate_file" accept=".xlsx,.xls" {% if not reallocation_consolidate_filename %}required{% endif %}>
                                 </div>
                                 {% if reallocation_consolidate_filename %}
                                 <div class="file-status">
@@ -1391,7 +1448,7 @@ HTML_TEMPLATE = """
                                 <h4>Blank Allocation File</h4>
                                 <div class="form-group">
                                     <label for="reallocation_blank_file">Select Blank Allocation Excel File:</label>
-                                    <input type="file" id="reallocation_blank_file" name="blank_file" accept=".xlsx,.xls" required>
+                                    <input type="file" id="reallocation_blank_file" name="blank_file" accept=".xlsx,.xls" {% if not reallocation_blank_filename %}required{% endif %}>
                                 </div>
                                 {% if reallocation_blank_filename %}
                                 <div class="file-status">
@@ -1402,8 +1459,127 @@ HTML_TEMPLATE = """
                                 {% endif %}
                             </div>
                         </div>
-                        <button type="submit" id="reallocation-btn">📤 Generate Reallocation Data</button>
+                        <!-- Remark Filter Dropdown -->
+                        <div class="form-group" style="margin-top: 12px;">
+                            <label for="reallocation_remarks">Filter by Remark (select one or more):</label>
+                            <select id="reallocation_remarks" name="remarks_filter" multiple size="6" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" {% if not (reallocation_available_remarks and reallocation_available_remarks|length > 0) %}disabled{% endif %}>
+                                {% if reallocation_available_remarks and reallocation_available_remarks|length > 0 %}
+                                    {% for r in reallocation_available_remarks %}
+                                    <option value="{{ r }}" {% if reallocation_selected_remarks and r in reallocation_selected_remarks %}selected{% endif %}>{{ r }}</option>
+                                    {% endfor %}
+                                {% else %}
+                                    <option value="" disabled>(Upload the Consolidate file to load remark options)</option>
+                                {% endif %}
+                            </select>
+                            <small>Select at least one remark or a Workable agent to enable generation.</small>
+                        </div>
+
+                        <div class="form-group" style="margin-top: 12px;">
+                            <label for="reallocation_agents">Filter Workable rows by Agent (select one or more):</label>
+                            <select id="reallocation_agents" name="agent_filter" multiple size="6" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" {% if not (reallocation_available_agents and reallocation_available_agents|length > 0) %}disabled{% endif %}>
+                                {% if reallocation_available_agents and reallocation_available_agents|length > 0 %}
+                                    {% for a in reallocation_available_agents %}
+                                    <option value="{{ a }}" {% if reallocation_selected_agents and a in reallocation_selected_agents %}selected{% endif %}>{{ a }}</option>
+                                    {% endfor %}
+                                {% else %}
+                                    <option value="" disabled>(Upload the Consolidate file to load agent options)</option>
+                                {% endif %}
+                            </select>
+                            <small>Agents apply only to Workable rows (unioned with the remark filter).</small>
+                        </div>
+
+                        <button type="submit" id="reallocation-btn" disabled>📤 Generate Reallocation Data</button>
                     </form>
+                    <script>
+                    (function(){
+                        const btn = document.getElementById('reallocation-btn');
+                        const consInput = document.getElementById('reallocation_consolidate_file');
+                        const blankInput = document.getElementById('reallocation_blank_file');
+                        const remarksSel = document.getElementById('reallocation_remarks');
+                        const agentsSel = document.getElementById('reallocation_agents');
+                        let hasConsAlready = {{ 'true' if reallocation_consolidate_filename else 'false' }};
+                        let hasBlankAlready = {{ 'true' if reallocation_blank_filename else 'false' }};
+                        function update(){
+                            const hasCons = hasConsAlready || (consInput && consInput.files && consInput.files.length > 0);
+                            const hasBlank = hasBlankAlready || (blankInput && blankInput.files && blankInput.files.length > 0);
+                            let selectedCount = 0;
+                            if (remarksSel) {
+                                if (typeof remarksSel.selectedOptions !== 'undefined') {
+                                    selectedCount = remarksSel.selectedOptions.length;
+                                } else {
+                                    selectedCount = remarksSel.querySelectorAll('option:checked').length;
+                                }
+                            }
+                            let agentSelected = 0;
+                            if (agentsSel) {
+                                if (typeof agentsSel.selectedOptions !== 'undefined') {
+                                    agentSelected = agentsSel.selectedOptions.length;
+                                } else {
+                                    agentSelected = agentsSel.querySelectorAll('option:checked').length;
+                                }
+                            }
+                            const hasSelection = (selectedCount > 0) || (agentSelected > 0);
+                            if (btn) btn.disabled = !(hasCons && hasBlank && hasSelection);
+                        }
+                        async function handleConsolidateChange(){
+                            update();
+                            if (!consInput || !consInput.files || consInput.files.length === 0) return;
+                            const fd = new FormData();
+                            fd.append('consolidate_file', consInput.files[0]);
+                            // Disable remarks select while loading
+                            if (remarksSel) {
+                                remarksSel.disabled = true;
+                                remarksSel.innerHTML = '<option disabled>(Loading remarks...)</option>';
+                            }
+                            if (agentsSel) {
+                                agentsSel.disabled = true;
+                                agentsSel.innerHTML = '<option disabled>(Loading agents...)</option>';
+                            }
+                            try {
+                                const resp = await fetch('/load_reallocation_consolidate', { method: 'POST', body: fd });
+                                const data = await resp.json();
+                                if (!data.ok) throw new Error(data.error || 'Failed to load remarks');
+                                // Populate remarks
+                                if (remarksSel) {
+                                    remarksSel.innerHTML = '';
+                                    (data.remarks || []).forEach(r => {
+                                        const opt = document.createElement('option');
+                                        opt.value = r; opt.textContent = r;
+                                        remarksSel.appendChild(opt);
+                                    });
+                                    remarksSel.disabled = (data.remarks || []).length === 0;
+                                }
+                                // Populate agents
+                                if (agentsSel) {
+                                    agentsSel.innerHTML = '';
+                                    (data.agents || []).forEach(a => {
+                                        const opt = document.createElement('option');
+        opt.value = a; opt.textContent = a;
+                                        agentsSel.appendChild(opt);
+                                    });
+                                    agentsSel.disabled = (data.agents || []).length === 0;
+                                }
+                                hasConsAlready = true;
+                                update();
+                            } catch (e) {
+                                if (remarksSel) {
+                                    remarksSel.innerHTML = '<option disabled>(Failed to load remarks)</option>';
+                                    remarksSel.disabled = true;
+                                }
+                                if (agentsSel) {
+                                    agentsSel.innerHTML = '<option disabled>(Failed to load agents)</option>';
+                                    agentsSel.disabled = true;
+                                }
+                                alert('Error loading consolidate file: ' + e.message);
+                            }
+                        }
+                        if (consInput) consInput.addEventListener('change', handleConsolidateChange);
+                        if (blankInput) blankInput.addEventListener('change', update);
+                        if (remarksSel) remarksSel.addEventListener('change', update);
+                        if (agentsSel) agentsSel.addEventListener('change', update);
+                        update();
+                    })();
+                    </script>
                     <div class="loading" id="reallocation-loading">
                         <div class="spinner"></div>
                         <p>Generating reallocation data...</p>
@@ -2483,7 +2659,7 @@ def comparison_index():
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
     global consolidate_master_data, consolidate_daily_data, consolidate_master_filename, consolidate_daily_filename, consolidate_result, consolidate_output
-    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data
+    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data, reallocation_available_remarks, reallocation_selected_remarks
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -2529,6 +2705,8 @@ def comparison_index():
         reallocation_result=reallocation_result,
         reallocation_output=reallocation_output,
         reallocation_merged_data=reallocation_merged_data,
+        reallocation_available_remarks=reallocation_available_remarks,
+        reallocation_selected_remarks=reallocation_selected_remarks,
         active_tab=active_tab,
     )
 
@@ -5638,64 +5816,61 @@ def reset_consolidate():
 
 @app.route("/upload_reallocation", methods=["POST"])
 def upload_reallocation():
-    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data
+    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data, reallocation_available_remarks, reallocation_selected_remarks, reallocation_available_agents, reallocation_selected_agents
 
     try:
         reallocation_output = ""
         reallocation_merged_data = None
         output_lines = []
         
-        # Check for both files
-        if "consolidate_file" not in request.files or "blank_file" not in request.files:
-            reallocation_result = "❌ Error: Both Consolidate file and Blank Allocation file are required."
-            return redirect("/comparison?tab=reallocation")
+        # Read selections (if any)
+        selected_remarks = request.form.getlist("remarks_filter")
+        selected_agents = request.form.getlist("agent_filter")
+        reallocation_selected_remarks = selected_remarks
+        reallocation_selected_agents = selected_agents
 
-        consolidate_file = request.files["consolidate_file"]
-        blank_file = request.files["blank_file"]
+        # Files may be provided in steps; load any provided, keep previous if not
+        consolidate_file = request.files.get("consolidate_file")
+        blank_file = request.files.get("blank_file")
 
-        if consolidate_file.filename == "" or blank_file.filename == "":
-            reallocation_result = "❌ Error: Both files must be selected."
-            return redirect("/comparison?tab=reallocation")
+        # Save and read consolidate file if provided
+        if consolidate_file and consolidate_file.filename:
+            consolidate_filename = secure_filename(consolidate_file.filename)
+            consolidate_filepath = os.path.join("/tmp", consolidate_filename)
+            consolidate_file.save(consolidate_filepath)
+            # Load consolidate file
+            consolidate_xls = pd.ExcelFile(consolidate_filepath)
+            reallocation_consolidate_data = {}
+            for sheet in consolidate_xls.sheet_names:
+                reallocation_consolidate_data[sheet] = pd.read_excel(consolidate_filepath, sheet_name=sheet)
+            reallocation_consolidate_filename = consolidate_filename
 
-        # Save and read files
-        consolidate_filename = secure_filename(consolidate_file.filename)
-        consolidate_filepath = os.path.join("/tmp", consolidate_filename)
-        consolidate_file.save(consolidate_filepath)
-        
-        blank_filename = secure_filename(blank_file.filename)
-        blank_filepath = os.path.join("/tmp", blank_filename)
-        blank_file.save(blank_filepath)
-
+        # Save and read blank allocation file if provided
+        if blank_file and blank_file.filename:
+            blank_filename = secure_filename(blank_file.filename)
+            blank_filepath = os.path.join("/tmp", blank_filename)
+            blank_file.save(blank_filepath)
+            blank_xls = pd.ExcelFile(blank_filepath)
+            reallocation_blank_data = {}
+            for sheet in blank_xls.sheet_names:
+                reallocation_blank_data[sheet] = pd.read_excel(blank_filepath, sheet_name=sheet)
+            reallocation_blank_filename = blank_filename
         # Log processing info
         output_lines.append("=" * 80)
         output_lines.append("REALLOCATION DATA GENERATION - FILE PROCESSING")
         output_lines.append("=" * 80)
-        output_lines.append(f"\nConsolidate File: {consolidate_filename}")
-        output_lines.append(f"Blank Allocation File: {blank_filename}")
+        output_lines.append(f"\nConsolidate File: {reallocation_consolidate_filename or 'Not provided'}")
+        output_lines.append(f"Blank Allocation File: {reallocation_blank_filename or 'Not provided'}")
         output_lines.append(f"Processing Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        # Load consolidate file
-        consolidate_xls = pd.ExcelFile(consolidate_filepath)
-        reallocation_consolidate_data = {}
-        for sheet in consolidate_xls.sheet_names:
-            reallocation_consolidate_data[sheet] = pd.read_excel(consolidate_filepath, sheet_name=sheet)
-
-        # Load blank allocation file
-        blank_xls = pd.ExcelFile(blank_filepath)
-        reallocation_blank_data = {}
-        for sheet in blank_xls.sheet_names:
-            reallocation_blank_data[sheet] = pd.read_excel(blank_filepath, sheet_name=sheet)
-
-        reallocation_consolidate_filename = consolidate_filename
-        reallocation_blank_filename = blank_filename
-
-        output_lines.append(f"\n✅ Consolidate file loaded successfully")
-        output_lines.append(f"   Sheets: {', '.join(reallocation_consolidate_data.keys())}")
-        output_lines.append(f"   Total rows: {sum(len(df) for df in reallocation_consolidate_data.values())}")
-
-        output_lines.append(f"\n✅ Blank allocation file loaded successfully")
-        output_lines.append(f"   Sheets: {', '.join(reallocation_blank_data.keys())}")
-        output_lines.append(f"   Total rows: {sum(len(df) for df in reallocation_blank_data.values())}")
+        if reallocation_consolidate_data:
+            output_lines.append(f"\n✅ Consolidate file loaded successfully")
+            output_lines.append(f"   Sheets: {', '.join(reallocation_consolidate_data.keys())}")
+            output_lines.append(f"   Total rows: {sum(len(df) for df in reallocation_consolidate_data.values())}")
+        if reallocation_blank_data:
+            output_lines.append(f"\n✅ Blank allocation file loaded successfully")
+            output_lines.append(f"   Sheets: {', '.join(reallocation_blank_data.keys())}")
+            output_lines.append(f"   Total rows: {sum(len(df) for df in reallocation_blank_data.values())}")
 
         # STEP 1: Align remarks in consolidate file
         output_lines.append("\n" + "=" * 80)
@@ -5703,7 +5878,7 @@ def upload_reallocation():
         output_lines.append("=" * 80)
 
         total_remarks_aligned = 0
-        for sheet_name, df in reallocation_consolidate_data.items():
+        for sheet_name, df in (reallocation_consolidate_data or {}).items():
             if "Remark" in df.columns:
                 # Apply remark alignment
                 original_remarks = df["Remark"].copy()
@@ -5723,6 +5898,29 @@ def upload_reallocation():
 
         output_lines.append(f"\n✅ Total remarks aligned across all sheets: {total_remarks_aligned}")
 
+        # Build available remark/agent lists from All Agent Data (if present)
+        reallocation_available_remarks = []
+        reallocation_available_agents = []
+        if reallocation_consolidate_data and "All Agent Data" in reallocation_consolidate_data:
+            df_all = reallocation_consolidate_data["All Agent Data"]
+            if "Remark" in df_all.columns:
+                remarks_series = df_all["Remark"].dropna()
+                reallocation_available_remarks = sorted(pd.Series(remarks_series.astype(str).str.strip().unique()).tolist())
+                output_lines.append(f"\n📚 Available remarks detected: {len(reallocation_available_remarks)}")
+            if "Agent Name" in df_all.columns:
+                agents_series = df_all["Agent Name"].dropna()
+                reallocation_available_agents = sorted(pd.Series(agents_series.astype(str).str.strip().unique()).tolist())
+                output_lines.append(f"📚 Available agents detected: {len(reallocation_available_agents)}")
+
+        # If no selections and blank file not yet loaded, prompt user and stop early
+        if (not selected_remarks and not selected_agents) or (not reallocation_blank_data):
+            reallocation_output = "\n".join(output_lines)
+            if not selected_remarks and not selected_agents:
+                reallocation_result = "ℹ️ Data loaded. Please select remarks and/or agents, then click Generate."
+            elif not reallocation_blank_data:
+                reallocation_result = "ℹ️ Consolidate loaded. Please upload the Blank Allocation file."
+            return redirect("/comparison?tab=reallocation")
+
         # STEP 2: Merge consolidate into blank allocation file
         output_lines.append("\n" + "=" * 80)
         output_lines.append("STEP 2: MERGING INTO BLANK ALLOCATION FILE")
@@ -5735,6 +5933,25 @@ def upload_reallocation():
             raise Exception("'All Agent Data' sheet not found in Current Consolidate File")
         
         cons_df = reallocation_consolidate_data["All Agent Data"]
+        remark_filtered = pd.DataFrame(columns=cons_df.columns)
+        agent_workable_filtered = pd.DataFrame(columns=cons_df.columns)
+
+        # Apply remark filter (if any)
+        if selected_remarks:
+            remark_filtered = cons_df[cons_df["Remark"].astype(str).isin(selected_remarks)]
+        output_lines.append(f"\n🔎 Applied remark filter: {len(selected_remarks)} selected; rows after remark filter: {len(remark_filtered)}")
+
+        # Apply agent+Workable filter (if any)
+        if selected_agents:
+            agent_workable_filtered = cons_df[
+                (cons_df.get("Remark", "").astype(str) == "Workable")
+                & (cons_df.get("Agent Name", "").astype(str).isin(selected_agents))
+            ]
+        output_lines.append(f"🔎 Applied agent+Workable filter: {len(selected_agents)} selected; rows after agent filter: {len(agent_workable_filtered)}")
+
+        # Union of remark filter and agent-workable filter
+        cons_df = pd.concat([remark_filtered, agent_workable_filtered], ignore_index=True)
+        output_lines.append(f"📦 Rows after union of filters: {len(cons_df)}")
         output_lines.append(f"\n📄 Source: 'All Agent Data' from consolidate ({len(cons_df)} rows)")
         
         # Get the first sheet from blank allocation file (either "Today" or "Sheet1")
@@ -5795,10 +6012,11 @@ def upload_reallocation():
         output_lines.append(f"   - Rows after deduplication: {rows_after_dedup}")
         output_lines.append(f"   - Duplicate rows removed: {rows_removed}")
         
-        # STEP 4: Clear Agent Name column from merged data
+        # STEP 4: Clear Agent Name except for Workable rows with selected agents
         if "Agent Name" in deduplicated_df.columns:
-            deduplicated_df["Agent Name"] = ""
-            output_lines.append(f"\n🧹 Cleared 'Agent Name' column in merged data")
+            mask_keep_agent = (deduplicated_df.get("Remark", "") == "Workable") & (deduplicated_df.get("Agent Name", "").astype(str).isin(selected_agents))
+            deduplicated_df.loc[~mask_keep_agent, "Agent Name"] = ""
+            output_lines.append(f"\n🧹 Cleared 'Agent Name' except for Workable rows of selected agents (kept: {mask_keep_agent.sum()} rows)")
         
         merged_data[target_sheet_name] = deduplicated_df
         
@@ -5856,7 +6074,7 @@ def download_reallocation():
 
 @app.route("/reset_reallocation", methods=["POST"])
 def reset_reallocation():
-    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data
+    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data, reallocation_available_remarks, reallocation_selected_remarks
 
     try:
         reallocation_consolidate_data = None
@@ -5866,6 +6084,8 @@ def reset_reallocation():
         reallocation_result = "🔄 Reallocation tool reset successfully! All files and data have been cleared."
         reallocation_output = ""
         reallocation_merged_data = None
+        reallocation_available_remarks = []
+        reallocation_selected_remarks = []
 
         return redirect("/comparison?tab=reallocation")
 
