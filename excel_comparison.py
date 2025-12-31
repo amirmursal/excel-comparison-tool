@@ -4854,63 +4854,6 @@ def reset_remarks():
         return redirect("/comparison?tab=remarks")
 
 
-@app.route("/reset_app", methods=["POST"])
-def reset_app():
-    global raw_data, previous_data, raw_filename, previous_filename, comparison_result
-    global conversion_data, conversion_filename, conversion_result
-    global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
-    global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
-    global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
-    global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
-
-    try:
-        # Reset all global variables
-        raw_data = {}
-        previous_data = {}
-        raw_filename = None
-        previous_filename = None
-        comparison_result = (
-            "🔄 Application reset successfully! All files and data have been cleared."
-        )
-
-        # Reset conversion data
-        conversion_data = {}
-        conversion_filename = None
-        conversion_result = None
-
-        # Reset insurance formatting data
-        insurance_formatting_data = {}
-        insurance_formatting_filename = None
-        insurance_formatting_result = None
-        insurance_formatting_output = ""
-
-        # Reset remarks data
-        remarks_appointments_data = None
-        remarks_excel_data = None
-        remarks_appointments_filename = None
-        remarks_remarks_filename = None
-        remarks_result = None
-        remarks_updated_count = 0
-
-        # Reset appointment report data
-        appointment_report_data = None
-        appointment_report_filename = None
-        appointment_report_result = None
-        appointment_report_output = ""
-
-        # Reset smart assist data
-        smart_assist_data = None
-        smart_assist_filename = None
-        smart_assist_result = None
-        smart_assist_output = ""
-
-        return redirect("/comparison")
-
-    except Exception as e:
-        comparison_result = f"❌ Error resetting application: {str(e)}"
-        return redirect("/comparison")
-
-
 @app.route("/upload_appointment_report", methods=["POST"])
 def upload_appointment_report():
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
