@@ -2095,6 +2095,16 @@ HTML_TEMPLATE = """
             });
         }
 
+        // General comparison form submission
+        const generalComparisonForm = document.getElementById('general-comparison-form');
+        if (generalComparisonForm) {
+            generalComparisonForm.addEventListener('submit', function() {
+                showProcessingModal('Running General Comparison', 'Matching keys and updating primary rows');
+                const btn = document.getElementById('gc-run-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
         // Reset forms - show modal when form is submitted (HTML confirm already handled)
         const resetForms = document.querySelectorAll('form[action*="reset"]');
         resetForms.forEach(form => {
