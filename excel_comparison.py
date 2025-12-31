@@ -73,6 +73,15 @@ reallocation_available_agents = []
 reallocation_selected_remarks = []
 reallocation_selected_agents = []
 
+# Global variables for general comparison
+general_primary_data = None
+general_main_data = None
+general_primary_filename = None
+general_main_filename = None
+general_comparison_result = None
+general_comparison_output = ""
+general_comparison_updated_data = None
+
 
 @app.route("/load_reallocation_consolidate", methods=["POST"])
 def load_reallocation_consolidate():
@@ -696,6 +705,10 @@ HTML_TEMPLATE = """
                     <span class="menu-item-icon">♻️</span>
                     <span>Generate Reallocation Data</span>
                 </div>
+                <div class="menu-item {% if active_tab == 'general' %}active{% endif %}" onclick="switchTab('general')">
+                    <span class="menu-item-icon">🧭</span>
+                    <span>General Comparison</span>
+                </div>
             </nav>
         </div>
 
@@ -711,6 +724,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'smartassist' %}🤖 Smart Assist Report Formatting
                     {% elif active_tab == 'consolidate' %}📊 Consolidate Report
                     {% elif active_tab == 'reallocation' %}♻️ Generate Reallocation Data
+                    {% elif active_tab == 'general' %}🧭 General Comparison
                     {% else %}🔄 Comparison Tool
                     {% endif %}
                 </h2>
@@ -723,6 +737,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'smartassist' %}Format smart assist report insurance columns
                     {% elif active_tab == 'consolidate' %}Consolidate master and daily report files
                     {% elif active_tab == 'reallocation' %}Generate reallocation data from consolidate file
+                    {% elif active_tab == 'general' %}Compare two files and update primary rows on match
                     {% else %}Compare Patient IDs and add insurance columns
                     {% endif %}
                 </p>
@@ -1646,6 +1661,221 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
+            <!-- Tab 9: General Comparison -->
+            <div id="general-tab" class="tab-content {% if active_tab == 'general' %}active{% endif %}">
+                <div class="section">
+                    <h3>🧭 General Comparison</h3>
+                    <p>Compare a primary file against a main dataset using selected key columns, and update chosen columns in the primary file when matches are found.</p>
+                </div>
+
+                <form action="/run_general_comparison" method="post" id="general-comparison-form">
+                    <div class="section">
+                        <h3>📄 Primary File</h3>
+                        <div class="form-group">
+                            <label for="gc_primary_file">Upload Primary File:</label>
+                            <input type="file" id="gc_primary_file" name="primary_file" accept=".xlsx,.xls">
+                        </div>
+                        <div class="form-group">
+                            <label for="gc_primary_sheet">Select Primary Sheet:</label>
+                            <select id="gc_primary_sheet" name="primary_sheet" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="gc_key_columns">Key Columns (composite allowed):</label>
+                            <select id="gc_key_columns" name="gc_key_columns" multiple size="8" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"></select>
+                            <small>Keys are matched after trimming, collapsing whitespace, and lowercasing.</small>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h3>📚 Main Dataset File</h3>
+                        <div class="form-group">
+                            <label for="gc_main_file">Upload Main Dataset File:</label>
+                            <input type="file" id="gc_main_file" name="main_file" accept=".xlsx,.xls">
+                        </div>
+                        <div class="form-group">
+                            <label for="gc_main_sheet">Select Main Dataset Sheet:</label>
+                            <select id="gc_main_sheet" name="main_sheet" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="gc_update_columns">Columns to Update in Primary (from main dataset):</label>
+                            <select id="gc_update_columns" name="gc_update_columns" multiple size="8" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"></select>
+                            <small>If a column does not exist in the primary file, it will be added.</small>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <button type="submit" id="gc-run-btn" disabled>🚀 Run General Comparison</button>
+                    </div>
+                </form>
+
+                <script>
+                (function(){
+                    const runBtn = document.getElementById('gc-run-btn');
+                    const primaryInput = document.getElementById('gc_primary_file');
+                    const mainInput = document.getElementById('gc_main_file');
+                    const primarySheetSel = document.getElementById('gc_primary_sheet');
+                    const mainSheetSel = document.getElementById('gc_main_sheet');
+                    const keyColsSel = document.getElementById('gc_key_columns');
+                    const updateColsSel = document.getElementById('gc_update_columns');
+
+                    let primaryColsBySheet = {};
+                    let mainColsBySheet = {};
+                    let hasPrimary = false;
+                    let hasMain = false;
+
+                    function populateSelect(selectEl, options) {
+                        if (!selectEl) return;
+                        selectEl.innerHTML = '';
+                        (options || []).forEach((optVal) => {
+                            const opt = document.createElement('option');
+                            opt.value = optVal;
+                            opt.textContent = optVal;
+                            selectEl.appendChild(opt);
+                        });
+                    }
+
+                    function updateKeyColumns() {
+                        const sheet = primarySheetSel ? primarySheetSel.value : '';
+                        const cols = primaryColsBySheet[sheet] || [];
+                        populateSelect(keyColsSel, cols);
+                    }
+
+                    function updateUpdateColumns() {
+                        const sheet = mainSheetSel ? mainSheetSel.value : '';
+                        const cols = mainColsBySheet[sheet] || [];
+                        populateSelect(updateColsSel, cols);
+                    }
+
+                    function updateButton() {
+                        const hasPrimarySheet = hasPrimary && primarySheetSel && primarySheetSel.value;
+                        const hasMainSheet = hasMain && mainSheetSel && mainSheetSel.value;
+                        let keySelected = 0;
+                        let updateSelected = 0;
+                        if (keyColsSel) {
+                            if (typeof keyColsSel.selectedOptions !== 'undefined') {
+                                keySelected = keyColsSel.selectedOptions.length;
+                            } else {
+                                keySelected = keyColsSel.querySelectorAll('option:checked').length;
+                            }
+                        }
+                        if (updateColsSel) {
+                            if (typeof updateColsSel.selectedOptions !== 'undefined') {
+                                updateSelected = updateColsSel.selectedOptions.length;
+                            } else {
+                                updateSelected = updateColsSel.querySelectorAll('option:checked').length;
+                            }
+                        }
+                        if (runBtn) runBtn.disabled = !(hasPrimarySheet && hasMainSheet && keySelected > 0 && updateSelected > 0);
+                    }
+
+                    async function loadPrimary() {
+                        if (!primaryInput || !primaryInput.files || primaryInput.files.length === 0) return;
+                        const fd = new FormData();
+                        fd.append('primary_file', primaryInput.files[0]);
+                        try {
+                            const resp = await fetch('/load_general_primary', { method: 'POST', body: fd });
+                            const data = await resp.json();
+                            if (!data.ok) throw new Error(data.error || 'Failed to load primary file');
+                            primaryColsBySheet = data.columns || {};
+                            populateSelect(primarySheetSel, data.sheets || []);
+                            if (primarySheetSel && primarySheetSel.options.length > 0) {
+                                primarySheetSel.selectedIndex = 0;
+                            }
+                            updateKeyColumns();
+                            hasPrimary = true;
+                            updateButton();
+                        } catch (e) {
+                            alert('Error loading primary file: ' + e.message);
+                            hasPrimary = false;
+                            primaryColsBySheet = {};
+                            populateSelect(primarySheetSel, []);
+                            populateSelect(keyColsSel, []);
+                            updateButton();
+                        }
+                    }
+
+                    async function loadMain() {
+                        if (!mainInput || !mainInput.files || mainInput.files.length === 0) return;
+                        const fd = new FormData();
+                        fd.append('main_file', mainInput.files[0]);
+                        try {
+                            const resp = await fetch('/load_general_main', { method: 'POST', body: fd });
+                            const data = await resp.json();
+                            if (!data.ok) throw new Error(data.error || 'Failed to load main dataset');
+                            mainColsBySheet = data.columns || {};
+                            populateSelect(mainSheetSel, data.sheets || []);
+                            if (mainSheetSel && mainSheetSel.options.length > 0) {
+                                mainSheetSel.selectedIndex = 0;
+                            }
+                            updateUpdateColumns();
+                            hasMain = true;
+                            updateButton();
+                        } catch (e) {
+                            alert('Error loading main dataset: ' + e.message);
+                            hasMain = false;
+                            mainColsBySheet = {};
+                            populateSelect(mainSheetSel, []);
+                            populateSelect(updateColsSel, []);
+                            updateButton();
+                        }
+                    }
+
+                    if (primaryInput) primaryInput.addEventListener('change', loadPrimary);
+                    if (mainInput) mainInput.addEventListener('change', loadMain);
+                    if (primarySheetSel) primarySheetSel.addEventListener('change', function(){ updateKeyColumns(); updateButton(); });
+                    if (mainSheetSel) mainSheetSel.addEventListener('change', function(){ updateUpdateColumns(); updateButton(); });
+                    if (keyColsSel) keyColsSel.addEventListener('change', updateButton);
+                    if (updateColsSel) updateColsSel.addEventListener('change', updateButton);
+
+                    updateButton();
+                })();
+                </script>
+
+                <!-- Status Messages -->
+                {% if general_comparison_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ general_comparison_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Processing Output -->
+                {% if general_comparison_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ general_comparison_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if general_comparison_updated_data and general_comparison_result %}
+                <div class="section">
+                    <h3>💾 Download Updated Primary File</h3>
+                    <form action="/download_general_comparison" method="post">
+                        <div class="form-group">
+                            <label for="gc_output_filename">Output filename (optional):</label>
+                            <input type="text" id="gc_output_filename" name="filename"
+                                   value="general_comparison_output.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Updated File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset General Comparison</h3>
+                    <p>Clear uploaded files, selections, and results to start fresh.</p>
+                    <form action="/reset_general" method="post" onsubmit="return confirm('Reset General Comparison and clear all uploaded data?');">
+                        <button type="submit" class="reset-btn">🗑️ Reset General Comparison</button>
+                    </form>
+                </div>
+            </div>
+
             </div> <!-- End content -->
 
             <!-- Footer -->
@@ -1729,7 +1959,8 @@ HTML_TEMPLATE = """
                     (tabName === 'appointment' && itemText.includes('appointment')) ||
                     (tabName === 'smartassist' && itemText.includes('smart assist')) ||
                     (tabName === 'consolidate' && itemText.includes('consolidate')) ||
-                    (tabName === 'reallocation' && itemText.includes('reallocation'))) {
+                    (tabName === 'reallocation' && itemText.includes('reallocation')) ||
+                    (tabName === 'general' && itemText.includes('general comparison'))) {
                     item.classList.add('active');
                 }
             });
@@ -1743,7 +1974,8 @@ HTML_TEMPLATE = """
                 'appointment': '📅 Appointment Report Formatting',
                 'smartassist': '🤖 Smart Assist Report Formatting',
                 'consolidate': '📊 Consolidate Report',
-                'reallocation': '♻️ Generate Reallocation Data'
+                'reallocation': '♻️ Generate Reallocation Data',
+                'general': '🧭 General Comparison'
             };
             
             const pageDescriptions = {
@@ -1754,7 +1986,8 @@ HTML_TEMPLATE = """
                 'appointment': 'Format appointment report insurance columns',
                 'smartassist': 'Format smart assist report insurance columns',
                 'consolidate': 'Consolidate master and daily report files',
-                'reallocation': 'Generate reallocation data from consolidate file'
+                'reallocation': 'Generate reallocation data from consolidate file',
+                'general': 'Compare two files and update primary rows on match'
             };
             
             document.getElementById('page-title').textContent = pageTitles[tabName] || pageTitles['comparison'];
@@ -2659,7 +2892,8 @@ def comparison_index():
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
     global consolidate_master_data, consolidate_daily_data, consolidate_master_filename, consolidate_daily_filename, consolidate_result, consolidate_output
-    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data, reallocation_available_remarks, reallocation_selected_remarks
+    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data, reallocation_available_remarks, reallocation_selected_remarks, reallocation_available_agents, reallocation_selected_agents
+    global general_primary_data, general_main_data, general_primary_filename, general_main_filename, general_comparison_result, general_comparison_output, general_comparison_updated_data
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -2707,6 +2941,15 @@ def comparison_index():
         reallocation_merged_data=reallocation_merged_data,
         reallocation_available_remarks=reallocation_available_remarks,
         reallocation_selected_remarks=reallocation_selected_remarks,
+        reallocation_available_agents=reallocation_available_agents,
+        reallocation_selected_agents=reallocation_selected_agents,
+        general_primary_data=general_primary_data,
+        general_main_data=general_main_data,
+        general_primary_filename=general_primary_filename,
+        general_main_filename=general_main_filename,
+        general_comparison_result=general_comparison_result,
+        general_comparison_output=general_comparison_output,
+        general_comparison_updated_data=general_comparison_updated_data,
         active_tab=active_tab,
     )
 
@@ -6074,7 +6317,7 @@ def download_reallocation():
 
 @app.route("/reset_reallocation", methods=["POST"])
 def reset_reallocation():
-    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data, reallocation_available_remarks, reallocation_selected_remarks
+    global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data, reallocation_available_remarks, reallocation_selected_remarks, reallocation_available_agents, reallocation_selected_agents
 
     try:
         reallocation_consolidate_data = None
@@ -6086,12 +6329,256 @@ def reset_reallocation():
         reallocation_merged_data = None
         reallocation_available_remarks = []
         reallocation_selected_remarks = []
+        reallocation_available_agents = []
+        reallocation_selected_agents = []
 
         return redirect("/comparison?tab=reallocation")
 
     except Exception as e:
         reallocation_result = f"❌ Error resetting reallocation tool: {str(e)}"
         return redirect("/comparison?tab=reallocation")
+
+
+# =============================
+# General Comparison
+# =============================
+
+
+@app.route("/load_general_primary", methods=["POST"])
+def load_general_primary():
+    """Load the primary file, capture sheet/column metadata for UI selection."""
+    global general_primary_data, general_primary_filename, general_comparison_updated_data, general_comparison_result, general_comparison_output
+
+    try:
+        if "primary_file" not in request.files:
+            return jsonify({"ok": False, "error": "No primary file provided."}), 400
+
+        primary_file = request.files["primary_file"]
+        if not primary_file or primary_file.filename == "":
+            return jsonify({"ok": False, "error": "Empty primary file."}), 400
+
+        primary_filename = secure_filename(primary_file.filename)
+        primary_path = os.path.join("/tmp", primary_filename)
+        primary_file.save(primary_path)
+
+        xl = pd.ExcelFile(primary_path)
+        general_primary_data = {}
+        columns_by_sheet = {}
+        for sheet in xl.sheet_names:
+            df = pd.read_excel(primary_path, sheet_name=sheet)
+            general_primary_data[sheet] = df
+            columns_by_sheet[sheet] = [str(col) for col in df.columns]
+
+        general_primary_filename = primary_filename
+        general_comparison_updated_data = None
+        general_comparison_result = None
+        general_comparison_output = ""
+
+        return jsonify({
+            "ok": True,
+            "filename": general_primary_filename,
+            "sheets": xl.sheet_names,
+            "columns": columns_by_sheet,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/load_general_main", methods=["POST"])
+def load_general_main():
+    """Load the main dataset file, capture sheet/column metadata for UI selection."""
+    global general_main_data, general_main_filename, general_comparison_updated_data, general_comparison_result, general_comparison_output
+
+    try:
+        if "main_file" not in request.files:
+            return jsonify({"ok": False, "error": "No main dataset file provided."}), 400
+
+        main_file = request.files["main_file"]
+        if not main_file or main_file.filename == "":
+            return jsonify({"ok": False, "error": "Empty main dataset file."}), 400
+
+        main_filename = secure_filename(main_file.filename)
+        main_path = os.path.join("/tmp", main_filename)
+        main_file.save(main_path)
+
+        xl = pd.ExcelFile(main_path)
+        general_main_data = {}
+        columns_by_sheet = {}
+        for sheet in xl.sheet_names:
+            df = pd.read_excel(main_path, sheet_name=sheet)
+            general_main_data[sheet] = df
+            columns_by_sheet[sheet] = [str(col) for col in df.columns]
+
+        general_main_filename = main_filename
+        general_comparison_updated_data = None
+        general_comparison_result = None
+        general_comparison_output = ""
+
+        return jsonify({
+            "ok": True,
+            "filename": general_main_filename,
+            "sheets": xl.sheet_names,
+            "columns": columns_by_sheet,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/run_general_comparison", methods=["POST"])
+def run_general_comparison():
+    global general_primary_data, general_main_data, general_primary_filename, general_main_filename
+    global general_comparison_result, general_comparison_output, general_comparison_updated_data
+
+    try:
+        output_lines = []
+        general_comparison_output = ""
+        general_comparison_updated_data = None
+
+        if not general_primary_data or not general_main_data:
+            general_comparison_result = "❌ Please upload both Primary and Main Dataset files first."
+            return redirect("/comparison?tab=general")
+
+        primary_sheet = request.form.get("primary_sheet")
+        main_sheet = request.form.get("main_sheet")
+        key_columns = request.form.getlist("gc_key_columns")
+        update_columns = request.form.getlist("gc_update_columns")
+
+        if not primary_sheet or primary_sheet not in general_primary_data:
+            general_comparison_result = "❌ Primary sheet is missing or invalid."
+            return redirect("/comparison?tab=general")
+        if not main_sheet or main_sheet not in general_main_data:
+            general_comparison_result = "❌ Main dataset sheet is missing or invalid."
+            return redirect("/comparison?tab=general")
+        if not key_columns:
+            general_comparison_result = "❌ Please select at least one key column."
+            return redirect("/comparison?tab=general")
+        if not update_columns:
+            general_comparison_result = "❌ Please select at least one column to update."
+            return redirect("/comparison?tab=general")
+
+        primary_df = general_primary_data[primary_sheet].copy()
+        main_df = general_main_data[main_sheet]
+
+        # Validate columns exist
+        for col in key_columns:
+            if col not in primary_df.columns:
+                general_comparison_result = f"❌ Key column '{col}' not found in primary sheet."
+                return redirect("/comparison?tab=general")
+            if col not in main_df.columns:
+                general_comparison_result = f"❌ Key column '{col}' not found in main dataset sheet."
+                return redirect("/comparison?tab=general")
+        for col in update_columns:
+            if col not in main_df.columns:
+                general_comparison_result = f"❌ Update column '{col}' not found in main dataset sheet."
+                return redirect("/comparison?tab=general")
+
+        def normalize_val(v):
+            if pd.isna(v):
+                return ""
+            s = str(v).strip()
+            s = " ".join(s.split())  # collapse internal whitespace
+            return s.lower()
+
+        def build_key(df):
+            return df[key_columns].apply(lambda row: "|".join(normalize_val(row[col]) for col in key_columns), axis=1)
+
+        primary_keys = build_key(primary_df)
+        main_keys = build_key(main_df)
+
+        # Map from key to first occurrence index in main_df
+        main_key_map = {}
+        for idx, key in main_keys.items():
+            if key not in main_key_map:
+                main_key_map[key] = idx
+
+        # Ensure update columns exist in primary (add if missing)
+        for col in update_columns:
+            if col not in primary_df.columns:
+                primary_df[col] = ""
+
+        matched_rows = 0
+        updated_cells = 0
+
+        for idx, key in primary_keys.items():
+            if key in main_key_map:
+                matched_rows += 1
+                main_idx = main_key_map[key]
+                for col in update_columns:
+                    value = main_df.at[main_idx, col] if col in main_df.columns else None
+                    primary_df.at[idx, col] = value
+                    updated_cells += 1
+
+        # Build output workbook: replace only the selected primary sheet
+        updated_workbook = {name: df.copy() for name, df in general_primary_data.items()}
+        updated_workbook[primary_sheet] = primary_df
+        general_comparison_updated_data = updated_workbook
+
+        output_lines.append("=" * 80)
+        output_lines.append("GENERAL COMPARISON RESULTS")
+        output_lines.append("=" * 80)
+        output_lines.append(f"Primary file: {general_primary_filename or 'N/A'} | Sheet: {primary_sheet}")
+        output_lines.append(f"Main dataset: {general_main_filename or 'N/A'} | Sheet: {main_sheet}")
+        output_lines.append(f"Key columns: {', '.join(key_columns)}")
+        output_lines.append(f"Update columns: {', '.join(update_columns)}")
+        output_lines.append(f"Rows in primary sheet: {len(primary_df)}")
+        output_lines.append(f"Rows in main sheet: {len(main_df)}")
+        output_lines.append(f"Matched rows (primary): {matched_rows}")
+        output_lines.append(f"Total cells updated: {updated_cells}")
+        output_lines.append("\n✅ General comparison complete. Download the updated primary file.")
+
+        general_comparison_output = "\n".join(output_lines)
+        general_comparison_result = "✅ General comparison completed successfully."
+
+        return redirect("/comparison?tab=general")
+
+    except Exception as e:
+        general_comparison_result = f"❌ Error during general comparison: {str(e)}"
+        general_comparison_output = general_comparison_result
+        return redirect("/comparison?tab=general")
+
+
+@app.route("/reset_general", methods=["POST"])
+def reset_general():
+    """Reset all General Comparison state and return to the tab."""
+    global general_primary_data, general_main_data, general_primary_filename, general_main_filename
+    global general_comparison_result, general_comparison_output, general_comparison_updated_data
+
+    try:
+        general_primary_data = None
+        general_main_data = None
+        general_primary_filename = None
+        general_main_filename = None
+        general_comparison_result = "🔄 General Comparison reset. All uploaded files and results cleared."
+        general_comparison_output = ""
+        general_comparison_updated_data = None
+
+        return redirect("/comparison?tab=general")
+    except Exception as e:
+        general_comparison_result = f"❌ Error resetting General Comparison: {str(e)}"
+        return redirect("/comparison?tab=general")
+
+
+@app.route("/download_general_comparison", methods=["POST"])
+def download_general_comparison():
+    global general_comparison_updated_data, general_primary_data
+
+    try:
+        data_to_write = general_comparison_updated_data or general_primary_data
+        if not data_to_write:
+            return "No general comparison data available", 400
+
+        filename = request.form.get("filename", "general_comparison_output.xlsx")
+        if not filename.endswith(".xlsx"):
+            filename += ".xlsx"
+
+        output_path = os.path.join("/tmp", filename)
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            for sheet_name, df in data_to_write.items():
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        return send_file(output_path, as_attachment=True, download_name=filename)
+    except Exception as e:
+        return f"Error downloading general comparison file: {str(e)}", 500
 
 
 if __name__ == "__main__":
