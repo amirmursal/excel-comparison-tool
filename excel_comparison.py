@@ -117,21 +117,35 @@ def load_reallocation_consolidate():
         if "All Agent Data" in reallocation_consolidate_data:
             df = reallocation_consolidate_data["All Agent Data"]
             if "Remark" in df.columns:
-                remarks = sorted(pd.Series(df["Remark"].dropna().astype(str).str.strip().unique()).tolist())
+                remarks = sorted(
+                    pd.Series(
+                        df["Remark"].dropna().astype(str).str.strip().unique()
+                    ).tolist()
+                )
             # Only include agents who have Workable remark
             if "Agent Name" in df.columns and "Remark" in df.columns:
                 workable_df = df[df["Remark"].astype(str).str.strip() == "Workable"]
-                agents = sorted(pd.Series(workable_df["Agent Name"].dropna().astype(str).str.strip().unique()).tolist())
+                agents = sorted(
+                    pd.Series(
+                        workable_df["Agent Name"]
+                        .dropna()
+                        .astype(str)
+                        .str.strip()
+                        .unique()
+                    ).tolist()
+                )
 
         reallocation_available_remarks = remarks
         reallocation_available_agents = agents
 
-        return jsonify({
-            "ok": True,
-            "filename": reallocation_consolidate_filename,
-            "remarks": reallocation_available_remarks,
-            "agents": reallocation_available_agents,
-        })
+        return jsonify(
+            {
+                "ok": True,
+                "filename": reallocation_consolidate_filename,
+                "remarks": reallocation_available_remarks,
+                "agents": reallocation_available_agents,
+            }
+        )
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -143,36 +157,38 @@ def align_remark(remark_value):
     """
     if pd.isna(remark_value) or remark_value == "":
         return remark_value
-    
+
     # Convert to string and strip whitespace
     remark_str = str(remark_value).strip()
-    
+
     # Define mapping rules (case-insensitive)
     remark_lower = remark_str.lower()
-    
+
     # Direct exact matches first
     exact_mappings = {
         "ast": "ATS",
         "ntpb": "NTBP",
     }
-    
+
     if remark_lower in exact_mappings:
         return exact_mappings[remark_lower]
-    
+
     # Pattern-based mappings (handle variations with slashes and spaces)
     if "ats" in remark_lower and "qcp" in remark_lower:
         return "ATS"
-    
+
     if "qcp" in remark_lower and "ats" in remark_lower:
         return "ATS"
-    
+
     if "qcp" in remark_lower and "hold" in remark_lower:
         return "QCP"
-    
+
     # QCP variations (with or without slashes/spaces)
-    if remark_lower.startswith("qcp") and (remark_lower.endswith("qcp") or "/" in remark_lower):
+    if remark_lower.startswith("qcp") and (
+        remark_lower.endswith("qcp") or "/" in remark_lower
+    ):
         return "QCP"
-    
+
     # Keep original if no match found
     return remark_value
 
@@ -4472,14 +4488,14 @@ def update_appointments_with_remarks(appointments, excel_data):
         # This ensures all appointments are included in the output, even if they don't have matching remarks
         if not matches_found:
             new_appointment = appointment.copy()
-            
+
             # Remove any existing remark/Remark keys to avoid conflicts
             keys_to_remove = [
                 k for k in new_appointment.keys() if k.lower() == "remark"
             ]
             for key in keys_to_remove:
                 del new_appointment[key]
-            
+
             # Ensure Remark and Agent Name are set as empty strings for unmatched appointments
             new_appointment["Remark"] = ""
             new_appointment["Agent Name"] = ""
@@ -5802,7 +5818,7 @@ def upload_consolidate():
     try:
         consolidate_output = ""
         output_lines = []
-        
+
         # Check for both files
         if "master_file" not in request.files or "daily_file" not in request.files:
             consolidate_result = "❌ Error: Both Master Consolidate file and Daily Consolidated file are required."
@@ -5819,7 +5835,7 @@ def upload_consolidate():
         master_filename = secure_filename(master_file.filename)
         master_filepath = os.path.join("/tmp", master_filename)
         master_file.save(master_filepath)
-        
+
         # Save and read daily file
         daily_filename = secure_filename(daily_file.filename)
         daily_filepath = os.path.join("/tmp", daily_filename)
@@ -5831,13 +5847,17 @@ def upload_consolidate():
         output_lines.append("=" * 80)
         output_lines.append(f"\nMaster File: {master_filename}")
         output_lines.append(f"Daily File: {daily_filename}")
-        output_lines.append(f"Processing Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        output_lines.append(
+            f"Processing Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
 
         # Load master workbook (all sheets)
         master_xls = pd.ExcelFile(master_filepath)
         consolidate_master_data = {}
         for sheet in master_xls.sheet_names:
-            consolidate_master_data[sheet] = pd.read_excel(master_filepath, sheet_name=sheet)
+            consolidate_master_data[sheet] = pd.read_excel(
+                master_filepath, sheet_name=sheet
+            )
 
         # Ensure we have a 'consolidated' sheet in master (create empty if missing)
         master_has_consolidated = "consolidated" in consolidate_master_data
@@ -5846,7 +5866,9 @@ def upload_consolidate():
 
         # Load only the required sheet from daily
         try:
-            daily_all_agent_df = pd.read_excel(daily_filepath, sheet_name="All Agent Data")
+            daily_all_agent_df = pd.read_excel(
+                daily_filepath, sheet_name="All Agent Data"
+            )
         except Exception as e:
             consolidate_result = f"❌ Error: Could not find/read sheet 'All Agent Data' in Daily Consolidated File. Details: {str(e)}"
             return redirect("/comparison?tab=consolidate")
@@ -5856,7 +5878,9 @@ def upload_consolidate():
 
         output_lines.append(f"\n✅ Master file loaded successfully")
         output_lines.append(f"   Sheets: {', '.join(consolidate_master_data.keys())}")
-        output_lines.append(f"   Consolidated sheet present: {'Yes' if master_has_consolidated else 'No (created)'}")
+        output_lines.append(
+            f"   Consolidated sheet present: {'Yes' if master_has_consolidated else 'No (created)'}"
+        )
 
         output_lines.append(f"\n✅ Daily file loaded successfully")
         output_lines.append(f"   Using sheet: All Agent Data")
@@ -5875,7 +5899,9 @@ def upload_consolidate():
                         break
             if col is not None:
                 try:
-                    df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%m/%d/%Y")
+                    df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime(
+                        "%m/%d/%Y"
+                    )
                 except Exception:
                     # Best-effort; leave values as-is on failure
                     pass
@@ -5884,14 +5910,25 @@ def upload_consolidate():
         daily_all_agent_df = normalize_appointment_date(daily_all_agent_df)
 
         # Append daily data to master's 'consolidated' sheet
-        master_consolidated_df = consolidate_master_data.get("consolidated", pd.DataFrame())
+        master_consolidated_df = consolidate_master_data.get(
+            "consolidated", pd.DataFrame()
+        )
 
         # Align columns to union of both DataFrames
-        combined_columns = list({*map(str, master_consolidated_df.columns), *map(str, daily_all_agent_df.columns)})
-        master_consolidated_aligned = master_consolidated_df.reindex(columns=combined_columns)
+        combined_columns = list(
+            {
+                *map(str, master_consolidated_df.columns),
+                *map(str, daily_all_agent_df.columns),
+            }
+        )
+        master_consolidated_aligned = master_consolidated_df.reindex(
+            columns=combined_columns
+        )
         daily_all_agent_aligned = daily_all_agent_df.reindex(columns=combined_columns)
 
-        appended_df = pd.concat([master_consolidated_aligned, daily_all_agent_aligned], ignore_index=True)
+        appended_df = pd.concat(
+            [master_consolidated_aligned, daily_all_agent_aligned], ignore_index=True
+        )
 
         # Identify duplicates by 'Patient ID' across the combined data
         pid_col = None
@@ -5909,30 +5946,42 @@ def upload_consolidate():
             dup_mask = appended_df.duplicated(subset=[pid_col], keep=False)
             duplicates_df = appended_df[dup_mask].copy()
             # Keep only first occurrence in consolidated sheet
-            consolidated_unique_df = appended_df.drop_duplicates(subset=[pid_col], keep="first").copy()
+            consolidated_unique_df = appended_df.drop_duplicates(
+                subset=[pid_col], keep="first"
+            ).copy()
         else:
             # If no patient id column found, proceed without duplicate handling
             consolidated_unique_df = appended_df.copy()
-            output_lines.append("\n⚠️  'Patient ID' column not found. Skipping duplicate detection.")
+            output_lines.append(
+                "\n⚠️  'Patient ID' column not found. Skipping duplicate detection."
+            )
 
         # Update in-memory workbook
         consolidate_master_data["consolidated"] = consolidated_unique_df
         if not duplicates_df.empty:
             consolidate_master_data["Duplicate"] = duplicates_df
-            output_lines.append(f"\n🧬 Duplicates found on '{pid_col}': {len(duplicates_df)} rows (written to 'Duplicate' sheet)")
+            output_lines.append(
+                f"\n🧬 Duplicates found on '{pid_col}': {len(duplicates_df)} rows (written to 'Duplicate' sheet)"
+            )
         else:
             output_lines.append("\n✅ No duplicates detected by 'Patient ID'.")
 
         output_lines.append("\n" + "=" * 80)
         output_lines.append("✅ CONSOLIDATION COMPLETE")
         output_lines.append("=" * 80)
-        output_lines.append(f"Rows in master 'consolidated' before: {len(master_consolidated_df)}")
+        output_lines.append(
+            f"Rows in master 'consolidated' before: {len(master_consolidated_df)}"
+        )
         output_lines.append(f"Rows appended from daily: {len(daily_all_agent_df)}")
-        output_lines.append(f"Rows in 'consolidated' after: {len(consolidate_master_data['consolidated'])}")
+        output_lines.append(
+            f"Rows in 'consolidated' after: {len(consolidate_master_data['consolidated'])}"
+        )
         output_lines.append("\nReady to download consolidated file.")
 
         consolidate_output = "\n".join(output_lines)
-        consolidate_result = f"✅ Consolidation complete successfully!\n\n{consolidate_output}"
+        consolidate_result = (
+            f"✅ Consolidation complete successfully!\n\n{consolidate_output}"
+        )
 
         return redirect("/comparison?tab=consolidate")
 
@@ -6018,7 +6067,7 @@ def upload_reallocation():
         reallocation_output = ""
         reallocation_merged_data = None
         output_lines = []
-        
+
         # Read selections (if any)
         selected_remarks = request.form.getlist("remarks_filter")
         selected_agents = request.form.getlist("agent_filter")
@@ -6038,7 +6087,9 @@ def upload_reallocation():
             consolidate_xls = pd.ExcelFile(consolidate_filepath)
             reallocation_consolidate_data = {}
             for sheet in consolidate_xls.sheet_names:
-                reallocation_consolidate_data[sheet] = pd.read_excel(consolidate_filepath, sheet_name=sheet)
+                reallocation_consolidate_data[sheet] = pd.read_excel(
+                    consolidate_filepath, sheet_name=sheet
+                )
             reallocation_consolidate_filename = consolidate_filename
 
         # Save and read blank allocation file if provided
@@ -6049,24 +6100,40 @@ def upload_reallocation():
             blank_xls = pd.ExcelFile(blank_filepath)
             reallocation_blank_data = {}
             for sheet in blank_xls.sheet_names:
-                reallocation_blank_data[sheet] = pd.read_excel(blank_filepath, sheet_name=sheet)
+                reallocation_blank_data[sheet] = pd.read_excel(
+                    blank_filepath, sheet_name=sheet
+                )
             reallocation_blank_filename = blank_filename
         # Log processing info
         output_lines.append("=" * 80)
         output_lines.append("REALLOCATION DATA GENERATION - FILE PROCESSING")
         output_lines.append("=" * 80)
-        output_lines.append(f"\nConsolidate File: {reallocation_consolidate_filename or 'Not provided'}")
-        output_lines.append(f"Blank Allocation File: {reallocation_blank_filename or 'Not provided'}")
-        output_lines.append(f"Processing Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        output_lines.append(
+            f"\nConsolidate File: {reallocation_consolidate_filename or 'Not provided'}"
+        )
+        output_lines.append(
+            f"Blank Allocation File: {reallocation_blank_filename or 'Not provided'}"
+        )
+        output_lines.append(
+            f"Processing Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
 
         if reallocation_consolidate_data:
             output_lines.append(f"\n✅ Consolidate file loaded successfully")
-            output_lines.append(f"   Sheets: {', '.join(reallocation_consolidate_data.keys())}")
-            output_lines.append(f"   Total rows: {sum(len(df) for df in reallocation_consolidate_data.values())}")
+            output_lines.append(
+                f"   Sheets: {', '.join(reallocation_consolidate_data.keys())}"
+            )
+            output_lines.append(
+                f"   Total rows: {sum(len(df) for df in reallocation_consolidate_data.values())}"
+            )
         if reallocation_blank_data:
             output_lines.append(f"\n✅ Blank allocation file loaded successfully")
-            output_lines.append(f"   Sheets: {', '.join(reallocation_blank_data.keys())}")
-            output_lines.append(f"   Total rows: {sum(len(df) for df in reallocation_blank_data.values())}")
+            output_lines.append(
+                f"   Sheets: {', '.join(reallocation_blank_data.keys())}"
+            )
+            output_lines.append(
+                f"   Total rows: {sum(len(df) for df in reallocation_blank_data.values())}"
+            )
 
         # STEP 1: Align remarks in consolidate file
         output_lines.append("\n" + "=" * 80)
@@ -6079,42 +6146,61 @@ def upload_reallocation():
                 # Apply remark alignment
                 original_remarks = df["Remark"].copy()
                 df["Remark"] = df["Remark"].apply(align_remark)
-                
+
                 # Count how many were changed
                 changed_count = (original_remarks != df["Remark"]).sum()
                 total_remarks_aligned += changed_count
-                
+
                 reallocation_consolidate_data[sheet_name] = df
-                
+
                 if changed_count > 0:
                     output_lines.append(f"\n📄 Sheet '{sheet_name}':")
                     output_lines.append(f"   ✓ Remarks aligned: {changed_count} rows")
             else:
-                output_lines.append(f"\n⚠️  Sheet '{sheet_name}': 'Remark' column not found")
+                output_lines.append(
+                    f"\n⚠️  Sheet '{sheet_name}': 'Remark' column not found"
+                )
 
-        output_lines.append(f"\n✅ Total remarks aligned across all sheets: {total_remarks_aligned}")
+        output_lines.append(
+            f"\n✅ Total remarks aligned across all sheets: {total_remarks_aligned}"
+        )
 
         # Build available remark/agent lists from All Agent Data (if present)
         reallocation_available_remarks = []
         reallocation_available_agents = []
-        if reallocation_consolidate_data and "All Agent Data" in reallocation_consolidate_data:
+        if (
+            reallocation_consolidate_data
+            and "All Agent Data" in reallocation_consolidate_data
+        ):
             df_all = reallocation_consolidate_data["All Agent Data"]
             if "Remark" in df_all.columns:
                 remarks_series = df_all["Remark"].dropna()
-                reallocation_available_remarks = sorted(pd.Series(remarks_series.astype(str).str.strip().unique()).tolist())
-                output_lines.append(f"\n📚 Available remarks detected: {len(reallocation_available_remarks)}")
+                reallocation_available_remarks = sorted(
+                    pd.Series(remarks_series.astype(str).str.strip().unique()).tolist()
+                )
+                output_lines.append(
+                    f"\n📚 Available remarks detected: {len(reallocation_available_remarks)}"
+                )
             if "Agent Name" in df_all.columns:
                 agents_series = df_all["Agent Name"].dropna()
-                reallocation_available_agents = sorted(pd.Series(agents_series.astype(str).str.strip().unique()).tolist())
-                output_lines.append(f"📚 Available agents detected: {len(reallocation_available_agents)}")
+                reallocation_available_agents = sorted(
+                    pd.Series(agents_series.astype(str).str.strip().unique()).tolist()
+                )
+                output_lines.append(
+                    f"📚 Available agents detected: {len(reallocation_available_agents)}"
+                )
 
         # If no selections and blank file not yet loaded, prompt user and stop early
-        if (not selected_remarks and not selected_agents) or (not reallocation_blank_data):
+        if (not selected_remarks and not selected_agents) or (
+            not reallocation_blank_data
+        ):
             reallocation_output = "\n".join(output_lines)
             if not selected_remarks and not selected_agents:
                 reallocation_result = "ℹ️ Data loaded. Please select remarks and/or agents, then click Generate."
             elif not reallocation_blank_data:
-                reallocation_result = "ℹ️ Consolidate loaded. Please upload the Blank Allocation file."
+                reallocation_result = (
+                    "ℹ️ Consolidate loaded. Please upload the Blank Allocation file."
+                )
             return redirect("/comparison?tab=reallocation")
 
         # STEP 2: Merge consolidate into blank allocation file
@@ -6123,19 +6209,25 @@ def upload_reallocation():
         output_lines.append("=" * 80)
 
         merged_data = {}
-        
+
         # Get the "All Agent Data" sheet from consolidate file
         if "All Agent Data" not in reallocation_consolidate_data:
-            raise Exception("'All Agent Data' sheet not found in Current Consolidate File")
-        
+            raise Exception(
+                "'All Agent Data' sheet not found in Current Consolidate File"
+            )
+
         cons_df = reallocation_consolidate_data["All Agent Data"]
         remark_filtered = pd.DataFrame(columns=cons_df.columns)
         agent_workable_filtered = pd.DataFrame(columns=cons_df.columns)
 
         # Apply remark filter (if any)
         if selected_remarks:
-            remark_filtered = cons_df[cons_df["Remark"].astype(str).isin(selected_remarks)]
-        output_lines.append(f"\n🔎 Applied remark filter: {len(selected_remarks)} selected; rows after remark filter: {len(remark_filtered)}")
+            remark_filtered = cons_df[
+                cons_df["Remark"].astype(str).isin(selected_remarks)
+            ]
+        output_lines.append(
+            f"\n🔎 Applied remark filter: {len(selected_remarks)} selected; rows after remark filter: {len(remark_filtered)}"
+        )
 
         # Apply agent+Workable filter (if any)
         if selected_agents:
@@ -6143,84 +6235,115 @@ def upload_reallocation():
                 (cons_df.get("Remark", "").astype(str) == "Workable")
                 & (cons_df.get("Agent Name", "").astype(str).isin(selected_agents))
             ]
-        output_lines.append(f"🔎 Applied agent+Workable filter: {len(selected_agents)} selected; rows after agent filter: {len(agent_workable_filtered)}")
+        output_lines.append(
+            f"🔎 Applied agent+Workable filter: {len(selected_agents)} selected; rows after agent filter: {len(agent_workable_filtered)}"
+        )
 
         # Union of remark filter and agent-workable filter
-        cons_df = pd.concat([remark_filtered, agent_workable_filtered], ignore_index=True)
+        cons_df = pd.concat(
+            [remark_filtered, agent_workable_filtered], ignore_index=True
+        )
         output_lines.append(f"📦 Rows after union of filters: {len(cons_df)}")
-        output_lines.append(f"\n📄 Source: 'All Agent Data' from consolidate ({len(cons_df)} rows)")
-        
+        output_lines.append(
+            f"\n📄 Source: 'All Agent Data' from consolidate ({len(cons_df)} rows)"
+        )
+
         # Get the first sheet from blank allocation file (either "Today" or "Sheet1")
         blank_sheet_names = list(reallocation_blank_data.keys())
         if not blank_sheet_names:
             raise Exception("Blank Allocation File has no sheets")
-        
+
         target_sheet_name = blank_sheet_names[0]
         blank_df = reallocation_blank_data[target_sheet_name]
-        output_lines.append(f"📄 Target: '{target_sheet_name}' from blank allocation ({len(blank_df)} rows)")
-        
+        output_lines.append(
+            f"📄 Target: '{target_sheet_name}' from blank allocation ({len(blank_df)} rows)"
+        )
+
         # Align columns to the union of both
         combined_cols = list({*map(str, blank_df.columns), *map(str, cons_df.columns)})
         blank_aligned = blank_df.reindex(columns=combined_cols)
         cons_aligned = cons_df.reindex(columns=combined_cols)
-        
+
         # Merge: append consolidate data to blank allocation data
         merged_df = pd.concat([blank_aligned, cons_aligned], ignore_index=True)
         merged_data[target_sheet_name] = merged_df
-        
-        output_lines.append(f"\n✅ Merged into '{target_sheet_name}': {len(merged_df)} total rows")
+
+        output_lines.append(
+            f"\n✅ Merged into '{target_sheet_name}': {len(merged_df)} total rows"
+        )
         output_lines.append(f"   - From blank allocation: {len(blank_df)} rows")
-        output_lines.append(f"   - From consolidate (All Agent Data): {len(cons_df)} rows")
-        
+        output_lines.append(
+            f"   - From consolidate (All Agent Data): {len(cons_df)} rows"
+        )
+
         # STEP 3: Remove duplicates based on composite key
         output_lines.append("\n" + "=" * 80)
         output_lines.append("STEP 3: REMOVING DUPLICATES")
         output_lines.append("=" * 80)
-        
+
         rows_before_dedup = len(merged_df)
-        
+
         # Check if required columns exist
-        if "Patient ID" not in merged_df.columns or "Dental Primary Ins Carr" not in merged_df.columns:
-            raise Exception("Required columns not found: 'Patient ID' and/or 'Dental Primary Ins Carr'")
-        
+        if (
+            "Patient ID" not in merged_df.columns
+            or "Dental Primary Ins Carr" not in merged_df.columns
+        ):
+            raise Exception(
+                "Required columns not found: 'Patient ID' and/or 'Dental Primary Ins Carr'"
+            )
+
         # Create composite key by concatenating Patient ID + Dental Primary Ins Carr
         # Store original index to restore order later
-        merged_df['__original_index__'] = range(len(merged_df))
-        merged_df['__composite_key__'] = merged_df["Patient ID"].astype(str) + merged_df["Dental Primary Ins Carr"].astype(str)
-        
+        merged_df["__original_index__"] = range(len(merged_df))
+        merged_df["__composite_key__"] = merged_df["Patient ID"].astype(
+            str
+        ) + merged_df["Dental Primary Ins Carr"].astype(str)
+
         # Sort by composite key (groups duplicates together)
-        merged_df_sorted = merged_df.sort_values(by='__composite_key__', na_position='last')
-        
+        merged_df_sorted = merged_df.sort_values(
+            by="__composite_key__", na_position="last"
+        )
+
         # Keep last occurrence (remove=first occurrences, keep=last)
-        deduplicated_df = merged_df_sorted.drop_duplicates(subset=['__composite_key__'], keep='last')
-        
+        deduplicated_df = merged_df_sorted.drop_duplicates(
+            subset=["__composite_key__"], keep="last"
+        )
+
         # Restore original order
-        deduplicated_df = deduplicated_df.sort_values(by='__original_index__')
-        
+        deduplicated_df = deduplicated_df.sort_values(by="__original_index__")
+
         # Remove temporary columns (composite key and original index)
-        deduplicated_df = deduplicated_df.drop(columns=['__composite_key__', '__original_index__'])
-        
+        deduplicated_df = deduplicated_df.drop(
+            columns=["__composite_key__", "__original_index__"]
+        )
+
         rows_after_dedup = len(deduplicated_df)
         rows_removed = rows_before_dedup - rows_after_dedup
-        
+
         output_lines.append(f"\n📊 Deduplication Statistics:")
         output_lines.append(f"   - Rows before deduplication: {rows_before_dedup}")
         output_lines.append(f"   - Rows after deduplication: {rows_after_dedup}")
         output_lines.append(f"   - Duplicate rows removed: {rows_removed}")
-        
+
         # STEP 4: Clear Agent Name except for Workable rows with selected agents
         if "Agent Name" in deduplicated_df.columns:
-            mask_keep_agent = (deduplicated_df.get("Remark", "") == "Workable") & (deduplicated_df.get("Agent Name", "").astype(str).isin(selected_agents))
+            mask_keep_agent = (deduplicated_df.get("Remark", "") == "Workable") & (
+                deduplicated_df.get("Agent Name", "").astype(str).isin(selected_agents)
+            )
             deduplicated_df.loc[~mask_keep_agent, "Agent Name"] = ""
-            output_lines.append(f"\n🧹 Cleared 'Agent Name' except for Workable rows of selected agents (kept: {mask_keep_agent.sum()} rows)")
-        
+            output_lines.append(
+                f"\n🧹 Cleared 'Agent Name' except for Workable rows of selected agents (kept: {mask_keep_agent.sum()} rows)"
+            )
+
         merged_data[target_sheet_name] = deduplicated_df
-        
+
         # Add any other sheets from blank allocation file (keep as-is)
         for sheet_name, df in reallocation_blank_data.items():
             if sheet_name not in merged_data:
                 merged_data[sheet_name] = df.copy()
-                output_lines.append(f"\n➕ Kept '{sheet_name}' from blank allocation ({len(df)} rows)")
+                output_lines.append(
+                    f"\n➕ Kept '{sheet_name}' from blank allocation ({len(df)} rows)"
+                )
 
         reallocation_merged_data = merged_data
 
@@ -6228,7 +6351,9 @@ def upload_reallocation():
         output_lines.append("✅ GENERATION COMPLETE")
         output_lines.append("=" * 80)
         output_lines.append(f"Total merged sheets: {len(merged_data)}")
-        output_lines.append(f"Rows in merged workbook: {sum(len(df) for df in merged_data.values())}")
+        output_lines.append(
+            f"Rows in merged workbook: {sum(len(df) for df in merged_data.values())}"
+        )
         output_lines.append("\nReady to download reallocation file.")
 
         reallocation_output = "\n".join(output_lines)
@@ -6311,30 +6436,45 @@ def load_general_primary():
             return jsonify({"ok": False, "error": "Empty primary file."}), 400
 
         primary_filename = secure_filename(primary_file.filename)
-        primary_path = os.path.join("/tmp", primary_filename)
-        primary_file.save(primary_path)
 
-        xl = pd.ExcelFile(primary_path)
-        general_primary_data = {}
+        # Read Excel file directly from memory (same approach as other modules)
+        primary_file.seek(0)  # Reset file pointer to beginning
+        excel_data = pd.read_excel(primary_file, sheet_name=None, engine="openpyxl")
+
+        # Remove "Unnamed:" columns from all sheets (same as other modules)
+        cleaned_data = {}
         columns_by_sheet = {}
-        for sheet in xl.sheet_names:
-            df = pd.read_excel(primary_path, sheet_name=sheet)
-            general_primary_data[sheet] = df
-            columns_by_sheet[sheet] = [str(col) for col in df.columns]
+        for sheet_name, df in excel_data.items():
+            # Convert column names to strings first, then remove columns that start with "Unnamed:"
+            df.columns = df.columns.astype(str)
+            df_cleaned = df.loc[
+                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+            ]
+            cleaned_data[sheet_name] = df_cleaned
+            columns_by_sheet[sheet_name] = [str(col) for col in df_cleaned.columns]
 
+        general_primary_data = cleaned_data
         general_primary_filename = primary_filename
         general_comparison_updated_data = None
         general_comparison_result = None
         general_comparison_output = ""
 
-        return jsonify({
-            "ok": True,
-            "filename": general_primary_filename,
-            "sheets": xl.sheet_names,
-            "columns": columns_by_sheet,
-        })
+        return jsonify(
+            {
+                "ok": True,
+                "filename": general_primary_filename,
+                "sheets": list(cleaned_data.keys()),
+                "columns": columns_by_sheet,
+            }
+        )
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        error_msg = str(e)
+        # Provide more helpful error messages for common file format issues
+        if "No such file" in error_msg or "cannot open" in error_msg.lower():
+            error_msg = f"File format error: {error_msg}. Please ensure the file is a valid Excel file (.xlsx or .xls)."
+        elif "Unsupported format" in error_msg or "not supported" in error_msg.lower():
+            error_msg = f"Unsupported file format: {error_msg}. Please save your file as .xlsx format."
+        return jsonify({"ok": False, "error": error_msg}), 500
 
 
 @app.route("/load_general_main", methods=["POST"])
@@ -6344,37 +6484,55 @@ def load_general_main():
 
     try:
         if "main_file" not in request.files:
-            return jsonify({"ok": False, "error": "No main dataset file provided."}), 400
+            return (
+                jsonify({"ok": False, "error": "No main dataset file provided."}),
+                400,
+            )
 
         main_file = request.files["main_file"]
         if not main_file or main_file.filename == "":
             return jsonify({"ok": False, "error": "Empty main dataset file."}), 400
 
         main_filename = secure_filename(main_file.filename)
-        main_path = os.path.join("/tmp", main_filename)
-        main_file.save(main_path)
 
-        xl = pd.ExcelFile(main_path)
-        general_main_data = {}
+        # Read Excel file directly from memory (same approach as other modules)
+        main_file.seek(0)  # Reset file pointer to beginning
+        excel_data = pd.read_excel(main_file, sheet_name=None, engine="openpyxl")
+
+        # Remove "Unnamed:" columns from all sheets (same as other modules)
+        cleaned_data = {}
         columns_by_sheet = {}
-        for sheet in xl.sheet_names:
-            df = pd.read_excel(main_path, sheet_name=sheet)
-            general_main_data[sheet] = df
-            columns_by_sheet[sheet] = [str(col) for col in df.columns]
+        for sheet_name, df in excel_data.items():
+            # Convert column names to strings first, then remove columns that start with "Unnamed:"
+            df.columns = df.columns.astype(str)
+            df_cleaned = df.loc[
+                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+            ]
+            cleaned_data[sheet_name] = df_cleaned
+            columns_by_sheet[sheet_name] = [str(col) for col in df_cleaned.columns]
 
+        general_main_data = cleaned_data
         general_main_filename = main_filename
         general_comparison_updated_data = None
         general_comparison_result = None
         general_comparison_output = ""
 
-        return jsonify({
-            "ok": True,
-            "filename": general_main_filename,
-            "sheets": xl.sheet_names,
-            "columns": columns_by_sheet,
-        })
+        return jsonify(
+            {
+                "ok": True,
+                "filename": general_main_filename,
+                "sheets": list(cleaned_data.keys()),
+                "columns": columns_by_sheet,
+            }
+        )
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        error_msg = str(e)
+        # Provide more helpful error messages for common file format issues
+        if "No such file" in error_msg or "cannot open" in error_msg.lower():
+            error_msg = f"File format error: {error_msg}. Please ensure the file is a valid Excel file (.xlsx or .xls)."
+        elif "Unsupported format" in error_msg or "not supported" in error_msg.lower():
+            error_msg = f"Unsupported file format: {error_msg}. Please save your file as .xlsx format."
+        return jsonify({"ok": False, "error": error_msg}), 500
 
 
 @app.route("/run_general_comparison", methods=["POST"])
@@ -6388,7 +6546,9 @@ def run_general_comparison():
         general_comparison_updated_data = None
 
         if not general_primary_data or not general_main_data:
-            general_comparison_result = "❌ Please upload both Primary and Main Dataset files first."
+            general_comparison_result = (
+                "❌ Please upload both Primary and Main Dataset files first."
+            )
             return redirect("/comparison?tab=general")
 
         primary_sheet = request.form.get("primary_sheet")
@@ -6406,43 +6566,129 @@ def run_general_comparison():
             general_comparison_result = "❌ Please select at least one key column."
             return redirect("/comparison?tab=general")
         if not update_columns:
-            general_comparison_result = "❌ Please select at least one column to update."
+            general_comparison_result = (
+                "❌ Please select at least one column to update."
+            )
             return redirect("/comparison?tab=general")
 
         primary_df = general_primary_data[primary_sheet].copy()
-        main_df = general_main_data[main_sheet]
+        main_df = general_main_data[main_sheet].copy()
 
-        # Validate columns exist
+        # Check if dataframes are empty
+        if primary_df.empty:
+            general_comparison_result = (
+                "❌ Primary sheet is empty. Please check your file."
+            )
+            return redirect("/comparison?tab=general")
+        if main_df.empty:
+            general_comparison_result = (
+                "❌ Main dataset sheet is empty. Please check your file."
+            )
+            return redirect("/comparison?tab=general")
+
+        # Normalize column names (convert to string, strip whitespace)
+        primary_df.columns = [str(col).strip() for col in primary_df.columns]
+        main_df.columns = [str(col).strip() for col in main_df.columns]
+
+        # Validate columns exist (with helpful error messages showing available columns)
         for col in key_columns:
             if col not in primary_df.columns:
-                general_comparison_result = f"❌ Key column '{col}' not found in primary sheet."
+                available_cols = ", ".join(list(primary_df.columns)[:10])
+                if len(primary_df.columns) > 10:
+                    available_cols += f", ... ({len(primary_df.columns)} total)"
+                general_comparison_result = f"❌ Key column '{col}' not found in primary sheet. Available columns: {available_cols}"
                 return redirect("/comparison?tab=general")
             if col not in main_df.columns:
-                general_comparison_result = f"❌ Key column '{col}' not found in main dataset sheet."
+                available_cols = ", ".join(list(main_df.columns)[:10])
+                if len(main_df.columns) > 10:
+                    available_cols += f", ... ({len(main_df.columns)} total)"
+                general_comparison_result = f"❌ Key column '{col}' not found in main dataset sheet. Available columns: {available_cols}"
                 return redirect("/comparison?tab=general")
         for col in update_columns:
             if col not in main_df.columns:
-                general_comparison_result = f"❌ Update column '{col}' not found in main dataset sheet."
+                available_cols = ", ".join(list(main_df.columns)[:10])
+                if len(main_df.columns) > 10:
+                    available_cols += f", ... ({len(main_df.columns)} total)"
+                general_comparison_result = f"❌ Update column '{col}' not found in main dataset sheet. Available columns: {available_cols}"
                 return redirect("/comparison?tab=general")
 
-        def normalize_val(v):
+        def normalize_val(v, is_patient_id=False):
+            """Normalize a value for key matching. Use patient ID normalization for Patient ID columns."""
             if pd.isna(v):
                 return ""
+
+            # For Patient ID columns, use the specialized normalization function
+            # This handles numeric IDs properly (removes .0, leading zeros, etc.)
+            if is_patient_id:
+                normalized = normalize_patient_id(v)
+                if normalized is None:
+                    return ""
+                return str(normalized).strip()
+
+            # For other columns, use standard normalization
             s = str(v).strip()
             s = " ".join(s.split())  # collapse internal whitespace
             return s.lower()
 
         def build_key(df):
-            return df[key_columns].apply(lambda row: "|".join(normalize_val(row[col]) for col in key_columns), axis=1)
+            # Check if any key column is a Patient ID column (case-insensitive)
+            is_pid_col = {}
+            for col in key_columns:
+                col_lower = str(col).lower().strip()
+                is_pid_col[col] = (
+                    "patient" in col_lower and "id" in col_lower
+                ) or col_lower in ["pid", "pat id", "patientid"]
 
-        primary_keys = build_key(primary_df)
-        main_keys = build_key(main_df)
+            return df[key_columns].apply(
+                lambda row: "|".join(
+                    normalize_val(row[col], is_patient_id=is_pid_col.get(col, False))
+                    for col in key_columns
+                ),
+                axis=1,
+            )
+
+        try:
+            primary_keys = build_key(primary_df)
+            main_keys = build_key(main_df)
+        except Exception as e:
+            general_comparison_result = f"❌ Error building keys: {str(e)}"
+            return redirect("/comparison?tab=general")
+
+        # Debug: Show sample keys for investigation
+        output_lines.append("\n" + "=" * 80)
+        output_lines.append("DEBUG: KEY GENERATION")
+        output_lines.append("=" * 80)
+        output_lines.append(f"\nSample keys from PRIMARY file (first 5 rows):")
+        for idx in list(primary_keys.index[:5]):
+            key_val = primary_keys[idx]
+            key_display = key_val if key_val else "(empty)"
+            row_data = {col: primary_df.at[idx, col] for col in key_columns}
+            output_lines.append(
+                f"  Row {idx}: Key='{key_display}' | Raw values: {row_data}"
+            )
+
+        output_lines.append(f"\nSample keys from MAIN file (first 5 rows):")
+        for idx in list(main_keys.index[:5]):
+            key_val = main_keys[idx]
+            key_display = key_val if key_val else "(empty)"
+            row_data = {col: main_df.at[idx, col] for col in key_columns}
+            output_lines.append(
+                f"  Row {idx}: Key='{key_display}' | Raw values: {row_data}"
+            )
 
         # Map from key to first occurrence index in main_df
         main_key_map = {}
         for idx, key in main_keys.items():
-            if key not in main_key_map:
+            if key and key not in main_key_map:  # Only add non-empty keys
                 main_key_map[key] = idx
+
+        output_lines.append(
+            f"\nUnique keys in PRIMARY: {primary_keys.nunique()} (total rows: {len(primary_keys)})"
+        )
+        output_lines.append(
+            f"Unique keys in MAIN: {main_keys.nunique()} (total rows: {len(main_keys)})"
+        )
+        output_lines.append(f"Unique keys in MAIN (non-empty): {len(main_key_map)}")
 
         # Ensure update columns exist in primary (add if missing)
         for col in update_columns:
@@ -6451,33 +6697,161 @@ def run_general_comparison():
 
         matched_rows = 0
         updated_cells = 0
+        unmatched_keys = []
+        matched_examples = []
+
+        output_lines.append("\n" + "=" * 80)
+        output_lines.append("DEBUG: MATCHING PROCESS")
+        output_lines.append("=" * 80)
 
         for idx, key in primary_keys.items():
-            if key in main_key_map:
+            if key and key in main_key_map:  # Only process non-empty keys
                 matched_rows += 1
                 main_idx = main_key_map[key]
+
+                # Store first few matches as examples
+                if len(matched_examples) < 3:
+                    matched_examples.append(
+                        {
+                            "primary_row": idx,
+                            "main_row": main_idx,
+                            "key": key,
+                            "updates": {},
+                        }
+                    )
+
                 for col in update_columns:
-                    value = main_df.at[main_idx, col] if col in main_df.columns else None
-                    primary_df.at[idx, col] = value
-                    updated_cells += 1
+                    try:
+                        old_value = (
+                            primary_df.at[idx, col]
+                            if col in primary_df.columns
+                            else None
+                        )
+                        value = (
+                            main_df.at[main_idx, col]
+                            if col in main_df.columns
+                            else None
+                        )
+                        # Handle NaN values
+                        if pd.isna(value):
+                            value = ""
+                        if pd.isna(old_value):
+                            old_value = ""
+
+                        # Store update info for examples
+                        if (
+                            len(matched_examples) > 0
+                            and matched_examples[-1]["primary_row"] == idx
+                        ):
+                            matched_examples[-1]["updates"][col] = {
+                                "old": str(old_value)[:50],
+                                "new": str(value)[:50],
+                            }
+
+                        primary_df.at[idx, col] = value
+                        updated_cells += 1
+                    except Exception as e:
+                        # Log error but continue with other columns
+                        output_lines.append(
+                            f"Warning: Error updating column '{col}' at row {idx}: {str(e)}"
+                        )
+            elif key:  # Non-empty key but no match found
+                if len(unmatched_keys) < 5:  # Store first 5 unmatched keys
+                    unmatched_keys.append(
+                        {
+                            "row": idx,
+                            "key": key,
+                            "raw_values": {
+                                col: primary_df.at[idx, col] for col in key_columns
+                            },
+                        }
+                    )
+
+        # Show matching examples
+        if matched_examples:
+            output_lines.append(
+                f"\n✅ Example matches (showing first {len(matched_examples)}):"
+            )
+            for ex in matched_examples:
+                output_lines.append(
+                    f"  Primary Row {ex['primary_row']} <-> Main Row {ex['main_row']}"
+                )
+                output_lines.append(f"    Key: '{ex['key']}'")
+                for col, vals in ex["updates"].items():
+                    output_lines.append(
+                        f"    {col}: '{vals['old']}' -> '{vals['new']}'"
+                    )
+
+        # Show unmatched examples
+        if unmatched_keys:
+            output_lines.append(
+                f"\n⚠️ Example unmatched keys from PRIMARY (showing first {len(unmatched_keys)}):"
+            )
+            for ex in unmatched_keys:
+                output_lines.append(
+                    f"  Row {ex['row']}: Key='{ex['key']}' | Raw values: {ex['raw_values']}"
+                )
+            if len(unmatched_keys) == 5:
+                output_lines.append(f"  ... (showing first 5, there may be more)")
 
         # Build output workbook: replace only the selected primary sheet
-        updated_workbook = {name: df.copy() for name, df in general_primary_data.items()}
+        updated_workbook = {
+            name: df.copy() for name, df in general_primary_data.items()
+        }
         updated_workbook[primary_sheet] = primary_df
         general_comparison_updated_data = updated_workbook
 
+        output_lines.insert(0, "=" * 80)
+        output_lines.insert(1, "GENERAL COMPARISON RESULTS")
+        output_lines.insert(2, "=" * 80)
+        output_lines.insert(
+            3,
+            f"Primary file: {general_primary_filename or 'N/A'} | Sheet: {primary_sheet}",
+        )
+        output_lines.insert(
+            4, f"Main dataset: {general_main_filename or 'N/A'} | Sheet: {main_sheet}"
+        )
+        output_lines.insert(5, f"Key columns: {', '.join(key_columns)}")
+        output_lines.insert(6, f"Update columns: {', '.join(update_columns)}")
+        output_lines.insert(7, f"Rows in primary sheet: {len(primary_df)}")
+        output_lines.insert(8, f"Rows in main sheet: {len(main_df)}")
+        output_lines.insert(9, "")
+
+        # Summary at the end
+        output_lines.append("\n" + "=" * 80)
+        output_lines.append("SUMMARY")
         output_lines.append("=" * 80)
-        output_lines.append("GENERAL COMPARISON RESULTS")
-        output_lines.append("=" * 80)
-        output_lines.append(f"Primary file: {general_primary_filename or 'N/A'} | Sheet: {primary_sheet}")
-        output_lines.append(f"Main dataset: {general_main_filename or 'N/A'} | Sheet: {main_sheet}")
-        output_lines.append(f"Key columns: {', '.join(key_columns)}")
-        output_lines.append(f"Update columns: {', '.join(update_columns)}")
-        output_lines.append(f"Rows in primary sheet: {len(primary_df)}")
-        output_lines.append(f"Rows in main sheet: {len(main_df)}")
-        output_lines.append(f"Matched rows (primary): {matched_rows}")
+        output_lines.append(f"Unique keys in primary: {primary_keys.nunique()}")
+        output_lines.append(f"Unique keys in main: {len(main_key_map)} (non-empty)")
+        output_lines.append(
+            f"Matched rows (primary): {matched_rows} out of {len(primary_df)}"
+        )
+        output_lines.append(
+            f"Match rate: {(matched_rows/len(primary_df)*100):.1f}%"
+            if len(primary_df) > 0
+            else "N/A"
+        )
         output_lines.append(f"Total cells updated: {updated_cells}")
-        output_lines.append("\n✅ General comparison complete. Download the updated primary file.")
+
+        if matched_rows == 0:
+            output_lines.append("\n⚠️ WARNING: No rows were matched!")
+            output_lines.append("\nTroubleshooting steps:")
+            output_lines.append(
+                "1. Check the DEBUG sections above to see sample keys from both files"
+            )
+            output_lines.append(
+                "2. Verify key column values match exactly (after normalization)"
+            )
+            output_lines.append("3. Check for:")
+            output_lines.append("   - Extra whitespace or hidden characters")
+            output_lines.append("   - Case differences (keys are case-insensitive)")
+            output_lines.append("   - Data type differences (numbers vs text)")
+            output_lines.append("   - Missing or empty values in key columns")
+            output_lines.append("4. Compare the 'Raw values' shown in DEBUG sections")
+        else:
+            output_lines.append(
+                "\n✅ General comparison complete. Download the updated primary file."
+            )
 
         general_comparison_output = "\n".join(output_lines)
         general_comparison_result = "✅ General comparison completed successfully."
@@ -6501,7 +6875,9 @@ def reset_general():
         general_main_data = None
         general_primary_filename = None
         general_main_filename = None
-        general_comparison_result = "🔄 General Comparison reset. All uploaded files and results cleared."
+        general_comparison_result = (
+            "🔄 General Comparison reset. All uploaded files and results cleared."
+        )
         general_comparison_output = ""
         general_comparison_updated_data = None
 
