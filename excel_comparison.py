@@ -6794,6 +6794,96 @@ def run_general_comparison():
             if len(unmatched_keys) == 5:
                 output_lines.append(f"  ... (showing first 5, there may be more)")
 
+        # Remove duplicate rows based on Patient ID + Dental Primary Ins Carr
+        rows_before_duplicate_removal = len(primary_df)
+        output_lines.append("\n" + "=" * 80)
+        output_lines.append("DUPLICATE REMOVAL PROCESS")
+        output_lines.append("=" * 80)
+        
+        # Find Patient ID and Dental Primary Ins Carr columns (case-insensitive)
+        patient_id_col = None
+        dental_primary_col = None
+        remark_col = None
+        
+        for col in primary_df.columns:
+            col_lower = str(col).lower().strip()
+            if not patient_id_col and (("patient" in col_lower and "id" in col_lower) or col_lower in ["pid", "pat id", "patientid"]):
+                patient_id_col = col
+            if not dental_primary_col and "dental primary ins carr" in col_lower:
+                dental_primary_col = col
+            if not remark_col and col_lower == "remark":
+                remark_col = col
+        
+        if patient_id_col and dental_primary_col:
+            output_lines.append(f"Patient ID column: {patient_id_col}")
+            output_lines.append(f"Dental Primary Ins Carr column: {dental_primary_col}")
+            if remark_col:
+                output_lines.append(f"Remark column: {remark_col}")
+            else:
+                output_lines.append("Remark column: Not found (will skip remark-based filtering)")
+            
+            # Create a composite key for duplicate detection
+            def create_duplicate_key(row):
+                pid_val = str(row[patient_id_col]).strip() if pd.notna(row[patient_id_col]) else ""
+                dental_val = str(row[dental_primary_col]).strip() if pd.notna(row[dental_primary_col]) else ""
+                return f"{pid_val}|{dental_val}"
+            
+            primary_df['_duplicate_key'] = primary_df.apply(create_duplicate_key, axis=1)
+            
+            # Find duplicates (skip empty keys)
+            duplicate_groups = primary_df.groupby('_duplicate_key')
+            duplicate_keys = [key for key, group in duplicate_groups if len(group) > 1 and key.strip() != ""]
+            
+            rows_to_keep = []
+            rows_to_remove = []
+            
+            if len(duplicate_keys) > 0:
+                output_lines.append(f"\nFound {len(duplicate_keys)} duplicate key(s) (based on Patient ID + Dental Primary Ins Carr)")
+                
+                for dup_key in duplicate_keys:
+                    dup_rows = primary_df[primary_df['_duplicate_key'] == dup_key]
+                    dup_indices = dup_rows.index.tolist()
+                    
+                    # Check if any row has preferred remark values
+                    preferred_row_idx = None
+                    if remark_col:
+                        for idx in dup_indices:
+                            remark_val = str(primary_df.at[idx, remark_col]).strip().upper() if pd.notna(primary_df.at[idx, remark_col]) else ""
+                            if remark_val in ["UPDATED", "QCP", "ASST"]:
+                                preferred_row_idx = idx
+                                break
+                    
+                    # If no preferred row found, keep the first one
+                    if preferred_row_idx is None:
+                        preferred_row_idx = dup_indices[0]
+                    
+                    # Mark rows to keep and remove
+                    rows_to_keep.append(preferred_row_idx)
+                    for idx in dup_indices:
+                        if idx != preferred_row_idx:
+                            rows_to_remove.append(idx)
+                
+                # Remove duplicate rows
+                primary_df = primary_df.drop(rows_to_remove)
+                rows_after_duplicate_removal = len(primary_df)
+                
+                output_lines.append(f"Rows before duplicate removal: {rows_before_duplicate_removal}")
+                output_lines.append(f"Duplicate rows removed: {len(rows_to_remove)}")
+                output_lines.append(f"Rows after duplicate removal: {rows_after_duplicate_removal}")
+            else:
+                output_lines.append("\nNo duplicate rows found based on Patient ID + Dental Primary Ins Carr")
+            
+            # Remove the temporary duplicate key column
+            primary_df = primary_df.drop(columns=['_duplicate_key'], errors='ignore')
+        else:
+            missing_cols = []
+            if not patient_id_col:
+                missing_cols.append("Patient ID")
+            if not dental_primary_col:
+                missing_cols.append("Dental Primary Ins Carr")
+            output_lines.append(f"\n⚠️ Warning: Could not find required columns for duplicate removal: {', '.join(missing_cols)}")
+            output_lines.append("Skipping duplicate removal process.")
+
         # Build output workbook: replace only the selected primary sheet
         updated_workbook = {
             name: df.copy() for name, df in general_primary_data.items()
@@ -6813,9 +6903,10 @@ def run_general_comparison():
         )
         output_lines.insert(5, f"Key columns: {', '.join(key_columns)}")
         output_lines.insert(6, f"Update columns: {', '.join(update_columns)}")
-        output_lines.insert(7, f"Rows in primary sheet: {len(primary_df)}")
-        output_lines.insert(8, f"Rows in main sheet: {len(main_df)}")
-        output_lines.insert(9, "")
+        output_lines.insert(7, f"Rows in primary sheet (before processing): {rows_before_duplicate_removal}")
+        output_lines.insert(8, f"Rows in primary sheet (after duplicate removal): {len(primary_df)}")
+        output_lines.insert(9, f"Rows in main sheet: {len(main_df)}")
+        output_lines.insert(10, "")
 
         # Summary at the end
         output_lines.append("\n" + "=" * 80)
