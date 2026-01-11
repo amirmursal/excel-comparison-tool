@@ -3220,23 +3220,86 @@ def upload_conversion_file():
         # Get filename without saving to disk
         filename = secure_filename(file.filename)
 
-        # Read Excel file directly from memory (no disk storage)
+        # Read Excel file directly from memory WITHOUT headers (we'll find header row)
         file.seek(0)  # Reset file pointer to beginning
-        conversion_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+        conversion_data = pd.read_excel(file, sheet_name=None, engine="openpyxl", header=None)
         conversion_filename = filename
 
-        # Remove "Unnamed:" columns from all sheets
+        # Step 1: Find header row, set it as column names, then remove first 4 data rows and last 9 rows
         cleaned_data = {}
         for sheet_name, df in conversion_data.items():
-            # Convert column names to strings first, then remove columns that start with "Unnamed:"
+            # Convert all column names to strings (they'll be 0, 1, 2, etc. since header=None)
+            df.columns = [str(i) for i in range(len(df.columns))]
+            
+            # Find the header row by looking for "Insurance Note" column
+            header_row_index = None
+            for idx in range(min(10, len(df))):
+                row_values = []
+                for col_idx in df.columns:
+                    val = df.iloc[idx][col_idx]
+                    row_values.append(str(val).lower().strip() if pd.notna(val) else "")
+                
+                # Check if this row contains "insurance note"
+                if "insurance note" in row_values:
+                    header_row_index = idx
+                    break
+            
+            if header_row_index is not None:
+                # Set the header row as column names
+                new_columns = []
+                for col_idx in df.columns:
+                    val = df.iloc[header_row_index][col_idx]
+                    col_name = str(val).strip() if pd.notna(val) and str(val).strip() != "" else f"Unnamed_{col_idx}"
+                    new_columns.append(col_name)
+                df.columns = new_columns
+                
+                # Remove all rows up to and including the header row
+                df = df.iloc[header_row_index + 1:].reset_index(drop=True)
+                
+                # Remove first 4 data rows (after header)
+                if len(df) > 4:
+                    df = df.iloc[4:].reset_index(drop=True)
+                elif len(df) > 0:
+                    rows_deleted = len(df)
+                    df = df.iloc[rows_deleted:].reset_index(drop=True)
+                
+                # Remove last 9 rows from bottom
+                if len(df) > 9:
+                    df = df.iloc[:-9].reset_index(drop=True)
+                elif len(df) > 0:
+                    rows_deleted_from_bottom = len(df)
+                    df = df.iloc[:0].reset_index(drop=True)
+            else:
+                # If header not found, try default: remove first 4 rows and last 9 rows
+                if len(df) > 4:
+                    df = df.iloc[4:].reset_index(drop=True)
+                elif len(df) > 0:
+                    rows_deleted = len(df)
+                    df = df.iloc[rows_deleted:].reset_index(drop=True)
+                
+                # Remove last 9 rows from bottom
+                if len(df) > 9:
+                    df = df.iloc[:-9].reset_index(drop=True)
+                elif len(df) > 0:
+                    rows_deleted_from_bottom = len(df)
+                    df = df.iloc[:0].reset_index(drop=True)
+            
+            cleaned_data[sheet_name] = df
+        conversion_data = cleaned_data
+
+        # Step 2: Remove "Unnamed_<random_number>" columns from all sheets
+        cleaned_data = {}
+        for sheet_name, df in conversion_data.items():
+            # Convert column names to strings first, then remove columns that match "Unnamed_<number>" pattern
             df.columns = df.columns.astype(str)
+            # Remove columns that match "Unnamed_" followed by digits
             df_cleaned = df.loc[
-                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+                :, ~df.columns.str.contains("^Unnamed_\\d+$", na=False, regex=True)
             ]
             cleaned_data[sheet_name] = df_cleaned
         conversion_data = cleaned_data
 
-        # Validate "Insurance Note" column exists in all sheets
+        # Step 3: Validate "Insurance Note" column exists in all sheets
         missing_sheets = []
         for sheet_name, df in conversion_data.items():
             columns = [col.lower().strip() for col in df.columns]
@@ -3248,7 +3311,7 @@ def upload_conversion_file():
             conversion_data = None
             conversion_filename = None
         else:
-            # Validation successful - now process the Insurance Note column
+            # Step 4: Process the Insurance Note column
             processed_sheets = {}
             total_rows_processed = 0
             patient_name_created = False
@@ -3650,6 +3713,82 @@ def upload_conversion_file():
 
             # Update conversion_data with processed data
             conversion_data = processed_sheets
+
+            # Remove "Time" and "MI" columns from all sheets
+            cleaned_data = {}
+            columns_removed_count = {}
+            for sheet_name, df in conversion_data.items():
+                df_cleaned = df.copy()
+                removed_cols = []
+                
+                # Remove "Time" column (case-insensitive)
+                for col in df_cleaned.columns:
+                    if str(col).strip().lower() == "time":
+                        df_cleaned = df_cleaned.drop(columns=[col])
+                        removed_cols.append(col)
+                        break
+                
+                # Remove "MI" column (case-insensitive)
+                for col in df_cleaned.columns:
+                    if str(col).strip().lower() == "mi":
+                        df_cleaned = df_cleaned.drop(columns=[col])
+                        removed_cols.append(col)
+                        break
+                
+                cleaned_data[sheet_name] = df_cleaned
+                if removed_cols:
+                    columns_removed_count[sheet_name] = removed_cols
+            
+            conversion_data = cleaned_data
+
+            # Arrange columns in specified order
+            column_order = [
+                "Office Name",
+                "Appt Date",
+                "Pat ID",
+                "Patient Name",
+                "Dental Primary Ins Carr",
+                "Dental Secondary Ins Carr",
+                "Group No",
+                "Insurance Note",
+                "Status"
+            ]
+            
+            ordered_data = {}
+            for sheet_name, df in conversion_data.items():
+                df_ordered = df.copy()
+                
+                # Find actual column names (case-insensitive matching)
+                ordered_cols = []
+                remaining_cols = list(df_ordered.columns)
+                
+                for target_col in column_order:
+                    found = False
+                    for col in remaining_cols:
+                        if str(col).strip().lower() == target_col.lower():
+                            ordered_cols.append(col)
+                            remaining_cols.remove(col)
+                            found = True
+                            break
+                    if not found:
+                        # Try partial matching for flexible column names
+                        for col in remaining_cols:
+                            col_lower = str(col).lower().strip()
+                            target_lower = target_col.lower().strip()
+                            if target_lower in col_lower or col_lower in target_lower:
+                                ordered_cols.append(col)
+                                remaining_cols.remove(col)
+                                found = True
+                                break
+                
+                # Add remaining columns that weren't in the specified order
+                ordered_cols.extend(remaining_cols)
+                
+                # Reorder dataframe columns
+                df_ordered = df_ordered[ordered_cols]
+                ordered_data[sheet_name] = df_ordered
+            
+            conversion_data = ordered_data
 
             # Build columns added message
             columns_added_msg = "- 'Dental Primary Ins Carr' - Extracted and formatted insurance names (first insurance for each Pat ID)\n- 'Dental Secondary Ins Carr' - Second insurance for Pat IDs with multiple insurances\n- 'Status' - Extracted status values (shows 'Conversion' when no status is found)"
