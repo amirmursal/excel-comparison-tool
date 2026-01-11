@@ -1221,7 +1221,7 @@ HTML_TEMPLATE = """
                 {% endif %}
 
                 <!-- Download Section -->
-                {% if appointment_report_data and appointment_report_result and 'processing complete' in appointment_report_result.lower() %}
+                {% if appointment_report_data and appointment_report_result and 'error' not in appointment_report_result.lower() %}
                 <div class="section">
                     <h3>💾 Download Formatted File</h3>
                     <form action="/download_appointment_report" method="post">
@@ -4897,22 +4897,21 @@ def upload_appointment_report():
         # Get filename without saving to disk
         filename = secure_filename(file.filename)
 
-        # Read Excel file directly from memory (no disk storage)
+        # Read Excel file directly from memory (no disk storage) WITHOUT headers
+        # We'll find and set the header row in Step 1
         file.seek(0)  # Reset file pointer to beginning
-        excel_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+        excel_data = pd.read_excel(file, sheet_name=None, engine="openpyxl", header=None)
 
-        # Remove "Unnamed:" columns from all sheets
+        # Store raw data - we'll process headers in Step 1
         cleaned_data = {}
         for sheet_name, df in excel_data.items():
-            # Convert column names to strings first, then remove columns that start with "Unnamed:"
-            df.columns = df.columns.astype(str)
-            df_cleaned = df.loc[
-                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
-            ]
-            cleaned_data[sheet_name] = df_cleaned
+            # Convert all column names to strings (they'll be 0, 1, 2, etc. since header=None)
+            df.columns = [str(i) for i in range(len(df.columns))]
+            cleaned_data[sheet_name] = df
 
         # Process all sheets - format both Primary and Secondary insurance columns
         processed_sheets = {}
+        zero_id_rows_by_sheet = {}  # Store zero ID rows per sheet (before duplicate removal)
         total_rows_processed = 0
         output_lines = []
         output_lines.append("=" * 70)
@@ -4928,9 +4927,151 @@ def upload_appointment_report():
                 f"   Original shape: {df.shape[0]} rows × {df.shape[1]} columns"
             )
 
+            # Step 1: Find header row, set it as column names, then delete rows before header and last 7 rows
+            output_lines.append("")
+            output_lines.append(f"   🔧 Step 1: Row cleanup and header detection...")
+            df_processed = df.copy()
+            rows_before_cleanup = len(df_processed)
+            
+            # First, try to find the actual header row by looking for common column names
+            # Common column names to look for: Office Name, Patient ID, Dental Primary Ins Carr, etc.
+            header_row_index = None
+            common_header_keywords = [
+                "office name", "patient id", "pat id", "dental primary", 
+                "dental secondary", "appt date", "appointment date", 
+                "remark", "agent name", "time"
+            ]
+            
+            # Check first 10 rows to find the header row
+            for idx in range(min(10, len(df_processed))):
+                row_values = []
+                for col_idx in df_processed.columns:
+                    val = df_processed.iloc[idx][col_idx]
+                    row_values.append(str(val).lower().strip() if pd.notna(val) else "")
+                # Count how many common keywords are found in this row
+                matches = sum(1 for val in row_values if any(keyword in val for keyword in common_header_keywords))
+                # If we find at least 3 matches, this is likely the header row
+                if matches >= 3:
+                    header_row_index = idx
+                    output_lines.append(f"   🔍 Found header row at index {idx}")
+                    break
+            
+            if header_row_index is not None and header_row_index >= 0:
+                # Set the header row as column names
+                new_columns = []
+                for col_idx in df_processed.columns:
+                    val = df_processed.iloc[header_row_index][col_idx]
+                    col_name = str(val).strip() if pd.notna(val) and str(val).strip() != "" else f"Unnamed_{col_idx}"
+                    new_columns.append(col_name)
+                df_processed.columns = new_columns
+                # Delete all rows up to and including the header row
+                df_processed = df_processed.iloc[header_row_index + 1:].reset_index(drop=True)
+                # Remove "Unnamed:" columns if any (but keep columns that are actually named "Unnamed_X")
+                df_processed = df_processed.loc[:, ~df_processed.columns.str.contains("^Unnamed:", na=False, regex=True)]
+                output_lines.append(f"   ✅ Set row {header_row_index + 1} as headers and deleted {header_row_index + 1} rows from top")
+            elif header_row_index == 0:
+                # Header is in the first row, set it as column names
+                new_columns = []
+                for col_idx in df_processed.columns:
+                    val = df_processed.iloc[0][col_idx]
+                    col_name = str(val).strip() if pd.notna(val) and str(val).strip() != "" else f"Unnamed_{col_idx}"
+                    new_columns.append(col_name)
+                df_processed.columns = new_columns
+                # Delete the header row (first row)
+                df_processed = df_processed.iloc[1:].reset_index(drop=True)
+                # Remove "Unnamed:" columns if any
+                df_processed = df_processed.loc[:, ~df_processed.columns.str.contains("^Unnamed:", na=False, regex=True)]
+                output_lines.append(f"   ✅ Set first row as headers and deleted header row")
+            else:
+                # Couldn't find header row, try to delete first 3 rows but keep current structure
+                if len(df_processed) > 3:
+                    df_processed = df_processed.iloc[3:].reset_index(drop=True)
+                    output_lines.append(f"   ⚠️  Could not identify header row, deleted first 3 rows by default")
+                elif len(df_processed) > 0:
+                    rows_deleted = len(df_processed)
+                    df_processed = df_processed.iloc[rows_deleted:].reset_index(drop=True)
+                    output_lines.append(f"   ⚠️  Deleted {rows_deleted} row(s) from top (less than 3 rows available)")
+                else:
+                    output_lines.append(f"   ⚠️  Sheet is empty, skipping row deletion")
+            
+            # Delete specified columns from output file
+            columns_to_delete = [
+                "Appointment ID",
+                "Appointment Time",
+                "Appointment Length (min)",
+                "Appointment Status",
+                "Operatory ID",
+                "Operatory Name",
+                "Chart#",
+                "Patient Balance",
+                "Medical Primary Ins Carr",
+                "Medical Secondary Ins Carr",
+                "Pref Provider",
+                "Provider Name",
+                "Procedure (Code  Th  Surf  Descr)",
+                "Appointment Notes",
+                "Created On",
+                "Created By"
+            ]
+            
+            columns_deleted = []
+            columns_not_found = []
+            
+            for col_to_delete in columns_to_delete:
+                found = False
+                col_to_delete_normalized = re.sub(r'\s+', ' ', str(col_to_delete).strip().lower())
+                
+                # Try exact match first
+                if col_to_delete in df_processed.columns:
+                    df_processed = df_processed.drop(columns=[col_to_delete])
+                    columns_deleted.append(col_to_delete)
+                    found = True
+                else:
+                    # Try case-insensitive and flexible whitespace matching
+                    for col in df_processed.columns:
+                        col_normalized = re.sub(r'\s+', ' ', str(col).strip().lower())
+                        if col_normalized == col_to_delete_normalized:
+                            df_processed = df_processed.drop(columns=[col])
+                            columns_deleted.append(col)
+                            found = True
+                            break
+                
+                if not found:
+                    columns_not_found.append(col_to_delete)
+            
+            if columns_deleted:
+                output_lines.append(f"   ✅ Deleted {len(columns_deleted)} column(s): {', '.join(columns_deleted[:5])}")
+                if len(columns_deleted) > 5:
+                    output_lines.append(f"      ... and {len(columns_deleted) - 5} more columns")
+            if columns_not_found:
+                output_lines.append(f"   ⚠️  Could not find {len(columns_not_found)} column(s) to delete: {', '.join(columns_not_found[:3])}")
+                if len(columns_not_found) > 3:
+                    output_lines.append(f"      ... and {len(columns_not_found) - 3} more columns")
+            
+            # Delete last 7 rows from bottom
+            if len(df_processed) > 7:
+                df_processed = df_processed.iloc[:-7].reset_index(drop=True)
+                output_lines.append(f"   ✅ Deleted last 7 rows from bottom")
+            elif len(df_processed) > 0:
+                rows_deleted_from_bottom = len(df_processed)
+                df_processed = df_processed.iloc[:0].reset_index(drop=True)
+                output_lines.append(f"   ⚠️  Deleted {rows_deleted_from_bottom} row(s) from bottom (less than 7 rows available)")
+            else:
+                output_lines.append(f"   ℹ️  No rows available to delete from bottom")
+            
+            rows_after_cleanup = len(df_processed)
+            output_lines.append(f"   Shape after cleanup: {rows_after_cleanup} rows × {df_processed.shape[1]} columns")
+            
+            # Show column names for verification
+            if len(df_processed.columns) > 0:
+                output_lines.append(f"   Column names: {', '.join(list(df_processed.columns[:10]))}")
+                if len(df_processed.columns) > 10:
+                    output_lines.append(f"   ... and {len(df_processed.columns) - 10} more columns")
+            output_lines.append("")
+
             # Find the Patient ID column (case-insensitive search)
             patient_id_col = None
-            for col in df.columns:
+            for col in df_processed.columns:
                 col_lower = col.lower().strip().replace(" ", "").replace("_", "")
                 if ("patient" in col_lower or "pat" in col_lower) and "id" in col_lower:
                     patient_id_col = col
@@ -4940,7 +5081,7 @@ def upload_appointment_report():
             primary_col = None
             secondary_col = None
 
-            for col in df.columns:
+            for col in df_processed.columns:
                 col_lower = col.lower().strip()
                 if (
                     "dental" in col_lower
@@ -4955,7 +5096,9 @@ def upload_appointment_report():
                 ):
                     secondary_col = col
 
-            df_processed = df.copy()
+            # Step 2: Format insurance names
+            output_lines.append("")
+            output_lines.append(f"   📝 Step 2: Formatting insurance names...")
             formatted_primary = 0
             formatted_secondary = 0
 
@@ -4985,11 +5128,33 @@ def upload_appointment_report():
                     f"   ⚠️  'Dental Secondary Ins Carr' column not found"
                 )
 
-            # Handle duplicate Patient IDs
+            # Extract zero ID rows BEFORE duplicate removal (to preserve duplicates in Zero ID sheet)
+            if patient_id_col:
+                def is_zero_id(val):
+                    if pd.isna(val):
+                        return False
+                    try:
+                        float_val = float(val)
+                        return float_val == 0.0
+                    except (ValueError, TypeError):
+                        str_val = str(val).strip()
+                        return str_val == "0" or str_val == "0.0" or str_val.lower() == "zero"
+                
+                zero_id_mask = df_processed[patient_id_col].apply(is_zero_id)
+                zero_id_df = df_processed[zero_id_mask].copy()
+                
+                if len(zero_id_df) > 0:
+                    # Store zero ID rows for this sheet (before duplicate removal)
+                    zero_id_rows_by_sheet[sheet_name] = zero_id_df
+                    # Remove zero ID rows from df_processed before duplicate removal
+                    df_processed = df_processed[~zero_id_mask].copy()
+                    output_lines.append(f"   📋 Extracted {len(zero_id_df)} row(s) with Patient ID = 0 (will be added to 'Zero ID' sheet without duplicate removal)")
+
+            # Step 3: Remove duplicates based on Patient ID + Primary Insurance
             duplicates_removed = 0
             if patient_id_col and primary_col:
                 output_lines.append("")
-                output_lines.append(f"   🔍 Checking for duplicate Patient IDs...")
+                output_lines.append(f"   🔍 Step 3: Checking for duplicate Patient IDs...")
 
                 # Normalize Patient IDs for comparison
                 df_processed["_normalized_patient_id"] = df_processed[
@@ -5031,20 +5196,11 @@ def upload_appointment_report():
                     f"   ⚠️  Cannot check duplicates: Patient ID column not found"
                 )
 
-            # Show sample if columns were found
-            if primary_col or secondary_col:
-                output_lines.append("")
-                sample_cols = []
-                if patient_id_col:
-                    sample_cols.append(patient_id_col)
-                if primary_col:
-                    sample_cols.append(primary_col)
-                if secondary_col:
-                    sample_cols.append(secondary_col)
-
-                sample_df = df_processed[sample_cols].head(5)
-                output_lines.append(f"   Sample of formatted data (first 5 rows):")
-                output_lines.append(sample_df.to_string(index=False))
+            # Show sample data (first 5 rows)
+            output_lines.append("")
+            output_lines.append(f"   Sample of formatted data (first 5 rows):")
+            sample_df = df_processed.head(5)
+            output_lines.append(sample_df.to_string(index=False))
 
             processed_sheets[sheet_name] = df_processed
             total_rows_processed += len(df_processed)
@@ -5054,6 +5210,87 @@ def upload_appointment_report():
             )
             output_lines.append("")
 
+        # Create "Zero ID" sheet with rows where Patient ID is 0 (using pre-extracted rows, duplicates preserved)
+        output_lines.append("")
+        output_lines.append("=" * 70)
+        output_lines.append("CREATING 'ZERO ID' SHEET")
+        output_lines.append("=" * 70)
+        
+        # Use pre-extracted zero ID rows (before duplicate removal, so duplicates are preserved)
+        if zero_id_rows_by_sheet:
+            zero_id_rows_list = []
+            for sheet_name, zero_id_df in zero_id_rows_by_sheet.items():
+                zero_id_rows_list.append(zero_id_df)
+                output_lines.append(f"   Found {len(zero_id_df)} row(s) with Patient ID = 0 in sheet '{sheet_name}' (duplicates preserved)")
+            
+            # Combine all zero ID rows from all sheets
+            zero_id_combined = pd.concat(zero_id_rows_list, ignore_index=True)
+            processed_sheets["Zero ID"] = zero_id_combined
+            output_lines.append(f"   ✅ Created 'Zero ID' sheet with {len(zero_id_combined)} total row(s) (duplicates NOT removed)")
+        else:
+            output_lines.append(f"   ℹ️  No rows with Patient ID = 0 found, skipping 'Zero ID' sheet creation")
+        
+        # Create "No Ins" sheet with rows where "Dental Primary Ins Carr" is blank, then remove from main sheets
+        output_lines.append("")
+        output_lines.append("=" * 70)
+        output_lines.append("CREATING 'NO INS' SHEET")
+        output_lines.append("=" * 70)
+        
+        no_ins_rows = []
+        total_no_ins_rows = 0
+        
+        for sheet_name, df_sheet in processed_sheets.items():
+            # Skip special sheets
+            if sheet_name == "Zero ID" or sheet_name == "No Ins":
+                continue
+                
+            # Find "Dental Primary Ins Carr" column in this sheet (case-insensitive)
+            primary_ins_col = None
+            for col in df_sheet.columns:
+                col_lower = str(col).lower().strip()
+                if (
+                    "dental" in col_lower
+                    and "primary" in col_lower
+                    and "ins" in col_lower
+                ):
+                    primary_ins_col = col
+                    break
+            
+            if primary_ins_col:
+                # Filter rows where "Dental Primary Ins Carr" is blank/empty
+                # Check for: NaN, empty string, whitespace-only strings
+                def is_blank_insurance(val):
+                    if pd.isna(val):
+                        return True
+                    str_val = str(val).strip()
+                    return str_val == "" or str_val.lower() in ["none", "n/a", "na", "null"]
+                
+                no_ins_mask = df_sheet[primary_ins_col].apply(is_blank_insurance)
+                no_ins_df = df_sheet[no_ins_mask].copy()
+                
+                if len(no_ins_df) > 0:
+                    no_ins_rows.append(no_ins_df)
+                    total_no_ins_rows += len(no_ins_df)
+                    output_lines.append(f"   Found {len(no_ins_df)} row(s) with blank 'Dental Primary Ins Carr' in sheet '{sheet_name}'")
+                    
+                    # Remove no insurance rows from the main sheet
+                    df_sheet_cleaned = df_sheet[~no_ins_mask].copy()
+                    processed_sheets[sheet_name] = df_sheet_cleaned
+                    rows_removed = len(df_sheet) - len(df_sheet_cleaned)
+                    output_lines.append(f"   ✅ Removed {rows_removed} row(s) from sheet '{sheet_name}'")
+            else:
+                output_lines.append(f"   ⚠️  'Dental Primary Ins Carr' column not found in sheet '{sheet_name}', skipping")
+        
+        # Create "No Ins" sheet if we found any rows
+        if no_ins_rows:
+            # Combine all no insurance rows from all sheets
+            no_ins_combined = pd.concat(no_ins_rows, ignore_index=True)
+            processed_sheets["No Ins"] = no_ins_combined
+            output_lines.append(f"   ✅ Created 'No Ins' sheet with {len(no_ins_combined)} total row(s)")
+        else:
+            output_lines.append(f"   ℹ️  No rows with blank 'Dental Primary Ins Carr' found, skipping 'No Ins' sheet creation")
+        
+        output_lines.append("")
         output_lines.append("=" * 70)
         output_lines.append("PROCESSING COMPLETE!")
         output_lines.append("=" * 70)
