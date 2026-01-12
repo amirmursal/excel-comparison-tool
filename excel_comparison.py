@@ -5791,25 +5791,27 @@ def upload_smart_assist():
                 "Appointment Date",
                 "Patient ID",
                 "Patient Name",
-                "Chart#",
                 "Dental Primary Ins Carr",
                 "Dental Secondary Ins Carr",
-                "Provider Name",
                 "Received date",
                 "Source",
-                "Type",
                 "Status Code",
                 "Comment",
+                "Plan Name",
                 "Group Number",
                 "Category",
                 "Agent Name",
+                "Supervisor",
                 "Work Date",
                 "Remark",
                 "Priority Status",
+                "Auditor",
                 "QC Agent",
                 "QC Status",
                 "QC Comments",
                 "QC Date",
+                "Agent 1",
+                "Remark 1",
             ]
             output_lines.append(
                 f"   Standardizing to {len(standard_columns)} predefined column(s)"
@@ -5851,6 +5853,13 @@ def upload_smart_assist():
             qc_status_col = find_col(["qc", "status"])
             qc_comments_col = find_col(["qc", "comment"]) or find_col(["qc", "notes"])
             qc_date_col = find_col(["qc", "date"])
+            
+            # Find new columns
+            plan_name_col = find_col(["plan", "name"])
+            supervisor_col = find_col(["supervisor"])
+            auditor_col = find_col(["auditor"])
+            agent1_col = find_col(["agent", "1"]) or find_col(["agent1"])
+            remark1_col = find_col(["remark", "1"]) or find_col(["remark1"])
 
             # Find insurance columns
             primary_ins_col = find_col(["dental", "primary", "ins"]) or find_col(
@@ -5881,19 +5890,16 @@ def upload_smart_assist():
                 )
             else:
                 standardized["Patient Name"] = ""
-            standardized["Chart#"] = df[chart_col] if chart_col else ""
             standardized["Dental Primary Ins Carr"] = (
                 df[primary_ins_col] if primary_ins_col else ""
             )
             standardized["Dental Secondary Ins Carr"] = (
                 df[secondary_ins_col] if secondary_ins_col else ""
             )
-            standardized["Provider Name"] = df[provider_col] if provider_col else ""
-            standardized["Received date"] = (
-                df[received_date_col] if received_date_col else ""
-            )
+            # Set "Received date" to current computer date in MM/DD/YYYY format
+            current_date = datetime.now().strftime("%m/%d/%Y")
+            standardized["Received date"] = current_date
             standardized["Source"] = df[source_col] if source_col else ""
-            standardized["Type"] = df[type_col] if type_col else ""
             standardized["Status Code"] = df[status_code_col] if status_code_col else ""
 
             # Clean Comment column - remove special characters
@@ -5914,20 +5920,25 @@ def upload_smart_assist():
             else:
                 standardized["Comment"] = ""
 
+            standardized["Plan Name"] = df[plan_name_col] if plan_name_col else ""
             standardized["Group Number"] = (
                 df[group_number_col] if group_number_col else ""
             )
             standardized["Category"] = df[category_col] if category_col else ""
             standardized["Agent Name"] = df[agent_name_col] if agent_name_col else ""
+            standardized["Supervisor"] = df[supervisor_col] if supervisor_col else ""
             standardized["Work Date"] = df[work_date_col] if work_date_col else ""
             standardized["Remark"] = df[remark_col] if remark_col else ""
             standardized["Priority Status"] = (
                 df[priority_status_col] if priority_status_col else ""
             )
+            standardized["Auditor"] = df[auditor_col] if auditor_col else ""
             standardized["QC Agent"] = df[qc_agent_col] if qc_agent_col else ""
             standardized["QC Status"] = df[qc_status_col] if qc_status_col else ""
             standardized["QC Comments"] = df[qc_comments_col] if qc_comments_col else ""
             standardized["QC Date"] = df[qc_date_col] if qc_date_col else ""
+            standardized["Agent 1"] = df[agent1_col] if agent1_col else ""
+            standardized["Remark 1"] = df[remark1_col] if remark1_col else ""
 
             # Find Eligibility column and set Remark based on its value
             eligibility_col = find_col(["eligibility"])
@@ -5995,6 +6006,9 @@ def upload_smart_assist():
                     f"   ✅ Kept {len(standardized)} row(s) with 'Workable' in Remark"
                 )
 
+            # Ensure only the specified columns are included and in the correct order
+            standardized = standardized[standard_columns]
+            
             df = standardized
 
             # Report which source columns were mapped
@@ -6004,25 +6018,27 @@ def upload_smart_assist():
                 ("Appointment Date", appt_date_col),
                 ("Patient ID", patid_col),
                 ("Patient Name", (last_name_col, first_name_col)),
-                ("Chart#", chart_col),
                 ("Dental Primary Ins Carr", primary_ins_col),
                 ("Dental Secondary Ins Carr", secondary_ins_col),
-                ("Provider Name", provider_col),
                 ("Received date", received_date_col),
                 ("Source", source_col),
-                ("Type", type_col),
                 ("Status Code", status_code_col),
                 ("Comment", comment_col),
+                ("Plan Name", plan_name_col),
                 ("Group Number", group_number_col),
                 ("Category", category_col),
                 ("Agent Name", agent_name_col),
+                ("Supervisor", supervisor_col),
                 ("Work Date", work_date_col),
                 ("Remark", remark_col),
                 ("Priority Status", priority_status_col),
+                ("Auditor", auditor_col),
                 ("QC Agent", qc_agent_col),
                 ("QC Status", qc_status_col),
                 ("QC Comments", qc_comments_col),
                 ("QC Date", qc_date_col),
+                ("Agent 1", agent1_col),
+                ("Remark 1", remark1_col),
             ]:
                 if isinstance(src, tuple):
                     if any(s for s in src):
@@ -6032,8 +6048,6 @@ def upload_smart_assist():
             output_lines.append(
                 f"   ✅ Mapped {len(mapped_sources)}/{len(standard_columns)} column(s) from source data"
             )
-
-            df = standardized
 
             # Step 9: Show sample of standardized data
             output_lines.append("")
@@ -6086,8 +6100,9 @@ def download_smart_assist():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"formatted_smart_assist_{timestamp}.xlsx"
+        # Format: Imagen Dental IV Allocation File - MM.DD.YYYY.xlsx
+        date_str = datetime.now().strftime("%m.%d.%Y")
+        filename = f"Imagen Dental IV Allocation File - {date_str}.xlsx"
 
     try:
         import tempfile
