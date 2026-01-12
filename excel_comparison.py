@@ -689,40 +689,36 @@ HTML_TEMPLATE = """
                 <p>Automation Suite</p>
             </div>
             <nav class="sidebar-menu">
-                <div class="menu-item {% if active_tab == 'comparison' %}active{% endif %}" onclick="switchTab('comparison')">
-                    <span class="menu-item-icon">🔄</span>
-                    <span>Comparison Tool</span>
+                <div class="menu-item {% if active_tab == 'appointment' %}active{% endif %}" onclick="switchTab('appointment')">
+                    <span class="menu-item-icon">1.</span>
+                    <span>Appointment Report</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'conversion' %}active{% endif %}" onclick="switchTab('conversion')">
-                    <span class="menu-item-icon">📋</span>
+                    <span class="menu-item-icon">2.</span>
                     <span>Conversion Report</span>
                 </div>
+                <div class="menu-item {% if active_tab == 'smartassist' %}active{% endif %}" onclick="switchTab('smartassist')">
+                    <span class="menu-item-icon">3.</span>
+                    <span>Smart Assist Report</span>
+                </div>
+                <div class="menu-item {% if active_tab == 'comparison' %}active{% endif %}" onclick="switchTab('comparison')">
+                    <span class="menu-item-icon">4.</span>
+                    <span>Comparison Tool</span>
+                </div>
                 <div class="menu-item {% if active_tab == 'insurance' %}active{% endif %}" onclick="switchTab('insurance')">
-                    <span class="menu-item-icon">🦷</span>
+                    <span class="menu-item-icon">5.</span>
                     <span>Insurance Formatting</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'remarks' %}active{% endif %}" onclick="switchTab('remarks')">
-                    <span class="menu-item-icon">📝</span>
+                    <span class="menu-item-icon">6.</span>
                     <span>Update Remarks</span>
                 </div>
-                <div class="menu-item {% if active_tab == 'appointment' %}active{% endif %}" onclick="switchTab('appointment')">
-                    <span class="menu-item-icon">📅</span>
-                    <span>Appointment Report</span>
-                </div>
-                <div class="menu-item {% if active_tab == 'smartassist' %}active{% endif %}" onclick="switchTab('smartassist')">
-                    <span class="menu-item-icon">🤖</span>
-                    <span>Smart Assist Report</span>
-                </div>
-                <!-- <div class="menu-item {% if active_tab == 'consolidate' %}active{% endif %}" onclick="switchTab('consolidate')">
-                    <span class="menu-item-icon">📊</span>
-                    <span>Consolidate Report</span>
-                </div> -->
                 <div class="menu-item {% if active_tab == 'reallocation' %}active{% endif %}" onclick="switchTab('reallocation')">
-                    <span class="menu-item-icon">♻️</span>
+                    <span class="menu-item-icon">7.</span>
                     <span>Generate Reallocation Data</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'general' %}active{% endif %}" onclick="switchTab('general')">
-                    <span class="menu-item-icon">🧭</span>
+                    <span class="menu-item-icon">8.</span>
                     <span>General Comparison</span>
                 </div>
             </nav>
