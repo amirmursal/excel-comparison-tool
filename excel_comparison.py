@@ -705,21 +705,21 @@ HTML_TEMPLATE = """
                     <span class="menu-item-icon">4.</span>
                     <span>Comparison Tool</span>
                 </div>
-                <div class="menu-item {% if active_tab == 'insurance' %}active{% endif %}" onclick="switchTab('insurance')">
+                <div class="menu-item {% if active_tab == 'general' %}active{% endif %}" onclick="switchTab('general')">
                     <span class="menu-item-icon">5.</span>
-                    <span>Insurance Formatting</span>
+                    <span>General Comparison</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'remarks' %}active{% endif %}" onclick="switchTab('remarks')">
                     <span class="menu-item-icon">6.</span>
                     <span>Update Remarks</span>
                 </div>
-                <div class="menu-item {% if active_tab == 'reallocation' %}active{% endif %}" onclick="switchTab('reallocation')">
+                <div class="menu-item {% if active_tab == 'insurance' %}active{% endif %}" onclick="switchTab('insurance')">
                     <span class="menu-item-icon">7.</span>
-                    <span>Generate Reallocation Data</span>
+                    <span>Insurance Formatting</span>
                 </div>
-                <div class="menu-item {% if active_tab == 'general' %}active{% endif %}" onclick="switchTab('general')">
+                <div class="menu-item {% if active_tab == 'reallocation' %}active{% endif %}" onclick="switchTab('reallocation')">
                     <span class="menu-item-icon">8.</span>
-                    <span>General Comparison</span>
+                    <span>Generate Reallocation Data</span>
                 </div>
             </nav>
         </div>
@@ -1964,7 +1964,7 @@ HTML_TEMPLATE = """
             const menuItems = document.querySelectorAll('.menu-item');
             menuItems.forEach(item => {
                 const itemText = item.textContent.toLowerCase();
-                if ((tabName === 'comparison' && itemText.includes('comparison')) ||
+                if ((tabName === 'comparison' && itemText.includes('comparison tool') && !itemText.includes('general')) ||
                     (tabName === 'conversion' && itemText.includes('conversion')) ||
                     (tabName === 'insurance' && itemText.includes('insurance')) ||
                     (tabName === 'remarks' && itemText.includes('remarks')) ||
@@ -5365,18 +5365,17 @@ def upload_appointment_report():
         else:
             output_lines.append(f"   ℹ️  No rows with Patient ID = 0 found, skipping 'Zero ID' sheet creation")
         
-        # Create "No Ins" sheet with rows where "Dental Primary Ins Carr" is blank, then remove from main sheets
+        # Set "No insurance" for rows where "Dental Primary Ins Carr" is blank (keep in main sheet)
         output_lines.append("")
         output_lines.append("=" * 70)
-        output_lines.append("CREATING 'NO INS' SHEET")
+        output_lines.append("SETTING 'NO INSURANCE' FOR BLANK ROWS")
         output_lines.append("=" * 70)
         
-        no_ins_rows = []
         total_no_ins_rows = 0
         
         for sheet_name, df_sheet in processed_sheets.items():
             # Skip special sheets
-            if sheet_name == "Zero ID" or sheet_name == "No Ins":
+            if sheet_name == "Zero ID":
                 continue
                 
             # Find "Dental Primary Ins Carr" column in this sheet (case-insensitive)
@@ -5392,7 +5391,7 @@ def upload_appointment_report():
                     break
             
             if primary_ins_col:
-                # Filter rows where "Dental Primary Ins Carr" is blank/empty
+                # Find rows where "Dental Primary Ins Carr" is blank/empty
                 # Check for: NaN, empty string, whitespace-only strings
                 def is_blank_insurance(val):
                     if pd.isna(val):
@@ -5401,29 +5400,21 @@ def upload_appointment_report():
                     return str_val == "" or str_val.lower() in ["none", "n/a", "na", "null"]
                 
                 no_ins_mask = df_sheet[primary_ins_col].apply(is_blank_insurance)
-                no_ins_df = df_sheet[no_ins_mask].copy()
+                no_ins_count = no_ins_mask.sum()
                 
-                if len(no_ins_df) > 0:
-                    no_ins_rows.append(no_ins_df)
-                    total_no_ins_rows += len(no_ins_df)
-                    output_lines.append(f"   Found {len(no_ins_df)} row(s) with blank 'Dental Primary Ins Carr' in sheet '{sheet_name}'")
-                    
-                    # Remove no insurance rows from the main sheet
-                    df_sheet_cleaned = df_sheet[~no_ins_mask].copy()
-                    processed_sheets[sheet_name] = df_sheet_cleaned
-                    rows_removed = len(df_sheet) - len(df_sheet_cleaned)
-                    output_lines.append(f"   ✅ Removed {rows_removed} row(s) from sheet '{sheet_name}'")
+                if no_ins_count > 0:
+                    # Set "No insurance" for blank rows (keep them in main sheet)
+                    df_sheet.loc[no_ins_mask, primary_ins_col] = "No insurance"
+                    processed_sheets[sheet_name] = df_sheet
+                    total_no_ins_rows += no_ins_count
+                    output_lines.append(f"   ✅ Set 'No insurance' for {no_ins_count} row(s) with blank 'Dental Primary Ins Carr' in sheet '{sheet_name}'")
             else:
                 output_lines.append(f"   ⚠️  'Dental Primary Ins Carr' column not found in sheet '{sheet_name}', skipping")
         
-        # Create "No Ins" sheet if we found any rows
-        if no_ins_rows:
-            # Combine all no insurance rows from all sheets
-            no_ins_combined = pd.concat(no_ins_rows, ignore_index=True)
-            processed_sheets["No Ins"] = no_ins_combined
-            output_lines.append(f"   ✅ Created 'No Ins' sheet with {len(no_ins_combined)} total row(s)")
+        if total_no_ins_rows > 0:
+            output_lines.append(f"   ✅ Total rows updated with 'No insurance': {total_no_ins_rows}")
         else:
-            output_lines.append(f"   ℹ️  No rows with blank 'Dental Primary Ins Carr' found, skipping 'No Ins' sheet creation")
+            output_lines.append(f"   ℹ️  No rows with blank 'Dental Primary Ins Carr' found")
         
         output_lines.append("")
         output_lines.append("=" * 70)
