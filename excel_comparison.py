@@ -21,6 +21,13 @@ raw_filename = None
 previous_filename = None
 comparison_result = None
 
+# Global variables for file merging (Comparison Tool)
+merge_file1_data = None
+merge_file2_data = None
+merge_file1_filename = None
+merge_file2_filename = None
+merge_result = None
+
 # Global variables for conversion report
 conversion_data = None
 conversion_filename = None
@@ -760,90 +767,123 @@ HTML_TEMPLATE = """
             <div id="comparison-tab" class="tab-content {% if active_tab == 'comparison' %}active{% endif %}">
                 <div class="section">
                     <h3>🔄 Comparison Tool</h3>
-                    <p>Compare Patient ID from Appointment Report with PATID from Smart Assist file. When matched, insurance columns will be added to the Smart Assist file.</p>
+                    <p>Step 1: Merge two files to create Appointment Report. Step 2: Upload Smart Assist file. Step 3: Compare and add insurance columns.</p>
                 </div>
 
-            <!-- File Upload Section -->
-            <div class="section">
-                <h3>📁 Upload Excel Files</h3>
+            <!-- STEP 1: Merge Files Section -->
+            <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                <h3>📋 STEP 1: Merge Files to Create Appointment Report</h3>
+                <p style="margin-bottom: 15px;">Upload two files that will be merged by matching columns (e.g., "PAT ID" will match "Patient ID").</p>
+                
                 <div class="two-column">
                     <div>
-                        <h4>Appointment Report File</h4>
-                        <form action="/upload_raw" method="post" enctype="multipart/form-data" id="raw-form">
+                        <h4>File 1</h4>
+                        <form action="/upload_merge_file1" method="post" enctype="multipart/form-data" id="merge-file1-form">
                             <div class="form-group">
-                                <label for="raw_file">Select Appointment Report Excel File:</label>
-                                <input type="file" id="raw_file" name="file" accept=".xlsx,.xls" required>
+                                <label for="merge_file1">Select File 1:</label>
+                                <input type="file" id="merge_file1" name="file" accept=".xlsx,.xls" required>
                             </div>
-                            <button type="submit" id="raw-btn">📤 Upload Appointment Report</button>
+                            <button type="submit" id="merge-file1-btn" {% if merge_file1_filename %}style="background: #28a745;"{% endif %}>
+                                {% if merge_file1_filename %}✅ File 1 Uploaded{% else %}📤 Upload File 1{% endif %}
+                            </button>
                         </form>
-                        <div class="loading" id="raw-loading">
+                        <div class="loading" id="merge-file1-loading">
                             <div class="spinner"></div>
-                            <p>Processing Appointment Report...</p>
+                            <p>Processing File 1...</p>
                         </div>
+                        {% if merge_file1_filename %}
+                        <div class="status-success" style="margin-top: 10px;">
+                            ✅ {{ merge_file1_filename }}<br>
+                            📋 {{ merge_file1_data.keys() | list | length if merge_file1_data else 0 }} sheet(s)
+                        </div>
+                        {% endif %}
                     </div>
                     
                     <div>
-                        <h4>Smart Assist File</h4>
-                        <form action="/upload_previous" method="post" enctype="multipart/form-data" id="previous-form">
+                        <h4>File 2</h4>
+                        <form action="/upload_merge_file2" method="post" enctype="multipart/form-data" id="merge-file2-form">
                             <div class="form-group">
-                                <label for="previous_file">Select Smart Assist Excel File:</label>
-                                <input type="file" id="previous_file" name="file" accept=".xlsx,.xls" required>
+                                <label for="merge_file2">Select File 2:</label>
+                                <input type="file" id="merge_file2" name="file" accept=".xlsx,.xls" required>
                             </div>
-                            <button type="submit" id="previous-btn">📤 Upload Smart Assist File</button>
+                            <button type="submit" id="merge-file2-btn" {% if merge_file2_filename %}style="background: #28a745;"{% endif %}>
+                                {% if merge_file2_filename %}✅ File 2 Uploaded{% else %}📤 Upload File 2{% endif %}
+                            </button>
                         </form>
-                        <div class="loading" id="previous-loading">
+                        <div class="loading" id="merge-file2-loading">
                             <div class="spinner"></div>
-                            <p>Processing Smart Assist file...</p>
+                            <p>Processing File 2...</p>
                         </div>
+                        {% if merge_file2_filename %}
+                        <div class="status-success" style="margin-top: 10px;">
+                            ✅ {{ merge_file2_filename }}<br>
+                            📋 {{ merge_file2_data.keys() | list | length if merge_file2_data else 0 }} sheet(s)
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
-            </div>
-
-            <!-- Status Messages -->
-            {% if comparison_result %}
-            <div class="section">
-                <h3>📢 Status Messages</h3>
-                <div class="status-message">
-                    {{ comparison_result | safe }}
+                
+                {% if merge_file1_filename and merge_file2_filename %}
+                <div style="margin-top: 20px; text-align: center;">
+                    <form action="/merge_files" method="post" id="merge-form">
+                        <button type="submit" id="merge-btn" style="background: #667eea; color: white; padding: 12px 30px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer;">
+                            🔗 Merge Files → Create Merged Appointment Report
+                        </button>
+                    </form>
+                    <div class="loading" id="merge-loading">
+                        <div class="spinner"></div>
+                        <p>Merging files...</p>
+                    </div>
                 </div>
-            </div>
-            {% endif %}
-
-            <!-- File Status -->
-            <div class="section">
-                <h3>📊 File Status</h3>
-                <div class="file-status">
-                    {% if raw_filename %}
-                        <div class="status-success">
-                            ✅ Appointment Report: {{ raw_filename }}<br>
-                            📋 Sheets: {{ raw_data.keys() | list | length if raw_data else 0 }}
-                        </div>
-                    {% else %}
-                        <div class="status-info">
-                            ℹ️ No Appointment Report file uploaded yet.
-                        </div>
-                    {% endif %}
-                    
-                    {% if previous_filename %}
-                        <div class="status-success">
-                            ✅ Smart Assist File: {{ previous_filename }}<br>
-                            📋 Sheets: {{ previous_data.keys() | list | length if previous_data else 0 }}
-                        </div>
-                    {% else %}
-                        <div class="status-info">
-                            ℹ️ No Smart Assist file uploaded yet.
-                        </div>
-                    {% endif %}
+                {% endif %}
+                
+                {% if merge_result %}
+                <div class="status-message" style="margin-top: 15px;">
+                    {{ merge_result | safe }}
                 </div>
+                {% endif %}
             </div>
 
-            <!-- Comparison Section -->
-            {% if raw_data and previous_data %}
-            <div class="section">
-                <h3>🔄 Compare Files</h3>
+            <!-- STEP 2: Upload Smart Assist File Section -->
+            <div class="section" style="border: 2px solid {% if raw_data %}#28a745{% else %}#ffc107{% endif %}; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: {% if raw_data %}#f0fff4{% else %}#fffbf0{% endif %};">
+                <h3>📁 STEP 2: Upload Smart Assist File</h3>
+                <p style="margin-bottom: 15px;">Upload the Smart Assist file that will be compared with the Merged Appointment Report.</p>
+                
+                <form action="/upload_previous" method="post" enctype="multipart/form-data" id="previous-form">
+                    <div class="form-group">
+                        <label for="previous_file">Select Smart Assist Excel File:</label>
+                        <input type="file" id="previous_file" name="file" accept=".xlsx,.xls" required {% if not raw_data %}disabled{% endif %}>
+                    </div>
+                    <button type="submit" id="previous-btn" {% if not raw_data %}disabled style="background: #ccc; cursor: not-allowed;"{% endif %}>
+                        📤 Upload Smart Assist File
+                    </button>
+                </form>
+                <div class="loading" id="previous-loading">
+                    <div class="spinner"></div>
+                    <p>Processing Smart Assist file...</p>
+                </div>
+                
+                {% if previous_filename %}
+                <div class="status-success" style="margin-top: 10px;">
+                    ✅ {{ previous_filename }}<br>
+                    📋 {{ previous_data.keys() | list | length if previous_data else 0 }} sheet(s)
+                </div>
+                {% elif not raw_data %}
+                <div class="status-info" style="margin-top: 10px;">
+                    ⏳ Please complete Step 1 first (merge files to create Appointment Report)
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- STEP 3: Compare Section -->
+            <div class="section" style="border: 2px solid {% if raw_data and previous_data %}#28a745{% else %}#6c757d{% endif %}; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: {% if raw_data and previous_data %}#f0fff4{% else %}#f8f9fa{% endif %};">
+                <h3>🔄 STEP 3: Compare Files</h3>
+                <p style="margin-bottom: 15px;">Compare Patient ID from Merged Appointment Report with Patient ID from Smart Assist file. When matched, insurance columns will be added to the Smart Assist file.</p>
+                
+                {% if raw_data and previous_data %}
                 <form action="/compare" method="post" id="compare-form">
                     <div class="form-group">
-                        <label for="raw_sheet">Select Raw File Sheet:</label>
+                        <label for="raw_sheet">Select Merged Appointment Report Sheet:</label>
                         <select id="raw_sheet" name="raw_sheet" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                             {% for sheet_name in raw_data.keys() %}
                                 <option value="{{ sheet_name }}">{{ sheet_name }}</option>
@@ -851,7 +891,7 @@ HTML_TEMPLATE = """
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="previous_sheet">Select Previous File Sheet:</label>
+                        <label for="previous_sheet">Select Smart Assist File Sheet:</label>
                         <select id="previous_sheet" name="previous_sheet" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                             {% for sheet_name in previous_data.keys() %}
                                 <option value="{{ sheet_name }}">{{ sheet_name }}</option>
@@ -863,6 +903,24 @@ HTML_TEMPLATE = """
                 <div class="loading" id="compare-loading">
                     <div class="spinner"></div>
                     <p>Comparing files...</p>
+                </div>
+                {% else %}
+                <div class="status-info">
+                    {% if not raw_data %}
+                        ⏳ Please complete Step 1 first (merge files to create Appointment Report)
+                    {% elif not previous_data %}
+                        ⏳ Please complete Step 2 first (upload Smart Assist file)
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Status Messages -->
+            {% if comparison_result %}
+            <div class="section">
+                <h3>📢 Status Messages</h3>
+                <div class="status-message">
+                    {{ comparison_result | safe }}
                 </div>
             </div>
             {% endif %}
@@ -1892,7 +1950,7 @@ HTML_TEMPLATE = """
 
             <!-- Footer -->
             <div class="footer">
-                <p>© 2025 Excel Automation Tools | Built with ❤️ for efficiency</p>
+                <p>© 2026 Excel Automation Tools | Built with ❤️ for efficiency</p>
             </div>
         </div> <!-- End main-content -->
     </div> <!-- End app-container -->
@@ -2017,6 +2075,33 @@ HTML_TEMPLATE = """
             }
         }
         // Form submission with processing modal
+        const mergeFile1Form = document.getElementById('merge-file1-form');
+        if (mergeFile1Form) {
+            mergeFile1Form.addEventListener('submit', function() {
+                showProcessingModal('Uploading File 1', 'Processing File 1...');
+                const btn = document.getElementById('merge-file1-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mergeFile2Form = document.getElementById('merge-file2-form');
+        if (mergeFile2Form) {
+            mergeFile2Form.addEventListener('submit', function() {
+                showProcessingModal('Uploading File 2', 'Processing File 2...');
+                const btn = document.getElementById('merge-file2-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mergeForm = document.getElementById('merge-form');
+        if (mergeForm) {
+            mergeForm.addEventListener('submit', function() {
+                showProcessingModal('Merging Files', 'Matching columns and merging data from both files...');
+                const btn = document.getElementById('merge-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
         const rawForm = document.getElementById('raw-form');
         if (rawForm) {
             rawForm.addEventListener('submit', function() {
@@ -2908,6 +2993,7 @@ def root():
 @app.route("/comparison")
 def comparison_index():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
+    global merge_file1_data, merge_file2_data, merge_file1_filename, merge_file2_filename, merge_result
     global conversion_data, conversion_filename, conversion_result
     global insurance_formatting_data, insurance_formatting_filename, insurance_formatting_result, insurance_formatting_output
     global remarks_appointments_data, remarks_excel_data, remarks_appointments_filename, remarks_remarks_filename, remarks_result, remarks_updated_count
@@ -2927,6 +3013,11 @@ def comparison_index():
         raw_filename=raw_filename,
         previous_filename=previous_filename,
         comparison_result=comparison_result,
+        merge_file1_data=merge_file1_data,
+        merge_file2_data=merge_file2_data,
+        merge_file1_filename=merge_file1_filename,
+        merge_file2_filename=merge_file2_filename,
+        merge_result=merge_result,
         conversion_data=conversion_data,
         conversion_filename=conversion_filename,
         conversion_result=conversion_result,
@@ -2974,6 +3065,242 @@ def comparison_index():
         general_comparison_updated_data=general_comparison_updated_data,
         active_tab=active_tab,
     )
+
+
+def normalize_column_name(col_name):
+    """Normalize column names for flexible matching (e.g., 'PAT ID' = 'Patient ID')"""
+    if pd.isna(col_name):
+        return ""
+    col_str = str(col_name).strip().lower()
+    # Remove extra spaces and special characters
+    col_str = re.sub(r"\s+", " ", col_str)
+    # Common variations
+    col_str = col_str.replace("pat id", "patient id")
+    col_str = col_str.replace("patid", "patient id")
+    col_str = col_str.replace("pid", "patient id")
+    return col_str
+
+
+def find_matching_column(col_name, target_columns):
+    """Find a matching column in target_columns using flexible matching"""
+    normalized_col = normalize_column_name(col_name)
+    for target_col in target_columns:
+        normalized_target = normalize_column_name(target_col)
+        if normalized_col == normalized_target:
+            return target_col
+    return None
+
+
+def merge_dataframes_by_columns(df1, df2):
+    """Merge two dataframes by matching columns flexibly"""
+    if df1.empty and df2.empty:
+        return pd.DataFrame()
+    if df1.empty:
+        return df2.copy()
+    if df2.empty:
+        return df1.copy()
+
+    # Create a mapping of df1 columns to df2 columns
+    column_mapping = {}
+    df1_cols = list(df1.columns)
+    df2_cols = list(df2.columns)
+
+    # Find matching columns
+    for col1 in df1_cols:
+        matching_col = find_matching_column(col1, df2_cols)
+        if matching_col:
+            column_mapping[col1] = matching_col
+
+    # Rename df2 columns to match df1 columns where there's a match
+    df2_renamed = df2.copy()
+    rename_dict = {}
+    for col1, col2 in column_mapping.items():
+        if col2 in df2_renamed.columns:
+            rename_dict[col2] = col1
+
+    df2_renamed = df2_renamed.rename(columns=rename_dict)
+
+    # Get all unique columns from both dataframes
+    all_columns = list(set(df1.columns.tolist() + df2_renamed.columns.tolist()))
+
+    # Ensure both dataframes have all columns (fill missing with NaN)
+    for col in all_columns:
+        if col not in df1.columns:
+            df1[col] = None
+        if col not in df2_renamed.columns:
+            df2_renamed[col] = None
+
+    # Reorder columns to match df1's order, then add any extra columns from df2
+    ordered_cols = list(df1.columns) + [
+        col for col in df2_renamed.columns if col not in df1.columns
+    ]
+    df1 = df1[ordered_cols]
+    df2_renamed = df2_renamed[ordered_cols]
+
+    # Concatenate the dataframes
+    merged_df = pd.concat([df1, df2_renamed], ignore_index=True)
+
+    return merged_df
+
+
+@app.route("/upload_merge_file1", methods=["POST"])
+def upload_merge_file1():
+    global merge_file1_data, merge_file1_filename, merge_result
+
+    if "file" not in request.files:
+        merge_result = "❌ Error: No file provided"
+        return redirect("/comparison?tab=comparison")
+
+    file = request.files["file"]
+    if file.filename == "":
+        merge_result = "❌ Error: No file selected"
+        return redirect("/comparison?tab=comparison")
+
+    try:
+        filename = secure_filename(file.filename)
+        file.seek(0)
+        merge_file1_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+
+        # Remove "Unnamed:" columns from all sheets
+        cleaned_data = {}
+        for sheet_name, df in merge_file1_data.items():
+            df.columns = df.columns.astype(str)
+            df_cleaned = df.loc[
+                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+            ]
+            cleaned_data[sheet_name] = df_cleaned
+        merge_file1_data = cleaned_data
+
+        merge_file1_filename = filename
+        merge_result = f"✅ File 1 uploaded successfully! Loaded {len(merge_file1_data)} sheets: {', '.join(list(merge_file1_data.keys()))}"
+        return redirect("/comparison?tab=comparison")
+
+    except Exception as e:
+        merge_result = f"❌ Error uploading File 1: {str(e)}"
+        return redirect("/comparison?tab=comparison")
+
+
+@app.route("/upload_merge_file2", methods=["POST"])
+def upload_merge_file2():
+    global merge_file2_data, merge_file2_filename, merge_result
+
+    if "file" not in request.files:
+        merge_result = "❌ Error: No file provided"
+        return redirect("/comparison?tab=comparison")
+
+    file = request.files["file"]
+    if file.filename == "":
+        merge_result = "❌ Error: No file selected"
+        return redirect("/comparison?tab=comparison")
+
+    try:
+        filename = secure_filename(file.filename)
+        file.seek(0)
+        merge_file2_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+
+        # Remove "Unnamed:" columns from all sheets
+        cleaned_data = {}
+        for sheet_name, df in merge_file2_data.items():
+            df.columns = df.columns.astype(str)
+            df_cleaned = df.loc[
+                :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+            ]
+            cleaned_data[sheet_name] = df_cleaned
+        merge_file2_data = cleaned_data
+
+        merge_file2_filename = filename
+        merge_result = f"✅ File 2 uploaded successfully! Loaded {len(merge_file2_data)} sheets: {', '.join(list(merge_file2_data.keys()))}"
+        return redirect("/comparison?tab=comparison")
+
+    except Exception as e:
+        merge_result = f"❌ Error uploading File 2: {str(e)}"
+        return redirect("/comparison?tab=comparison")
+
+
+@app.route("/merge_files", methods=["POST"])
+def merge_files():
+    global merge_file1_data, merge_file2_data, raw_data, raw_filename, merge_result
+
+    if not merge_file1_data or not merge_file2_data:
+        merge_result = "❌ Error: Please upload both files first"
+        return redirect("/comparison?tab=comparison")
+
+    try:
+        merged_sheets = {}
+        merge_summary = []
+
+        # Separate Zero ID sheets from other sheets
+        zero_id_sheets = []
+        other_sheets = []
+
+        # Get all unique sheet names from both files
+        all_sheet_names = set(
+            list(merge_file1_data.keys()) + list(merge_file2_data.keys())
+        )
+
+        for sheet_name in all_sheet_names:
+            if sheet_name.lower().strip() == "zero id":
+                zero_id_sheets.append(sheet_name)
+            else:
+                other_sheets.append(sheet_name)
+
+        # Merge all non-Zero ID sheets into one single dataframe
+        all_merged_dataframes = []
+        total_rows_before = 0
+
+        for sheet_name in other_sheets:
+            df1 = merge_file1_data.get(sheet_name, pd.DataFrame())
+            df2 = merge_file2_data.get(sheet_name, pd.DataFrame())
+
+            # Merge the dataframes by matching columns
+            merged_df = merge_dataframes_by_columns(df1, df2)
+
+            if not merged_df.empty:
+                all_merged_dataframes.append(merged_df)
+                rows_before = len(df1) + len(df2)
+                total_rows_before += rows_before
+                merge_summary.append(
+                    f"Sheet '{sheet_name}': {len(df1)} + {len(df2)} rows"
+                )
+
+        # Combine all merged dataframes into one
+        if all_merged_dataframes:
+            main_merged_df = pd.concat(all_merged_dataframes, ignore_index=True)
+            merged_sheets["Merged Data"] = main_merged_df
+            merge_summary.append(
+                f"\nTotal merged: {total_rows_before} rows → {len(main_merged_df)} rows in single 'Merged Data' sheet"
+            )
+        else:
+            merged_sheets["Merged Data"] = pd.DataFrame()
+            merge_summary.append("No data to merge (all sheets were empty)")
+
+        # Handle Zero ID sheets separately (keep them as separate sheets)
+        for sheet_name in zero_id_sheets:
+            df1 = merge_file1_data.get(sheet_name, pd.DataFrame())
+            df2 = merge_file2_data.get(sheet_name, pd.DataFrame())
+
+            # Merge Zero ID sheets together
+            merged_zero_id = merge_dataframes_by_columns(df1, df2)
+            merged_sheets[sheet_name] = merged_zero_id
+
+            rows_before = len(df1) + len(df2)
+            rows_after = len(merged_zero_id)
+            merge_summary.append(
+                f"Sheet '{sheet_name}': {len(df1)} + {len(df2)} rows → {rows_after} rows (kept separate)"
+            )
+
+        # Store merged result as raw_data (Appointment Report)
+        raw_data = merged_sheets
+        raw_filename = f"Merged Appointment Report ({merge_file1_filename} + {merge_file2_filename})"
+
+        summary_text = "\n".join(merge_summary)
+        merge_result = f"✅ Files merged successfully! Merged Appointment Report created with {len(merged_sheets)} sheet(s).\n\n{summary_text}"
+
+        return redirect("/comparison?tab=comparison")
+
+    except Exception as e:
+        merge_result = f"❌ Error merging files: {str(e)}"
+        return redirect("/comparison?tab=comparison")
 
 
 @app.route("/upload_raw", methods=["POST"])
@@ -3117,59 +3444,202 @@ def download_result():
         temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
 
         try:
-            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
-                for sheet_name, df in previous_data.items():
-                    df_clean = df.copy()
-
-                    # Format "Appt Date" column to MM/DD/YYYY format (flexible column name search)
-                    appt_date_col = None
+            # Process data: Extract "No insurance" rows and remove from main sheets
+            processed_data = {}
+            no_ins_rows_list = []
+            
+            for sheet_name, df in previous_data.items():
+                # Skip "NO INS" sheet if it already exists (to avoid processing it)
+                if sheet_name == "NO INS":
+                    continue
+                    
+                df_clean = df.copy()
+                
+                # Find "Dental Primary Ins Carr" column (case-insensitive, flexible matching)
+                primary_ins_col = None
+                for col in df_clean.columns:
+                    col_lower = str(col).lower().strip()
+                    # Match variations: "Dental Primary Ins Carr", "Dental Primary Insurance Carrier", etc.
+                    if (
+                        "dental" in col_lower
+                        and "primary" in col_lower
+                        and ("ins" in col_lower or "insurance" in col_lower)
+                        and ("carr" in col_lower or "carrier" in col_lower)
+                    ):
+                        primary_ins_col = col
+                        break
+                
+                # Fallback: if exact match not found, try simpler pattern
+                if not primary_ins_col:
                     for col in df_clean.columns:
+                        col_lower = str(col).lower().strip()
+                        if (
+                            "dental" in col_lower
+                            and "primary" in col_lower
+                            and ("ins" in col_lower or "insurance" in col_lower)
+                        ):
+                            primary_ins_col = col
+                            break
+                
+                # Last resort: look for any column with "primary" and "insurance"
+                if not primary_ins_col:
+                    for col in df_clean.columns:
+                        col_lower = str(col).lower().strip()
+                        if "primary" in col_lower and ("ins" in col_lower or "insurance" in col_lower):
+                            primary_ins_col = col
+                            break
+                
+                # Extract rows with "No insurance" in "Dental Primary Ins Carr"
+                if primary_ins_col:
+                    def is_no_insurance(val):
+                        if pd.isna(val):
+                            return False
+                        val_str = str(val).strip()
+                        # Case-insensitive matching for variations: "No insurance", "No Insurance", "NO INSURANCE", etc.
+                        val_lower = val_str.lower()
+                        # Check for exact matches or common variations
+                        return (
+                            val_lower == "no insurance" or 
+                            val_lower == "no ins" or
+                            val_lower == "noinsurance" or
+                            val_lower == "noins" or
+                            val_lower.startswith("no insurance") or
+                            val_lower.startswith("no ins")
+                        )
+                    
+                    no_ins_mask = df_clean[primary_ins_col].apply(is_no_insurance)
+                    no_ins_df = df_clean[no_ins_mask].copy()
+                    
+                    if len(no_ins_df) > 0:
+                        no_ins_rows_list.append(no_ins_df)
+                    
+                    # Remove "No insurance" rows from main sheet
+                    df_clean = df_clean[~no_ins_mask].copy()
+                
+                processed_data[sheet_name] = df_clean
+            
+            # Create "NO INS" sheet from collected rows
+            if no_ins_rows_list:
+                no_ins_combined = pd.concat(no_ins_rows_list, ignore_index=True)
+                if len(no_ins_combined) > 0:
+                    processed_data["NO INS"] = no_ins_combined
+            
+            # Write processed data to Excel
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                # Collect main sheets (not special sheets) to combine into "Today"
+                main_sheets_data = []
+                special_sheets = ["NO INS", "Zero ID", "zero id"]
+                
+                for sheet_name, df_clean in processed_data.items():
+                    # Skip special sheets - they will be written separately
+                    if sheet_name in special_sheets or sheet_name.lower() in [s.lower() for s in special_sheets]:
+                        continue
+                    
+                    # Collect main sheet data
+                    main_sheets_data.append((sheet_name, df_clean))
+                
+                # Write "Today" sheet (combine all main sheets)
+                if main_sheets_data:
+                    # Combine all main sheets into one
+                    today_dataframes = []
+                    for sheet_name, df_clean in main_sheets_data:
+                        if not df_clean.empty:
+                            today_dataframes.append(df_clean)
+                    
+                    if today_dataframes:
+                        today_df = pd.concat(today_dataframes, ignore_index=True)
+                    else:
+                        # If all main sheets are empty, create empty dataframe with columns from first sheet
+                        today_df = main_sheets_data[0][1] if main_sheets_data else pd.DataFrame()
+                    
+                    # Format "Appt Date" column to MM/DD/YYYY format
+                    appt_date_col = None
+                    for col in today_df.columns:
                         col_lower = (
                             col.lower().strip().replace(" ", "").replace("_", "")
                         )
-                        # Check for variations: "appt date", "appointment date", "apptdate", etc.
                         if "appt" in col_lower and "date" in col_lower:
                             appt_date_col = col
                             break
 
                     if appt_date_col:
-                        # Convert dates to MM/DD/YYYY format
                         def format_date(date_val):
                             if pd.isna(date_val) or date_val == "":
                                 return ""
                             try:
-                                # Convert to datetime if not already
                                 if isinstance(date_val, pd.Timestamp):
                                     date_obj = date_val
                                 elif isinstance(date_val, str):
-                                    # Try to parse string date
                                     date_obj = pd.to_datetime(date_val, errors="coerce")
                                     if pd.isna(date_obj):
-                                        return str(
-                                            date_val
-                                        )  # Return original if can't parse
+                                        return str(date_val)
                                 else:
                                     date_obj = pd.to_datetime(date_val, errors="coerce")
                                     if pd.isna(date_obj):
-                                        return str(
-                                            date_val
-                                        )  # Return original if can't parse
-
-                                # Format as MM/DD/YYYY
+                                        return str(date_val)
                                 return date_obj.strftime("%m/%d/%Y")
                             except (ValueError, TypeError, AttributeError):
-                                # If parsing fails, return as-is
                                 return str(date_val)
 
-                        # Format dates and convert column to string type to prevent Excel auto-formatting
-                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(
-                            format_date
+                        today_df[appt_date_col] = today_df[appt_date_col].apply(format_date)
+                        today_df[appt_date_col] = today_df[appt_date_col].astype(str)
+
+                    today_df.to_excel(writer, sheet_name="Today", index=False)
+
+                    # Set date column format to text in Excel
+                    if appt_date_col:
+                        ws = writer.sheets["Today"]
+                        col_idx = None
+                        for idx, col_name in enumerate(today_df.columns, 1):
+                            if col_name == appt_date_col:
+                                col_idx = idx
+                                break
+                        if col_idx:
+                            for row in range(2, ws.max_row + 1):
+                                cell = ws.cell(row=row, column=col_idx)
+                                if cell.value:
+                                    cell.number_format = "@"
+                
+                # Write special sheets (NO INS, Zero ID, etc.)
+                for sheet_name, df_clean in processed_data.items():
+                    if sheet_name not in special_sheets and sheet_name.lower() not in [s.lower() for s in special_sheets]:
+                        continue  # Already written as "Today"
+                    
+                    # Format "Appt Date" column to MM/DD/YYYY format
+                    appt_date_col = None
+                    for col in df_clean.columns:
+                        col_lower = (
+                            col.lower().strip().replace(" ", "").replace("_", "")
                         )
+                        if "appt" in col_lower and "date" in col_lower:
+                            appt_date_col = col
+                            break
+
+                    if appt_date_col:
+                        def format_date(date_val):
+                            if pd.isna(date_val) or date_val == "":
+                                return ""
+                            try:
+                                if isinstance(date_val, pd.Timestamp):
+                                    date_obj = date_val
+                                elif isinstance(date_val, str):
+                                    date_obj = pd.to_datetime(date_val, errors="coerce")
+                                    if pd.isna(date_obj):
+                                        return str(date_val)
+                                else:
+                                    date_obj = pd.to_datetime(date_val, errors="coerce")
+                                    if pd.isna(date_obj):
+                                        return str(date_val)
+                                return date_obj.strftime("%m/%d/%Y")
+                            except (ValueError, TypeError, AttributeError):
+                                return str(date_val)
+
+                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(format_date)
                         df_clean[appt_date_col] = df_clean[appt_date_col].astype(str)
 
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
 
-                    # Set date column format to text in Excel to preserve MM/DD/YYYY format
+                    # Set date column format to text in Excel
                     if appt_date_col:
                         ws = writer.sheets[sheet_name]
 
@@ -3218,7 +3688,9 @@ def upload_conversion_file():
 
         # Read Excel file directly from memory WITHOUT headers (we'll find header row)
         file.seek(0)  # Reset file pointer to beginning
-        conversion_data = pd.read_excel(file, sheet_name=None, engine="openpyxl", header=None)
+        conversion_data = pd.read_excel(
+            file, sheet_name=None, engine="openpyxl", header=None
+        )
         conversion_filename = filename
 
         # Step 1: Find header row, set it as column names, then remove first 4 data rows and last 9 rows
@@ -3226,7 +3698,7 @@ def upload_conversion_file():
         for sheet_name, df in conversion_data.items():
             # Convert all column names to strings (they'll be 0, 1, 2, etc. since header=None)
             df.columns = [str(i) for i in range(len(df.columns))]
-            
+
             # Find the header row by looking for "Insurance Note" column
             header_row_index = None
             for idx in range(min(10, len(df))):
@@ -3234,31 +3706,35 @@ def upload_conversion_file():
                 for col_idx in df.columns:
                     val = df.iloc[idx][col_idx]
                     row_values.append(str(val).lower().strip() if pd.notna(val) else "")
-                
+
                 # Check if this row contains "insurance note"
                 if "insurance note" in row_values:
                     header_row_index = idx
                     break
-            
+
             if header_row_index is not None:
                 # Set the header row as column names
                 new_columns = []
                 for col_idx in df.columns:
                     val = df.iloc[header_row_index][col_idx]
-                    col_name = str(val).strip() if pd.notna(val) and str(val).strip() != "" else f"Unnamed_{col_idx}"
+                    col_name = (
+                        str(val).strip()
+                        if pd.notna(val) and str(val).strip() != ""
+                        else f"Unnamed_{col_idx}"
+                    )
                     new_columns.append(col_name)
                 df.columns = new_columns
-                
+
                 # Remove all rows up to and including the header row
-                df = df.iloc[header_row_index + 1:].reset_index(drop=True)
-                
+                df = df.iloc[header_row_index + 1 :].reset_index(drop=True)
+
                 # Remove first 4 data rows (after header)
                 if len(df) > 4:
                     df = df.iloc[4:].reset_index(drop=True)
                 elif len(df) > 0:
                     rows_deleted = len(df)
                     df = df.iloc[rows_deleted:].reset_index(drop=True)
-                
+
                 # Remove last 9 rows from bottom
                 if len(df) > 9:
                     df = df.iloc[:-9].reset_index(drop=True)
@@ -3272,14 +3748,14 @@ def upload_conversion_file():
                 elif len(df) > 0:
                     rows_deleted = len(df)
                     df = df.iloc[rows_deleted:].reset_index(drop=True)
-                
+
                 # Remove last 9 rows from bottom
                 if len(df) > 9:
                     df = df.iloc[:-9].reset_index(drop=True)
                 elif len(df) > 0:
                     rows_deleted_from_bottom = len(df)
                     df = df.iloc[:0].reset_index(drop=True)
-            
+
             cleaned_data[sheet_name] = df
         conversion_data = cleaned_data
 
@@ -3716,25 +4192,25 @@ def upload_conversion_file():
             for sheet_name, df in conversion_data.items():
                 df_cleaned = df.copy()
                 removed_cols = []
-                
+
                 # Remove "Time" column (case-insensitive)
                 for col in df_cleaned.columns:
                     if str(col).strip().lower() == "time":
                         df_cleaned = df_cleaned.drop(columns=[col])
                         removed_cols.append(col)
                         break
-                
+
                 # Remove "MI" column (case-insensitive)
                 for col in df_cleaned.columns:
                     if str(col).strip().lower() == "mi":
                         df_cleaned = df_cleaned.drop(columns=[col])
                         removed_cols.append(col)
                         break
-                
+
                 cleaned_data[sheet_name] = df_cleaned
                 if removed_cols:
                     columns_removed_count[sheet_name] = removed_cols
-            
+
             conversion_data = cleaned_data
 
             # Arrange columns in specified order
@@ -3747,17 +4223,17 @@ def upload_conversion_file():
                 "Dental Secondary Ins Carr",
                 "Group No",
                 "Insurance Note",
-                "Status"
+                "Status",
             ]
-            
+
             ordered_data = {}
             for sheet_name, df in conversion_data.items():
                 df_ordered = df.copy()
-                
+
                 # Find actual column names (case-insensitive matching)
                 ordered_cols = []
                 remaining_cols = list(df_ordered.columns)
-                
+
                 for target_col in column_order:
                     found = False
                     for col in remaining_cols:
@@ -3776,14 +4252,14 @@ def upload_conversion_file():
                                 remaining_cols.remove(col)
                                 found = True
                                 break
-                
+
                 # Add remaining columns that weren't in the specified order
                 ordered_cols.extend(remaining_cols)
-                
+
                 # Reorder dataframe columns
                 df_ordered = df_ordered[ordered_cols]
                 ordered_data[sheet_name] = df_ordered
-            
+
             conversion_data = ordered_data
 
             # Build columns added message
@@ -3896,15 +4372,21 @@ def download_conversion_result():
 @app.route("/reset_comparison", methods=["POST"])
 def reset_comparison():
     global raw_data, previous_data, raw_filename, previous_filename, comparison_result
+    global merge_file1_data, merge_file2_data, merge_file1_filename, merge_file2_filename, merge_result
     # Explicitly do NOT touch conversion_data, conversion_filename, or conversion_result
 
     try:
         # Reset ONLY comparison tool variables - do not affect conversion tool
-        raw_data = {}
-        previous_data = {}
+        raw_data = None
+        previous_data = None
         raw_filename = None
         previous_filename = None
-        comparison_result = "🔄 Comparison tool reset successfully! All files and data have been cleared."
+        comparison_result = None
+        merge_file1_data = None
+        merge_file2_data = None
+        merge_file1_filename = None
+        merge_file2_filename = None
+        merge_result = "🔄 Comparison tool reset successfully! All files and data have been cleared."
 
         return redirect("/comparison?tab=comparison")
 
@@ -5035,7 +5517,9 @@ def upload_appointment_report():
         # Read Excel file directly from memory (no disk storage) WITHOUT headers
         # We'll find and set the header row in Step 1
         file.seek(0)  # Reset file pointer to beginning
-        excel_data = pd.read_excel(file, sheet_name=None, engine="openpyxl", header=None)
+        excel_data = pd.read_excel(
+            file, sheet_name=None, engine="openpyxl", header=None
+        )
 
         # Store raw data - we'll process headers in Step 1
         cleaned_data = {}
@@ -5046,7 +5530,9 @@ def upload_appointment_report():
 
         # Process all sheets - format both Primary and Secondary insurance columns
         processed_sheets = {}
-        zero_id_rows_by_sheet = {}  # Store zero ID rows per sheet (before duplicate removal)
+        zero_id_rows_by_sheet = (
+            {}
+        )  # Store zero ID rows per sheet (before duplicate removal)
         total_rows_processed = 0
         output_lines = []
         output_lines.append("=" * 70)
@@ -5067,16 +5553,23 @@ def upload_appointment_report():
             output_lines.append(f"   🔧 Step 1: Row cleanup and header detection...")
             df_processed = df.copy()
             rows_before_cleanup = len(df_processed)
-            
+
             # First, try to find the actual header row by looking for common column names
             # Common column names to look for: Office Name, Patient ID, Dental Primary Ins Carr, etc.
             header_row_index = None
             common_header_keywords = [
-                "office name", "patient id", "pat id", "dental primary", 
-                "dental secondary", "appt date", "appointment date", 
-                "remark", "agent name", "time"
+                "office name",
+                "patient id",
+                "pat id",
+                "dental primary",
+                "dental secondary",
+                "appt date",
+                "appointment date",
+                "remark",
+                "agent name",
+                "time",
             ]
-            
+
             # Check first 10 rows to find the header row
             for idx in range(min(10, len(df_processed))):
                 row_values = []
@@ -5084,51 +5577,85 @@ def upload_appointment_report():
                     val = df_processed.iloc[idx][col_idx]
                     row_values.append(str(val).lower().strip() if pd.notna(val) else "")
                 # Count how many common keywords are found in this row
-                matches = sum(1 for val in row_values if any(keyword in val for keyword in common_header_keywords))
+                matches = sum(
+                    1
+                    for val in row_values
+                    if any(keyword in val for keyword in common_header_keywords)
+                )
                 # If we find at least 3 matches, this is likely the header row
                 if matches >= 3:
                     header_row_index = idx
                     output_lines.append(f"   🔍 Found header row at index {idx}")
                     break
-            
+
             if header_row_index is not None and header_row_index >= 0:
                 # Set the header row as column names
                 new_columns = []
                 for col_idx in df_processed.columns:
                     val = df_processed.iloc[header_row_index][col_idx]
-                    col_name = str(val).strip() if pd.notna(val) and str(val).strip() != "" else f"Unnamed_{col_idx}"
+                    col_name = (
+                        str(val).strip()
+                        if pd.notna(val) and str(val).strip() != ""
+                        else f"Unnamed_{col_idx}"
+                    )
                     new_columns.append(col_name)
                 df_processed.columns = new_columns
                 # Delete all rows up to and including the header row
-                df_processed = df_processed.iloc[header_row_index + 1:].reset_index(drop=True)
+                df_processed = df_processed.iloc[header_row_index + 1 :].reset_index(
+                    drop=True
+                )
                 # Remove "Unnamed:" columns if any (but keep columns that are actually named "Unnamed_X")
-                df_processed = df_processed.loc[:, ~df_processed.columns.str.contains("^Unnamed:", na=False, regex=True)]
-                output_lines.append(f"   ✅ Set row {header_row_index + 1} as headers and deleted {header_row_index + 1} rows from top")
+                df_processed = df_processed.loc[
+                    :,
+                    ~df_processed.columns.str.contains(
+                        "^Unnamed:", na=False, regex=True
+                    ),
+                ]
+                output_lines.append(
+                    f"   ✅ Set row {header_row_index + 1} as headers and deleted {header_row_index + 1} rows from top"
+                )
             elif header_row_index == 0:
                 # Header is in the first row, set it as column names
                 new_columns = []
                 for col_idx in df_processed.columns:
                     val = df_processed.iloc[0][col_idx]
-                    col_name = str(val).strip() if pd.notna(val) and str(val).strip() != "" else f"Unnamed_{col_idx}"
+                    col_name = (
+                        str(val).strip()
+                        if pd.notna(val) and str(val).strip() != ""
+                        else f"Unnamed_{col_idx}"
+                    )
                     new_columns.append(col_name)
                 df_processed.columns = new_columns
                 # Delete the header row (first row)
                 df_processed = df_processed.iloc[1:].reset_index(drop=True)
                 # Remove "Unnamed:" columns if any
-                df_processed = df_processed.loc[:, ~df_processed.columns.str.contains("^Unnamed:", na=False, regex=True)]
-                output_lines.append(f"   ✅ Set first row as headers and deleted header row")
+                df_processed = df_processed.loc[
+                    :,
+                    ~df_processed.columns.str.contains(
+                        "^Unnamed:", na=False, regex=True
+                    ),
+                ]
+                output_lines.append(
+                    f"   ✅ Set first row as headers and deleted header row"
+                )
             else:
                 # Couldn't find header row, try to delete first 3 rows but keep current structure
                 if len(df_processed) > 3:
                     df_processed = df_processed.iloc[3:].reset_index(drop=True)
-                    output_lines.append(f"   ⚠️  Could not identify header row, deleted first 3 rows by default")
+                    output_lines.append(
+                        f"   ⚠️  Could not identify header row, deleted first 3 rows by default"
+                    )
                 elif len(df_processed) > 0:
                     rows_deleted = len(df_processed)
-                    df_processed = df_processed.iloc[rows_deleted:].reset_index(drop=True)
-                    output_lines.append(f"   ⚠️  Deleted {rows_deleted} row(s) from top (less than 3 rows available)")
+                    df_processed = df_processed.iloc[rows_deleted:].reset_index(
+                        drop=True
+                    )
+                    output_lines.append(
+                        f"   ⚠️  Deleted {rows_deleted} row(s) from top (less than 3 rows available)"
+                    )
                 else:
                     output_lines.append(f"   ⚠️  Sheet is empty, skipping row deletion")
-            
+
             # Delete specified columns from output file
             columns_to_delete = [
                 "Appointment ID",
@@ -5146,16 +5673,18 @@ def upload_appointment_report():
                 "Procedure (Code  Th  Surf  Descr)",
                 "Appointment Notes",
                 "Created On",
-                "Created By"
+                "Created By",
             ]
-            
+
             columns_deleted = []
             columns_not_found = []
-            
+
             for col_to_delete in columns_to_delete:
                 found = False
-                col_to_delete_normalized = re.sub(r'\s+', ' ', str(col_to_delete).strip().lower())
-                
+                col_to_delete_normalized = re.sub(
+                    r"\s+", " ", str(col_to_delete).strip().lower()
+                )
+
                 # Try exact match first
                 if col_to_delete in df_processed.columns:
                     df_processed = df_processed.drop(columns=[col_to_delete])
@@ -5164,25 +5693,33 @@ def upload_appointment_report():
                 else:
                     # Try case-insensitive and flexible whitespace matching
                     for col in df_processed.columns:
-                        col_normalized = re.sub(r'\s+', ' ', str(col).strip().lower())
+                        col_normalized = re.sub(r"\s+", " ", str(col).strip().lower())
                         if col_normalized == col_to_delete_normalized:
                             df_processed = df_processed.drop(columns=[col])
                             columns_deleted.append(col)
                             found = True
                             break
-                
+
                 if not found:
                     columns_not_found.append(col_to_delete)
-            
+
             if columns_deleted:
-                output_lines.append(f"   ✅ Deleted {len(columns_deleted)} column(s): {', '.join(columns_deleted[:5])}")
+                output_lines.append(
+                    f"   ✅ Deleted {len(columns_deleted)} column(s): {', '.join(columns_deleted[:5])}"
+                )
                 if len(columns_deleted) > 5:
-                    output_lines.append(f"      ... and {len(columns_deleted) - 5} more columns")
+                    output_lines.append(
+                        f"      ... and {len(columns_deleted) - 5} more columns"
+                    )
             if columns_not_found:
-                output_lines.append(f"   ⚠️  Could not find {len(columns_not_found)} column(s) to delete: {', '.join(columns_not_found[:3])}")
+                output_lines.append(
+                    f"   ⚠️  Could not find {len(columns_not_found)} column(s) to delete: {', '.join(columns_not_found[:3])}"
+                )
                 if len(columns_not_found) > 3:
-                    output_lines.append(f"      ... and {len(columns_not_found) - 3} more columns")
-            
+                    output_lines.append(
+                        f"      ... and {len(columns_not_found) - 3} more columns"
+                    )
+
             # Delete last 7 rows from bottom
             if len(df_processed) > 7:
                 df_processed = df_processed.iloc[:-7].reset_index(drop=True)
@@ -5190,18 +5727,26 @@ def upload_appointment_report():
             elif len(df_processed) > 0:
                 rows_deleted_from_bottom = len(df_processed)
                 df_processed = df_processed.iloc[:0].reset_index(drop=True)
-                output_lines.append(f"   ⚠️  Deleted {rows_deleted_from_bottom} row(s) from bottom (less than 7 rows available)")
+                output_lines.append(
+                    f"   ⚠️  Deleted {rows_deleted_from_bottom} row(s) from bottom (less than 7 rows available)"
+                )
             else:
                 output_lines.append(f"   ℹ️  No rows available to delete from bottom")
-            
+
             rows_after_cleanup = len(df_processed)
-            output_lines.append(f"   Shape after cleanup: {rows_after_cleanup} rows × {df_processed.shape[1]} columns")
-            
+            output_lines.append(
+                f"   Shape after cleanup: {rows_after_cleanup} rows × {df_processed.shape[1]} columns"
+            )
+
             # Show column names for verification
             if len(df_processed.columns) > 0:
-                output_lines.append(f"   Column names: {', '.join(list(df_processed.columns[:10]))}")
+                output_lines.append(
+                    f"   Column names: {', '.join(list(df_processed.columns[:10]))}"
+                )
                 if len(df_processed.columns) > 10:
-                    output_lines.append(f"   ... and {len(df_processed.columns) - 10} more columns")
+                    output_lines.append(
+                        f"   ... and {len(df_processed.columns) - 10} more columns"
+                    )
             output_lines.append("")
 
             # Find the Patient ID column (case-insensitive search)
@@ -5265,6 +5810,7 @@ def upload_appointment_report():
 
             # Extract zero ID rows BEFORE duplicate removal (to preserve duplicates in Zero ID sheet)
             if patient_id_col:
+
                 def is_zero_id(val):
                     if pd.isna(val):
                         return False
@@ -5273,23 +5819,31 @@ def upload_appointment_report():
                         return float_val == 0.0
                     except (ValueError, TypeError):
                         str_val = str(val).strip()
-                        return str_val == "0" or str_val == "0.0" or str_val.lower() == "zero"
-                
+                        return (
+                            str_val == "0"
+                            or str_val == "0.0"
+                            or str_val.lower() == "zero"
+                        )
+
                 zero_id_mask = df_processed[patient_id_col].apply(is_zero_id)
                 zero_id_df = df_processed[zero_id_mask].copy()
-                
+
                 if len(zero_id_df) > 0:
                     # Store zero ID rows for this sheet (before duplicate removal)
                     zero_id_rows_by_sheet[sheet_name] = zero_id_df
                     # Remove zero ID rows from df_processed before duplicate removal
                     df_processed = df_processed[~zero_id_mask].copy()
-                    output_lines.append(f"   📋 Extracted {len(zero_id_df)} row(s) with Patient ID = 0 (will be added to 'Zero ID' sheet without duplicate removal)")
+                    output_lines.append(
+                        f"   📋 Extracted {len(zero_id_df)} row(s) with Patient ID = 0 (will be added to 'Zero ID' sheet without duplicate removal)"
+                    )
 
             # Step 3: Remove duplicates based on Patient ID + Primary Insurance
             duplicates_removed = 0
             if patient_id_col and primary_col:
                 output_lines.append("")
-                output_lines.append(f"   🔍 Step 3: Checking for duplicate Patient IDs...")
+                output_lines.append(
+                    f"   🔍 Step 3: Checking for duplicate Patient IDs..."
+                )
 
                 # Normalize Patient IDs for comparison
                 df_processed["_normalized_patient_id"] = df_processed[
@@ -5350,34 +5904,40 @@ def upload_appointment_report():
         output_lines.append("=" * 70)
         output_lines.append("CREATING 'ZERO ID' SHEET")
         output_lines.append("=" * 70)
-        
+
         # Use pre-extracted zero ID rows (before duplicate removal, so duplicates are preserved)
         if zero_id_rows_by_sheet:
             zero_id_rows_list = []
             for sheet_name, zero_id_df in zero_id_rows_by_sheet.items():
                 zero_id_rows_list.append(zero_id_df)
-                output_lines.append(f"   Found {len(zero_id_df)} row(s) with Patient ID = 0 in sheet '{sheet_name}' (duplicates preserved)")
-            
+                output_lines.append(
+                    f"   Found {len(zero_id_df)} row(s) with Patient ID = 0 in sheet '{sheet_name}' (duplicates preserved)"
+                )
+
             # Combine all zero ID rows from all sheets
             zero_id_combined = pd.concat(zero_id_rows_list, ignore_index=True)
             processed_sheets["Zero ID"] = zero_id_combined
-            output_lines.append(f"   ✅ Created 'Zero ID' sheet with {len(zero_id_combined)} total row(s) (duplicates NOT removed)")
+            output_lines.append(
+                f"   ✅ Created 'Zero ID' sheet with {len(zero_id_combined)} total row(s) (duplicates NOT removed)"
+            )
         else:
-            output_lines.append(f"   ℹ️  No rows with Patient ID = 0 found, skipping 'Zero ID' sheet creation")
-        
+            output_lines.append(
+                f"   ℹ️  No rows with Patient ID = 0 found, skipping 'Zero ID' sheet creation"
+            )
+
         # Set "No insurance" for rows where "Dental Primary Ins Carr" is blank (keep in main sheet)
         output_lines.append("")
         output_lines.append("=" * 70)
         output_lines.append("SETTING 'NO INSURANCE' FOR BLANK ROWS")
         output_lines.append("=" * 70)
-        
+
         total_no_ins_rows = 0
-        
+
         for sheet_name, df_sheet in processed_sheets.items():
             # Skip special sheets
             if sheet_name == "Zero ID":
                 continue
-                
+
             # Find "Dental Primary Ins Carr" column in this sheet (case-insensitive)
             primary_ins_col = None
             for col in df_sheet.columns:
@@ -5389,7 +5949,7 @@ def upload_appointment_report():
                 ):
                     primary_ins_col = col
                     break
-            
+
             if primary_ins_col:
                 # Find rows where "Dental Primary Ins Carr" is blank/empty
                 # Check for: NaN, empty string, whitespace-only strings
@@ -5397,25 +5957,38 @@ def upload_appointment_report():
                     if pd.isna(val):
                         return True
                     str_val = str(val).strip()
-                    return str_val == "" or str_val.lower() in ["none", "n/a", "na", "null"]
-                
+                    return str_val == "" or str_val.lower() in [
+                        "none",
+                        "n/a",
+                        "na",
+                        "null",
+                    ]
+
                 no_ins_mask = df_sheet[primary_ins_col].apply(is_blank_insurance)
                 no_ins_count = no_ins_mask.sum()
-                
+
                 if no_ins_count > 0:
                     # Set "No insurance" for blank rows (keep them in main sheet)
                     df_sheet.loc[no_ins_mask, primary_ins_col] = "No insurance"
                     processed_sheets[sheet_name] = df_sheet
                     total_no_ins_rows += no_ins_count
-                    output_lines.append(f"   ✅ Set 'No insurance' for {no_ins_count} row(s) with blank 'Dental Primary Ins Carr' in sheet '{sheet_name}'")
+                    output_lines.append(
+                        f"   ✅ Set 'No insurance' for {no_ins_count} row(s) with blank 'Dental Primary Ins Carr' in sheet '{sheet_name}'"
+                    )
             else:
-                output_lines.append(f"   ⚠️  'Dental Primary Ins Carr' column not found in sheet '{sheet_name}', skipping")
-        
+                output_lines.append(
+                    f"   ⚠️  'Dental Primary Ins Carr' column not found in sheet '{sheet_name}', skipping"
+                )
+
         if total_no_ins_rows > 0:
-            output_lines.append(f"   ✅ Total rows updated with 'No insurance': {total_no_ins_rows}")
+            output_lines.append(
+                f"   ✅ Total rows updated with 'No insurance': {total_no_ins_rows}"
+            )
         else:
-            output_lines.append(f"   ℹ️  No rows with blank 'Dental Primary Ins Carr' found")
-        
+            output_lines.append(
+                f"   ℹ️  No rows with blank 'Dental Primary Ins Carr' found"
+            )
+
         output_lines.append("")
         output_lines.append("=" * 70)
         output_lines.append("PROCESSING COMPLETE!")
@@ -5840,7 +6413,7 @@ def upload_smart_assist():
             qc_status_col = find_col(["qc", "status"])
             qc_comments_col = find_col(["qc", "comment"]) or find_col(["qc", "notes"])
             qc_date_col = find_col(["qc", "date"])
-            
+
             # Find new columns
             plan_name_col = find_col(["plan", "name"])
             supervisor_col = find_col(["supervisor"])
@@ -5995,7 +6568,7 @@ def upload_smart_assist():
 
             # Ensure only the specified columns are included and in the correct order
             standardized = standardized[standard_columns]
-            
+
             df = standardized
 
             # Report which source columns were mapped
@@ -7177,89 +7750,122 @@ def run_general_comparison():
         output_lines.append("\n" + "=" * 80)
         output_lines.append("DUPLICATE REMOVAL PROCESS")
         output_lines.append("=" * 80)
-        
+
         # Find Patient ID and Dental Primary Ins Carr columns (case-insensitive)
         patient_id_col = None
         dental_primary_col = None
         remark_col = None
-        
+
         for col in primary_df.columns:
             col_lower = str(col).lower().strip()
-            if not patient_id_col and (("patient" in col_lower and "id" in col_lower) or col_lower in ["pid", "pat id", "patientid"]):
+            if not patient_id_col and (
+                ("patient" in col_lower and "id" in col_lower)
+                or col_lower in ["pid", "pat id", "patientid"]
+            ):
                 patient_id_col = col
             if not dental_primary_col and "dental primary ins carr" in col_lower:
                 dental_primary_col = col
             if not remark_col and col_lower == "remark":
                 remark_col = col
-        
+
         if patient_id_col and dental_primary_col:
             output_lines.append(f"Patient ID column: {patient_id_col}")
             output_lines.append(f"Dental Primary Ins Carr column: {dental_primary_col}")
             if remark_col:
                 output_lines.append(f"Remark column: {remark_col}")
             else:
-                output_lines.append("Remark column: Not found (will skip remark-based filtering)")
-            
+                output_lines.append(
+                    "Remark column: Not found (will skip remark-based filtering)"
+                )
+
             # Create a composite key for duplicate detection
             def create_duplicate_key(row):
-                pid_val = str(row[patient_id_col]).strip() if pd.notna(row[patient_id_col]) else ""
-                dental_val = str(row[dental_primary_col]).strip() if pd.notna(row[dental_primary_col]) else ""
+                pid_val = (
+                    str(row[patient_id_col]).strip()
+                    if pd.notna(row[patient_id_col])
+                    else ""
+                )
+                dental_val = (
+                    str(row[dental_primary_col]).strip()
+                    if pd.notna(row[dental_primary_col])
+                    else ""
+                )
                 return f"{pid_val}|{dental_val}"
-            
-            primary_df['_duplicate_key'] = primary_df.apply(create_duplicate_key, axis=1)
-            
+
+            primary_df["_duplicate_key"] = primary_df.apply(
+                create_duplicate_key, axis=1
+            )
+
             # Find duplicates (skip empty keys)
-            duplicate_groups = primary_df.groupby('_duplicate_key')
-            duplicate_keys = [key for key, group in duplicate_groups if len(group) > 1 and key.strip() != ""]
-            
+            duplicate_groups = primary_df.groupby("_duplicate_key")
+            duplicate_keys = [
+                key
+                for key, group in duplicate_groups
+                if len(group) > 1 and key.strip() != ""
+            ]
+
             rows_to_keep = []
             rows_to_remove = []
-            
+
             if len(duplicate_keys) > 0:
-                output_lines.append(f"\nFound {len(duplicate_keys)} duplicate key(s) (based on Patient ID + Dental Primary Ins Carr)")
-                
+                output_lines.append(
+                    f"\nFound {len(duplicate_keys)} duplicate key(s) (based on Patient ID + Dental Primary Ins Carr)"
+                )
+
                 for dup_key in duplicate_keys:
-                    dup_rows = primary_df[primary_df['_duplicate_key'] == dup_key]
+                    dup_rows = primary_df[primary_df["_duplicate_key"] == dup_key]
                     dup_indices = dup_rows.index.tolist()
-                    
+
                     # Check if any row has preferred remark values
                     preferred_row_idx = None
                     if remark_col:
                         for idx in dup_indices:
-                            remark_val = str(primary_df.at[idx, remark_col]).strip().upper() if pd.notna(primary_df.at[idx, remark_col]) else ""
+                            remark_val = (
+                                str(primary_df.at[idx, remark_col]).strip().upper()
+                                if pd.notna(primary_df.at[idx, remark_col])
+                                else ""
+                            )
                             if remark_val in ["UPDATED", "QCP", "ASST"]:
                                 preferred_row_idx = idx
                                 break
-                    
+
                     # If no preferred row found, keep the first one
                     if preferred_row_idx is None:
                         preferred_row_idx = dup_indices[0]
-                    
+
                     # Mark rows to keep and remove
                     rows_to_keep.append(preferred_row_idx)
                     for idx in dup_indices:
                         if idx != preferred_row_idx:
                             rows_to_remove.append(idx)
-                
+
                 # Remove duplicate rows
                 primary_df = primary_df.drop(rows_to_remove)
                 rows_after_duplicate_removal = len(primary_df)
-                
-                output_lines.append(f"Rows before duplicate removal: {rows_before_duplicate_removal}")
+
+                output_lines.append(
+                    f"Rows before duplicate removal: {rows_before_duplicate_removal}"
+                )
                 output_lines.append(f"Duplicate rows removed: {len(rows_to_remove)}")
-                output_lines.append(f"Rows after duplicate removal: {rows_after_duplicate_removal}")
+                output_lines.append(
+                    f"Rows after duplicate removal: {rows_after_duplicate_removal}"
+                )
             else:
-                output_lines.append("\nNo duplicate rows found based on Patient ID + Dental Primary Ins Carr")
-            
+                output_lines.append(
+                    "\nNo duplicate rows found based on Patient ID + Dental Primary Ins Carr"
+                )
+
             # Remove the temporary duplicate key column
-            primary_df = primary_df.drop(columns=['_duplicate_key'], errors='ignore')
+            primary_df = primary_df.drop(columns=["_duplicate_key"], errors="ignore")
         else:
             missing_cols = []
             if not patient_id_col:
                 missing_cols.append("Patient ID")
             if not dental_primary_col:
                 missing_cols.append("Dental Primary Ins Carr")
-            output_lines.append(f"\n⚠️ Warning: Could not find required columns for duplicate removal: {', '.join(missing_cols)}")
+            output_lines.append(
+                f"\n⚠️ Warning: Could not find required columns for duplicate removal: {', '.join(missing_cols)}"
+            )
             output_lines.append("Skipping duplicate removal process.")
 
         # Build output workbook: replace only the selected primary sheet
@@ -7281,8 +7887,13 @@ def run_general_comparison():
         )
         output_lines.insert(5, f"Key columns: {', '.join(key_columns)}")
         output_lines.insert(6, f"Update columns: {', '.join(update_columns)}")
-        output_lines.insert(7, f"Rows in primary sheet (before processing): {rows_before_duplicate_removal}")
-        output_lines.insert(8, f"Rows in primary sheet (after duplicate removal): {len(primary_df)}")
+        output_lines.insert(
+            7,
+            f"Rows in primary sheet (before processing): {rows_before_duplicate_removal}",
+        )
+        output_lines.insert(
+            8, f"Rows in primary sheet (after duplicate removal): {len(primary_df)}"
+        )
         output_lines.insert(9, f"Rows in main sheet: {len(main_df)}")
         output_lines.insert(10, "")
 
