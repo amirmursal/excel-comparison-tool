@@ -6710,6 +6710,26 @@ def download_smart_assist():
 
                     # Set date column format to text
                     ws = writer.sheets[sheet_name]
+                    
+                    # Set header row background color to #92d050
+                    from openpyxl.styles import PatternFill, Border, Side
+                    header_fill = PatternFill(start_color="92d050", end_color="92d050", fill_type="solid")
+                    for col_idx in range(1, len(df_clean.columns) + 1):
+                        header_cell = ws.cell(row=1, column=col_idx)
+                        header_cell.fill = header_fill
+                    
+                    # Add borders to all cells
+                    thin_border = Border(
+                        left=Side(style='thin'),
+                        right=Side(style='thin'),
+                        top=Side(style='thin'),
+                        bottom=Side(style='thin')
+                    )
+                    for row in range(1, ws.max_row + 1):
+                        for col_idx in range(1, len(df_clean.columns) + 1):
+                            cell = ws.cell(row=row, column=col_idx)
+                            cell.border = thin_border
+                    
                     for col in df_clean.columns:
                         col_lower = (
                             col.lower().strip().replace(" ", "").replace("_", "")
