@@ -89,6 +89,20 @@ general_comparison_result = None
 general_comparison_output = ""
 general_comparison_updated_data = None
 
+# Global variables for data cleanser
+data_cleanser_data = None
+data_cleanser_filename = None
+data_cleanser_result = None
+data_cleanser_output = ""
+data_cleanser_processed_data = None
+
+# Global variables for agent & remark transfer
+agent_remark_transfer_data = None
+agent_remark_transfer_filename = None
+agent_remark_transfer_result = None
+agent_remark_transfer_output = ""
+agent_remark_transfer_processed_data = None
+
 
 @app.route("/load_reallocation_consolidate", methods=["POST"])
 def load_reallocation_consolidate():
@@ -716,16 +730,24 @@ HTML_TEMPLATE = """
                     <span class="menu-item-icon">5.</span>
                     <span>General Comparison</span>
                 </div>
-                <div class="menu-item {% if active_tab == 'remarks' %}active{% endif %}" onclick="switchTab('remarks')">
+                <div class="menu-item {% if active_tab == 'datacleanser' %}active{% endif %}" onclick="switchTab('datacleanser')">
                     <span class="menu-item-icon">6.</span>
+                    <span>Data Cleanser</span>
+                </div>
+                <div class="menu-item {% if active_tab == 'agentremarktransfer' %}active{% endif %}" onclick="switchTab('agentremarktransfer')">
+                    <span class="menu-item-icon">7.</span>
+                    <span>Agent & Remark Transfer</span>
+                </div>
+                <div class="menu-item {% if active_tab == 'remarks' %}active{% endif %}" onclick="switchTab('remarks')">
+                    <span class="menu-item-icon">8.</span>
                     <span>Update Remarks</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'insurance' %}active{% endif %}" onclick="switchTab('insurance')">
-                    <span class="menu-item-icon">7.</span>
+                    <span class="menu-item-icon">9.</span>
                     <span>Insurance Formatting</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'reallocation' %}active{% endif %}" onclick="switchTab('reallocation')">
-                    <span class="menu-item-icon">8.</span>
+                    <span class="menu-item-icon">10.</span>
                     <span>Generate Reallocation Data</span>
                 </div>
             </nav>
@@ -744,6 +766,8 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'consolidate' %}📊 Consolidate Report
                     {% elif active_tab == 'reallocation' %}♻️ Generate Reallocation Data
                     {% elif active_tab == 'general' %}🧭 General Comparison
+                    {% elif active_tab == 'datacleanser' %}🧹 Data Cleanser
+                    {% elif active_tab == 'agentremarktransfer' %}🔄 Agent & Remark Transfer
                     {% else %}🔄 Comparison Tool
                     {% endif %}
                 </h2>
@@ -757,6 +781,8 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'consolidate' %}Consolidate master and daily report files
                     {% elif active_tab == 'reallocation' %}Generate reallocation data from consolidate file
                     {% elif active_tab == 'general' %}Compare two files and update primary rows on match
+                    {% elif active_tab == 'datacleanser' %}Remove selected values from a column and create clean/removed sheets
+                    {% elif active_tab == 'agentremarktransfer' %}Transfer Agent Name to Agent 1 and Remark to Remark 1
                     {% else %}Compare Patient IDs and add insurance columns
                     {% endif %}
                 </p>
@@ -1946,6 +1972,329 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
+            <!-- Tab 10: Data Cleanser -->
+            <div id="datacleanser-tab" class="tab-content {% if active_tab == 'datacleanser' %}active{% endif %}">
+                <div class="section">
+                    <h3>🧹 Data Cleanser</h3>
+                    <p>Upload an Excel file, select a sheet and column, then choose values to remove. The tool will create a clean sheet and a separate sheet with removed data.</p>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="section">
+                    <h3>📁 Step 1: Upload Excel File</h3>
+                    <form action="/upload_data_cleanser" method="post" enctype="multipart/form-data" id="datacleanser-form">
+                        <div class="form-group">
+                            <label for="datacleanser_file">Select Excel File (.xlsx, .xls):</label>
+                            <input type="file" id="datacleanser_file" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" id="datacleanser-upload-btn">📤 Upload File</button>
+                    </form>
+                    <div class="loading" id="datacleanser-upload-loading">
+                        <div class="spinner"></div>
+                        <p>Processing file...</p>
+                    </div>
+                    {% if data_cleanser_filename %}
+                    <div class="status-success" style="margin-top: 10px;">
+                        ✅ {{ data_cleanser_filename }}<br>
+                        📋 {{ data_cleanser_data.keys() | list | length if data_cleanser_data else 0 }} sheet(s)
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Sheet and Column Selection -->
+                {% if data_cleanser_data %}
+                <div class="section">
+                    <h3>📋 Step 2: Select Sheet and Column</h3>
+                    <form id="datacleanser-select-form">
+                        <div class="form-group">
+                            <label for="datacleanser_sheet">Select Sheet:</label>
+                            <select id="datacleanser_sheet" name="sheet" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="">-- Select a sheet --</option>
+                                {% for sheet_name in data_cleanser_data.keys() %}
+                                <option value="{{ sheet_name }}">{{ sheet_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="datacleanser_column">Select Column:</label>
+                            <select id="datacleanser_column" name="column" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" disabled>
+                                <option value="">-- Select a sheet first --</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Value Selection -->
+                <div class="section" id="datacleanser-values-section" style="display: none;">
+                    <h3>🎯 Step 3: Select Values to Remove</h3>
+                    <form id="datacleanser-process-form" action="/process_data_cleanser" method="post">
+                        <input type="hidden" id="datacleanser_process_sheet" name="sheet" value="">
+                        <input type="hidden" id="datacleanser_process_column" name="column" value="">
+                        <div class="form-group">
+                            <label for="datacleanser_values">Select Values to Remove (multi-select):</label>
+                            <select id="datacleanser_values" name="values" multiple size="10" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="" disabled>Loading values...</option>
+                            </select>
+                            <small>Hold Ctrl/Cmd to select multiple values</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="datacleanser_removed_sheet_name">Removed Data Sheet Name:</label>
+                            <input type="text" id="datacleanser_removed_sheet_name" name="removed_sheet_name" value="Removed Data" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="datacleanser-process-btn" disabled>🔄 Process & Clean Data</button>
+                    </form>
+                    <div class="loading" id="datacleanser-process-loading">
+                        <div class="spinner"></div>
+                        <p>Processing data...</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Status Messages -->
+                {% if data_cleanser_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ data_cleanser_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Processing Output -->
+                {% if data_cleanser_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ data_cleanser_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if data_cleanser_processed_data and data_cleanser_result and 'successfully' in data_cleanser_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Cleaned File</h3>
+                    <form action="/download_data_cleanser" method="post">
+                        <div class="form-group">
+                            <label for="datacleanser_output_filename">Output filename (optional):</label>
+                            <input type="text" id="datacleanser_output_filename" name="filename" 
+                                   placeholder="cleaned_data.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Cleaned File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Data Cleanser</h3>
+                    <p>Clear all uploaded files and reset the data cleanser tool to start fresh.</p>
+                    <form action="/reset_data_cleanser" method="post" onsubmit="return confirm('Are you sure you want to reset the data cleanser tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Data Cleanser</button>
+                    </form>
+                </div>
+
+                <script>
+                (function(){
+                    const sheetSel = document.getElementById('datacleanser_sheet');
+                    const columnSel = document.getElementById('datacleanser_column');
+                    const valuesSel = document.getElementById('datacleanser_values');
+                    const valuesSection = document.getElementById('datacleanser-values-section');
+                    const processBtn = document.getElementById('datacleanser-process-btn');
+                    const processSheetInput = document.getElementById('datacleanser_process_sheet');
+                    const processColumnInput = document.getElementById('datacleanser_process_column');
+                    
+                    let columnsBySheet = {};
+                    
+                    async function loadColumns() {
+                        const sheet = sheetSel ? sheetSel.value : '';
+                        if (!sheet) {
+                            if (columnSel) {
+                                columnSel.innerHTML = '<option value="">-- Select a sheet first --</option>';
+                                columnSel.disabled = true;
+                            }
+                            if (valuesSection) valuesSection.style.display = 'none';
+                            return;
+                        }
+                        
+                        try {
+                            const resp = await fetch('/load_data_cleanser_columns', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                                body: 'sheet=' + encodeURIComponent(sheet)
+                            });
+                            const data = await resp.json();
+                            if (!data.ok) throw new Error(data.error || 'Failed to load columns');
+                            
+                            columnsBySheet[sheet] = data.columns || [];
+                            if (columnSel) {
+                                columnSel.innerHTML = '';
+                                (data.columns || []).forEach(col => {
+                                    const opt = document.createElement('option');
+                                    opt.value = col;
+                                    opt.textContent = col;
+                                    columnSel.appendChild(opt);
+                                });
+                                columnSel.disabled = false;
+                            }
+                        } catch (e) {
+                            alert('Error loading columns: ' + e.message);
+                            if (columnSel) columnSel.disabled = true;
+                        }
+                    }
+                    
+                    async function loadValues() {
+                        const sheet = sheetSel ? sheetSel.value : '';
+                        const column = columnSel ? columnSel.value : '';
+                        if (!sheet || !column) {
+                            if (valuesSection) valuesSection.style.display = 'none';
+                            return;
+                        }
+                        
+                        try {
+                            const resp = await fetch('/load_data_cleanser_values', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                                body: 'sheet=' + encodeURIComponent(sheet) + '&column=' + encodeURIComponent(column)
+                            });
+                            const data = await resp.json();
+                            if (!data.ok) throw new Error(data.error || 'Failed to load values');
+                            
+                            if (valuesSel) {
+                                valuesSel.innerHTML = '';
+                                (data.values || []).forEach(val => {
+                                    const opt = document.createElement('option');
+                                    opt.value = val;
+                                    opt.textContent = val;
+                                    valuesSel.appendChild(opt);
+                                });
+                            }
+                            
+                            if (processSheetInput) processSheetInput.value = sheet;
+                            if (processColumnInput) processColumnInput.value = column;
+                            if (valuesSection) valuesSection.style.display = 'block';
+                            updateProcessButton();
+                        } catch (e) {
+                            alert('Error loading values: ' + e.message);
+                            if (valuesSection) valuesSection.style.display = 'none';
+                        }
+                    }
+                    
+                    function updateProcessButton() {
+                        if (!processBtn || !valuesSel) return;
+                        let selectedCount = 0;
+                        if (typeof valuesSel.selectedOptions !== 'undefined') {
+                            selectedCount = valuesSel.selectedOptions.length;
+                        } else {
+                            selectedCount = valuesSel.querySelectorAll('option:checked').length;
+                        }
+                        processBtn.disabled = selectedCount === 0;
+                    }
+                    
+                    if (sheetSel) sheetSel.addEventListener('change', function(){ loadColumns(); });
+                    if (columnSel) columnSel.addEventListener('change', function(){ loadValues(); });
+                    if (valuesSel) valuesSel.addEventListener('change', updateProcessButton);
+                })();
+                </script>
+            </div>
+
+            <!-- Tab 11: Agent & Remark Transfer -->
+            <div id="agentremarktransfer-tab" class="tab-content {% if active_tab == 'agentremarktransfer' %}active{% endif %}">
+                <div class="section">
+                    <h3>🔄 Agent & Remark Transfer</h3>
+                    <p>Upload an Excel file, select a sheet, and transfer Agent Name values (excluding "Need to allocate" and "Not to work") to Agent 1 column, and copy Remark values to Remark 1 column.</p>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="section">
+                    <h3>📁 Step 1: Upload Excel File</h3>
+                    <form action="/upload_agent_remark_transfer" method="post" enctype="multipart/form-data" id="agentremarktransfer-form">
+                        <div class="form-group">
+                            <label for="agentremarktransfer_file">Select Excel File (.xlsx, .xls):</label>
+                            <input type="file" id="agentremarktransfer_file" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" id="agentremarktransfer-upload-btn">📤 Upload File</button>
+                    </form>
+                    <div class="loading" id="agentremarktransfer-upload-loading">
+                        <div class="spinner"></div>
+                        <p>Processing file...</p>
+                    </div>
+                    {% if agent_remark_transfer_filename %}
+                    <div class="status-success" style="margin-top: 10px;">
+                        ✅ {{ agent_remark_transfer_filename }}<br>
+                        📋 {{ agent_remark_transfer_data.keys() | list | length if agent_remark_transfer_data else 0 }} sheet(s)
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Sheet Selection and Process -->
+                {% if agent_remark_transfer_data %}
+                <div class="section">
+                    <h3>📋 Step 2: Select Sheet and Process</h3>
+                    <form action="/process_agent_remark_transfer" method="post" id="agentremarktransfer-process-form">
+                        <div class="form-group">
+                            <label for="agentremarktransfer_sheet">Select Sheet:</label>
+                            <select id="agentremarktransfer_sheet" name="sheet" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="">-- Select a sheet --</option>
+                                {% for sheet_name in agent_remark_transfer_data.keys() %}
+                                <option value="{{ sheet_name }}">{{ sheet_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" id="agentremarktransfer-process-btn">🔄 Process & Transfer Data</button>
+                    </form>
+                    <div class="loading" id="agentremarktransfer-process-loading">
+                        <div class="spinner"></div>
+                        <p>Processing data...</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Status Messages -->
+                {% if agent_remark_transfer_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">
+                        {{ agent_remark_transfer_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Processing Output -->
+                {% if agent_remark_transfer_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ agent_remark_transfer_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if agent_remark_transfer_processed_data and agent_remark_transfer_result and 'successfully' in agent_remark_transfer_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Processed File</h3>
+                    <form action="/download_agent_remark_transfer" method="post">
+                        <div class="form-group">
+                            <label for="agentremarktransfer_output_filename">Output filename (optional):</label>
+                            <input type="text" id="agentremarktransfer_output_filename" name="filename" 
+                                   placeholder="agent_remark_transferred.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download Processed File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Agent & Remark Transfer</h3>
+                    <p>Clear all uploaded files and reset the agent & remark transfer tool to start fresh.</p>
+                    <form action="/reset_agent_remark_transfer" method="post" onsubmit="return confirm('Are you sure you want to reset the agent & remark transfer tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Agent & Remark Transfer</button>
+                    </form>
+                </div>
+            </div>
+
             </div> <!-- End content -->
 
             <!-- Footer -->
@@ -2030,7 +2379,9 @@ HTML_TEMPLATE = """
                     (tabName === 'smartassist' && itemText.includes('smart assist')) ||
                     (tabName === 'consolidate' && itemText.includes('consolidate')) ||
                     (tabName === 'reallocation' && itemText.includes('reallocation')) ||
-                    (tabName === 'general' && itemText.includes('general comparison'))) {
+                    (tabName === 'general' && itemText.includes('general comparison')) ||
+                    (tabName === 'datacleanser' && itemText.includes('data cleanser')) ||
+                    (tabName === 'agentremarktransfer' && itemText.includes('agent') && itemText.includes('remark'))) {
                     item.classList.add('active');
                 }
             });
@@ -2045,7 +2396,9 @@ HTML_TEMPLATE = """
                 'smartassist': '🤖 Smart Assist Report Formatting',
                 'consolidate': '📊 Consolidate Report',
                 'reallocation': '♻️ Generate Reallocation Data',
-                'general': '🧭 General Comparison'
+                'general': '🧭 General Comparison',
+                'datacleanser': '🧹 Data Cleanser',
+                'agentremarktransfer': '🔄 Agent & Remark Transfer'
             };
             
             const pageDescriptions = {
@@ -2057,7 +2410,9 @@ HTML_TEMPLATE = """
                 'smartassist': 'Format smart assist report insurance columns',
                 'consolidate': 'Consolidate master and daily report files',
                 'reallocation': 'Generate reallocation data from consolidate file',
-                'general': 'Compare two files and update primary rows on match'
+                'general': 'Compare two files and update primary rows on match',
+                'datacleanser': 'Remove selected values from a column and create clean/removed sheets',
+                'agentremarktransfer': 'Transfer Agent Name to Agent 1 and Remark to Remark 1'
             };
             
             document.getElementById('page-title').textContent = pageTitles[tabName] || pageTitles['comparison'];
@@ -2202,6 +2557,44 @@ HTML_TEMPLATE = """
             });
         }
 
+        // Data cleanser form submission
+        const dataCleanserForm = document.getElementById('datacleanser-form');
+        if (dataCleanserForm) {
+            dataCleanserForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading File', 'Processing Excel file...');
+                const btn = document.getElementById('datacleanser-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const dataCleanserProcessForm = document.getElementById('datacleanser-process-form');
+        if (dataCleanserProcessForm) {
+            dataCleanserProcessForm.addEventListener('submit', function() {
+                showProcessingModal('Processing Data', 'Removing selected values and creating clean/removed sheets...');
+                const btn = document.getElementById('datacleanser-process-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        // Agent & Remark Transfer form submission
+        const agentRemarkTransferForm = document.getElementById('agentremarktransfer-form');
+        if (agentRemarkTransferForm) {
+            agentRemarkTransferForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading File', 'Processing Excel file...');
+                const btn = document.getElementById('agentremarktransfer-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const agentRemarkTransferProcessForm = document.getElementById('agentremarktransfer-process-form');
+        if (agentRemarkTransferProcessForm) {
+            agentRemarkTransferProcessForm.addEventListener('submit', function() {
+                showProcessingModal('Processing Data', 'Transferring Agent Name to Agent 1 and Remark to Remark 1...');
+                const btn = document.getElementById('agentremarktransfer-process-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
         // Reset forms - show modal when form is submitted (HTML confirm already handled)
         const resetForms = document.querySelectorAll('form[action*="reset"]');
         resetForms.forEach(form => {
@@ -2243,6 +2636,10 @@ HTML_TEMPLATE = """
                 switchTab('reallocation', true);
             } else if (activeTab === 'comparison') {
                 switchTab('comparison', true);
+            } else if (activeTab === 'datacleanser') {
+                switchTab('datacleanser', true);
+            } else if (activeTab === 'agentremarktransfer') {
+                switchTab('agentremarktransfer', true);
             }
             
             // Show toast notification for conversion validation and processing
@@ -3002,6 +3399,8 @@ def comparison_index():
     global consolidate_master_data, consolidate_daily_data, consolidate_master_filename, consolidate_daily_filename, consolidate_result, consolidate_output
     global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data, reallocation_available_remarks, reallocation_selected_remarks, reallocation_available_agents, reallocation_selected_agents
     global general_primary_data, general_main_data, general_primary_filename, general_main_filename, general_comparison_result, general_comparison_output, general_comparison_updated_data
+    global data_cleanser_data, data_cleanser_filename, data_cleanser_result, data_cleanser_output, data_cleanser_processed_data
+    global agent_remark_transfer_data, agent_remark_transfer_filename, agent_remark_transfer_result, agent_remark_transfer_output, agent_remark_transfer_processed_data
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -3063,6 +3462,16 @@ def comparison_index():
         general_comparison_result=general_comparison_result,
         general_comparison_output=general_comparison_output,
         general_comparison_updated_data=general_comparison_updated_data,
+        data_cleanser_data=data_cleanser_data,
+        data_cleanser_filename=data_cleanser_filename,
+        data_cleanser_result=data_cleanser_result,
+        data_cleanser_output=data_cleanser_output,
+        data_cleanser_processed_data=data_cleanser_processed_data,
+        agent_remark_transfer_data=agent_remark_transfer_data,
+        agent_remark_transfer_filename=agent_remark_transfer_filename,
+        agent_remark_transfer_result=agent_remark_transfer_result,
+        agent_remark_transfer_output=agent_remark_transfer_output,
+        agent_remark_transfer_processed_data=agent_remark_transfer_processed_data,
         active_tab=active_tab,
     )
 
@@ -6780,6 +7189,421 @@ def reset_smart_assist():
             f"❌ Error resetting smart assist report formatting tool: {str(e)}"
         )
         return redirect("/comparison?tab=smartassist")
+
+
+@app.route("/upload_data_cleanser", methods=["POST"])
+def upload_data_cleanser():
+    global data_cleanser_data, data_cleanser_filename, data_cleanser_result, data_cleanser_output, data_cleanser_processed_data
+
+    if "file" not in request.files:
+        data_cleanser_result = "❌ Error: No file provided"
+        return redirect("/comparison?tab=datacleanser")
+
+    file = request.files["file"]
+    if file.filename == "":
+        data_cleanser_result = "❌ Error: No file selected"
+        return redirect("/comparison?tab=datacleanser")
+
+    try:
+        filename = secure_filename(file.filename)
+        file.seek(0)
+
+        # Read Excel file with all sheets
+        data_cleanser_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+        data_cleanser_filename = filename
+        data_cleanser_result = f"✅ File uploaded successfully: {filename}"
+        data_cleanser_output = f"Loaded {len(data_cleanser_data)} sheet(s): {', '.join(data_cleanser_data.keys())}"
+        data_cleanser_processed_data = None
+
+        return redirect("/comparison?tab=datacleanser")
+
+    except Exception as e:
+        data_cleanser_result = f"❌ Error uploading file: {str(e)}"
+        data_cleanser_output = ""
+        return redirect("/comparison?tab=datacleanser")
+
+
+@app.route("/load_data_cleanser_columns", methods=["POST"])
+def load_data_cleanser_columns():
+    global data_cleanser_data
+
+    if not data_cleanser_data:
+        return jsonify({"ok": False, "error": "No file uploaded"}), 400
+
+    sheet_name = request.form.get("sheet", "")
+    if not sheet_name or sheet_name not in data_cleanser_data:
+        return jsonify({"ok": False, "error": "Invalid sheet name"}), 400
+
+    df = data_cleanser_data[sheet_name]
+    columns = list(df.columns)
+
+    return jsonify({"ok": True, "columns": columns})
+
+
+@app.route("/load_data_cleanser_values", methods=["POST"])
+def load_data_cleanser_values():
+    global data_cleanser_data
+
+    if not data_cleanser_data:
+        return jsonify({"ok": False, "error": "No file uploaded"}), 400
+
+    sheet_name = request.form.get("sheet", "")
+    column_name = request.form.get("column", "")
+
+    if not sheet_name or sheet_name not in data_cleanser_data:
+        return jsonify({"ok": False, "error": "Invalid sheet name"}), 400
+
+    df = data_cleanser_data[sheet_name]
+
+    if column_name not in df.columns:
+        return jsonify({"ok": False, "error": f"Column '{column_name}' not found"}), 400
+
+    # Get unique values, excluding NaN
+    unique_values = df[column_name].dropna().unique().tolist()
+    # Convert to strings and sort
+    unique_values = sorted([str(v).strip() for v in unique_values if str(v).strip()])
+
+    return jsonify({"ok": True, "values": unique_values})
+
+
+@app.route("/process_data_cleanser", methods=["POST"])
+def process_data_cleanser():
+    global data_cleanser_data, data_cleanser_result, data_cleanser_output, data_cleanser_processed_data
+
+    if not data_cleanser_data:
+        data_cleanser_result = "❌ Error: No file uploaded"
+        return redirect("/comparison?tab=datacleanser")
+
+    try:
+        sheet_name = request.form.get("sheet", "")
+        column_name = request.form.get("column", "")
+        values_to_remove = request.form.getlist("values")
+        removed_sheet_name = request.form.get("removed_sheet_name", "Removed Data").strip()
+
+        if not sheet_name or sheet_name not in data_cleanser_data:
+            data_cleanser_result = "❌ Error: Invalid sheet name"
+            return redirect("/comparison?tab=datacleanser")
+
+        if not column_name:
+            data_cleanser_result = "❌ Error: No column selected"
+            return redirect("/comparison?tab=datacleanser")
+
+        if not values_to_remove:
+            data_cleanser_result = "❌ Error: No values selected for removal"
+            return redirect("/comparison?tab=datacleanser")
+
+        df = data_cleanser_data[sheet_name].copy()
+
+        if column_name not in df.columns:
+            data_cleanser_result = f"❌ Error: Column '{column_name}' not found in sheet"
+            return redirect("/comparison?tab=datacleanser")
+
+        # Convert values to remove to strings for matching
+        values_to_remove_set = set(str(v).strip() for v in values_to_remove)
+
+        # Create mask for rows to remove (exact match)
+        mask = df[column_name].astype(str).str.strip().isin(values_to_remove_set)
+
+        # Split into clean and removed data
+        removed_df = df[mask].copy()
+        clean_df = df[~mask].copy()
+
+        # Create output with both sheets
+        data_cleanser_processed_data = {
+            sheet_name: clean_df,  # Clean main sheet (same name as original)
+            removed_sheet_name: removed_df  # Removed data sheet (user-defined name)
+        }
+
+        # Generate output message
+        output_lines = []
+        output_lines.append("=" * 70)
+        output_lines.append("DATA CLEANSER PROCESSING COMPLETE")
+        output_lines.append("=" * 70)
+        output_lines.append("")
+        output_lines.append(f"Sheet: {sheet_name}")
+        output_lines.append(f"Column: {column_name}")
+        output_lines.append(f"Values removed: {', '.join(values_to_remove)}")
+        output_lines.append("")
+        output_lines.append(f"Original rows: {len(df)}")
+        output_lines.append(f"Clean rows: {len(clean_df)}")
+        output_lines.append(f"Removed rows: {len(removed_df)}")
+        output_lines.append("")
+        output_lines.append(f"✅ Clean data saved to sheet: {sheet_name}")
+        output_lines.append(f"✅ Removed data saved to sheet: {removed_sheet_name}")
+
+        data_cleanser_output = "\n".join(output_lines)
+        data_cleanser_result = f"✅ Data cleaning completed successfully! Removed {len(removed_df)} row(s) from '{column_name}' column."
+
+        return redirect("/comparison?tab=datacleanser")
+
+    except Exception as e:
+        data_cleanser_result = f"❌ Error processing data: {str(e)}"
+        data_cleanser_output = ""
+        return redirect("/comparison?tab=datacleanser")
+
+
+@app.route("/download_data_cleanser", methods=["POST"])
+def download_data_cleanser():
+    global data_cleanser_processed_data
+
+    if not data_cleanser_processed_data:
+        return jsonify({"error": "No processed data to download"}), 400
+
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = "cleaned_data.xlsx"
+
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
+    try:
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                for sheet_name, df in data_cleanser_processed_data.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_data_cleanser", methods=["POST"])
+def reset_data_cleanser():
+    global data_cleanser_data, data_cleanser_filename, data_cleanser_result, data_cleanser_output, data_cleanser_processed_data
+
+    try:
+        data_cleanser_data = None
+        data_cleanser_filename = None
+        data_cleanser_result = "🔄 Data cleanser tool reset successfully! All files and data have been cleared."
+        data_cleanser_output = ""
+        data_cleanser_processed_data = None
+
+        return redirect("/comparison?tab=datacleanser")
+
+    except Exception as e:
+        data_cleanser_result = f"❌ Error resetting data cleanser tool: {str(e)}"
+        return redirect("/comparison?tab=datacleanser")
+
+
+@app.route("/upload_agent_remark_transfer", methods=["POST"])
+def upload_agent_remark_transfer():
+    global agent_remark_transfer_data, agent_remark_transfer_filename, agent_remark_transfer_result, agent_remark_transfer_output, agent_remark_transfer_processed_data
+
+    if "file" not in request.files:
+        agent_remark_transfer_result = "❌ Error: No file provided"
+        return redirect("/comparison?tab=agentremarktransfer")
+
+    file = request.files["file"]
+    if file.filename == "":
+        agent_remark_transfer_result = "❌ Error: No file selected"
+        return redirect("/comparison?tab=agentremarktransfer")
+
+    try:
+        filename = secure_filename(file.filename)
+        file.seek(0)
+
+        # Read Excel file with all sheets
+        agent_remark_transfer_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+        agent_remark_transfer_filename = filename
+        agent_remark_transfer_result = f"✅ File uploaded successfully: {filename}"
+        agent_remark_transfer_output = f"Loaded {len(agent_remark_transfer_data)} sheet(s): {', '.join(agent_remark_transfer_data.keys())}"
+        agent_remark_transfer_processed_data = None
+
+        return redirect("/comparison?tab=agentremarktransfer")
+
+    except Exception as e:
+        agent_remark_transfer_result = f"❌ Error uploading file: {str(e)}"
+        agent_remark_transfer_output = ""
+        return redirect("/comparison?tab=agentremarktransfer")
+
+
+@app.route("/process_agent_remark_transfer", methods=["POST"])
+def process_agent_remark_transfer():
+    global agent_remark_transfer_data, agent_remark_transfer_result, agent_remark_transfer_output, agent_remark_transfer_processed_data
+
+    if not agent_remark_transfer_data:
+        agent_remark_transfer_result = "❌ Error: No file uploaded"
+        return redirect("/comparison?tab=agentremarktransfer")
+
+    try:
+        sheet_name = request.form.get("sheet", "")
+
+        if not sheet_name or sheet_name not in agent_remark_transfer_data:
+            agent_remark_transfer_result = "❌ Error: Invalid sheet name"
+            return redirect("/comparison?tab=agentremarktransfer")
+
+        df = agent_remark_transfer_data[sheet_name].copy()
+
+        # Check if required columns exist
+        agent_name_col = None
+        remark_col = None
+
+        # Find "Agent Name" column (case-insensitive, flexible matching)
+        for col in df.columns:
+            col_lower = str(col).lower().strip()
+            if "agent" in col_lower and "name" in col_lower:
+                agent_name_col = col
+                break
+
+        # Find "Remark" column (case-insensitive, flexible matching)
+        for col in df.columns:
+            col_lower = str(col).lower().strip()
+            if col_lower == "remark" or col_lower == "remarks":
+                remark_col = col
+                break
+
+        if not agent_name_col:
+            agent_remark_transfer_result = f"❌ Error: 'Agent Name' column not found in sheet '{sheet_name}'. Available columns: {', '.join(df.columns.tolist())}"
+            return redirect("/comparison?tab=agentremarktransfer")
+
+        if not remark_col:
+            agent_remark_transfer_result = f"❌ Error: 'Remark' column not found in sheet '{sheet_name}'. Available columns: {', '.join(df.columns.tolist())}"
+            return redirect("/comparison?tab=agentremarktransfer")
+
+        # Create "Agent 1" and "Remark 1" columns if they don't exist
+        agent1_col = "Agent 1"
+        remark1_col = "Remark 1"
+
+        if agent1_col not in df.columns:
+            df[agent1_col] = ""
+        if remark1_col not in df.columns:
+            df[remark1_col] = ""
+
+        # Values to exclude (case-insensitive)
+        exclude_values = ["need to allocate", "not to work"]
+
+        # Process each row
+        rows_processed = 0
+        rows_skipped_empty = 0
+        rows_skipped_excluded = 0
+
+        for idx in df.index:
+            agent_name_val = df.at[idx, agent_name_col]
+
+            # Skip if Agent Name is empty/blank
+            if pd.isna(agent_name_val) or str(agent_name_val).strip() == "":
+                rows_skipped_empty += 1
+                continue
+
+            agent_name_str = str(agent_name_val).strip()
+
+            # Check if value should be excluded (case-insensitive)
+            agent_name_lower = agent_name_str.lower()
+            if agent_name_lower in exclude_values:
+                rows_skipped_excluded += 1
+                continue
+
+            # Copy Agent Name to Agent 1
+            df.at[idx, agent1_col] = agent_name_str
+
+            # Clear Agent Name
+            df.at[idx, agent_name_col] = ""
+
+            # Copy Remark to Remark 1 (if Remark exists and is not empty)
+            if remark_col in df.columns:
+                remark_val = df.at[idx, remark_col]
+                if not pd.isna(remark_val) and str(remark_val).strip() != "":
+                    df.at[idx, remark1_col] = str(remark_val).strip()
+                # Note: We don't delete Remark column value as per requirements
+
+            rows_processed += 1
+
+        # Store processed data (all sheets, but only selected sheet is modified)
+        agent_remark_transfer_processed_data = agent_remark_transfer_data.copy()
+        agent_remark_transfer_processed_data[sheet_name] = df
+
+        # Generate output message
+        output_lines = []
+        output_lines.append("=" * 70)
+        output_lines.append("AGENT & REMARK TRANSFER PROCESSING COMPLETE")
+        output_lines.append("=" * 70)
+        output_lines.append("")
+        output_lines.append(f"Sheet: {sheet_name}")
+        output_lines.append(f"Agent Name Column: {agent_name_col}")
+        output_lines.append(f"Remark Column: {remark_col}")
+        output_lines.append("")
+        output_lines.append(f"Total rows: {len(df)}")
+        output_lines.append(f"Rows processed: {rows_processed}")
+        output_lines.append(f"Rows skipped (empty Agent Name): {rows_skipped_empty}")
+        output_lines.append(f"Rows skipped (excluded values): {rows_skipped_excluded}")
+        output_lines.append("")
+        output_lines.append(f"✅ Agent Name values copied to '{agent1_col}'")
+        output_lines.append(f"✅ Agent Name column cleared for processed rows")
+        output_lines.append(f"✅ Remark values copied to '{remark1_col}'")
+        output_lines.append(f"✅ Remark column preserved (not deleted)")
+
+        agent_remark_transfer_output = "\n".join(output_lines)
+        agent_remark_transfer_result = f"✅ Transfer completed successfully! Processed {rows_processed} row(s) in sheet '{sheet_name}'."
+
+        return redirect("/comparison?tab=agentremarktransfer")
+
+    except Exception as e:
+        agent_remark_transfer_result = f"❌ Error processing data: {str(e)}"
+        agent_remark_transfer_output = ""
+        return redirect("/comparison?tab=agentremarktransfer")
+
+
+@app.route("/download_agent_remark_transfer", methods=["POST"])
+def download_agent_remark_transfer():
+    global agent_remark_transfer_processed_data
+
+    if not agent_remark_transfer_processed_data:
+        return jsonify({"error": "No processed data to download"}), 400
+
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = "agent_remark_transferred.xlsx"
+
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
+    try:
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                for sheet_name, df in agent_remark_transfer_processed_data.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_agent_remark_transfer", methods=["POST"])
+def reset_agent_remark_transfer():
+    global agent_remark_transfer_data, agent_remark_transfer_filename, agent_remark_transfer_result, agent_remark_transfer_output, agent_remark_transfer_processed_data
+
+    try:
+        agent_remark_transfer_data = None
+        agent_remark_transfer_filename = None
+        agent_remark_transfer_result = "🔄 Agent & Remark Transfer tool reset successfully! All files and data have been cleared."
+        agent_remark_transfer_output = ""
+        agent_remark_transfer_processed_data = None
+
+        return redirect("/comparison?tab=agentremarktransfer")
+
+    except Exception as e:
+        agent_remark_transfer_result = f"❌ Error resetting agent & remark transfer tool: {str(e)}"
+        return redirect("/comparison?tab=agentremarktransfer")
 
 
 @app.route("/upload_consolidate", methods=["POST"])
