@@ -7466,9 +7466,10 @@ def process_agent_remark_transfer():
             agent_remark_transfer_result = f"❌ Error: 'Agent Name' column not found in sheet '{sheet_name}'. Available columns: {', '.join(df.columns.tolist())}"
             return redirect("/comparison?tab=agentremarktransfer")
 
+        # Create "Remark" column if it doesn't exist
         if not remark_col:
-            agent_remark_transfer_result = f"❌ Error: 'Remark' column not found in sheet '{sheet_name}'. Available columns: {', '.join(df.columns.tolist())}"
-            return redirect("/comparison?tab=agentremarktransfer")
+            remark_col = "Remark"
+            df[remark_col] = ""
 
         # Create "Agent 1" and "Remark 1" columns if they don't exist
         agent1_col = "Agent 1"
@@ -7518,6 +7519,54 @@ def process_agent_remark_transfer():
 
             rows_processed += 1
 
+        # Step 2: Check "Dental Primary Ins Carr" and set "Remark" to "Not to work" for specific insurance companies
+        # Insurance companies that should have "Not to work" in Remark column
+        insurance_companies_to_mark = [
+            "Westfield Dental Membership",
+            "Community Dental Associates",
+            "Perio Membership Plan",
+            "Westfield Dental",
+            "Plan for Health",
+            "Regarding Dentistry - Membership",
+            "O'Bryan Advanced Dentistry Membership Pl",
+            "SRD MEMBERSHIP",
+            "OMAP in house"
+        ]
+        
+        # Normalize insurance company names for case-insensitive matching
+        insurance_companies_lower = [ic.lower().strip() for ic in insurance_companies_to_mark]
+        
+        # Find "Dental Primary Ins Carr" column (case-insensitive, flexible matching)
+        dental_primary_ins_col = None
+        for col in df.columns:
+            col_lower = str(col).lower().strip()
+            if "dental" in col_lower and "primary" in col_lower and "ins" in col_lower:
+                dental_primary_ins_col = col
+                break
+        
+        # Ensure "Remark" column exists (create if it doesn't)
+        if remark_col not in df.columns:
+            df[remark_col] = ""
+        
+        rows_marked_not_to_work = 0
+        
+        if dental_primary_ins_col:
+            for idx in df.index:
+                dental_primary_val = df.at[idx, dental_primary_ins_col]
+                
+                # Skip if Dental Primary Ins Carr is empty/blank
+                if pd.isna(dental_primary_val) or str(dental_primary_val).strip() == "":
+                    continue
+                
+                dental_primary_str = str(dental_primary_val).strip()
+                dental_primary_lower = dental_primary_str.lower()
+                
+                # Check if it matches any of the insurance companies (case-insensitive)
+                if dental_primary_lower in insurance_companies_lower:
+                    # Set Remark to "Not to work" (overwrite existing value)
+                    df.at[idx, remark_col] = "Not to work"
+                    rows_marked_not_to_work += 1
+
         # Store processed data (all sheets, but only selected sheet is modified)
         agent_remark_transfer_processed_data = agent_remark_transfer_data.copy()
         agent_remark_transfer_processed_data[sheet_name] = df
@@ -7531,16 +7580,22 @@ def process_agent_remark_transfer():
         output_lines.append(f"Sheet: {sheet_name}")
         output_lines.append(f"Agent Name Column: {agent_name_col}")
         output_lines.append(f"Remark Column: {remark_col}")
+        if dental_primary_ins_col:
+            output_lines.append(f"Dental Primary Ins Carr Column: {dental_primary_ins_col}")
         output_lines.append("")
         output_lines.append(f"Total rows: {len(df)}")
         output_lines.append(f"Rows processed: {rows_processed}")
         output_lines.append(f"Rows skipped (empty Agent Name): {rows_skipped_empty}")
         output_lines.append(f"Rows skipped (excluded values): {rows_skipped_excluded}")
+        if dental_primary_ins_col:
+            output_lines.append(f"Rows marked 'Not to work' (insurance match): {rows_marked_not_to_work}")
         output_lines.append("")
         output_lines.append(f"✅ Agent Name values copied to '{agent1_col}'")
         output_lines.append(f"✅ Agent Name column cleared for processed rows")
         output_lines.append(f"✅ Remark values copied to '{remark1_col}'")
         output_lines.append(f"✅ Remark column preserved (not deleted)")
+        if dental_primary_ins_col:
+            output_lines.append(f"✅ Remark set to 'Not to work' for {rows_marked_not_to_work} row(s) with matching insurance companies")
 
         agent_remark_transfer_output = "\n".join(output_lines)
         agent_remark_transfer_result = f"✅ Transfer completed successfully! Processed {rows_processed} row(s) in sheet '{sheet_name}'."
