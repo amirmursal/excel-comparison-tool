@@ -6661,6 +6661,13 @@ def upload_smart_assist():
             blank_rows_removed = 0
             duplicate_headers_removed = 0
             summary_rows_removed = 0
+            
+            # Find PATID column index in header for tracking
+            patid_col_idx = None
+            for col_idx, header_cell in enumerate(headers):
+                if header_cell and str(header_cell).lower().strip().replace(" ", "").replace("_", "") == "patid":
+                    patid_col_idx = col_idx
+                    break
 
             for idx in range(data_start_idx, len(all_rows)):
                 row = all_rows[idx]
@@ -6673,23 +6680,27 @@ def upload_smart_assist():
                     continue
 
                 # Skip rows that look like duplicate headers (middle section headers)
+                # IMPORTANT: Only remove rows that are EXACT header matches, not rows with patient data
                 row_text = " ".join(
                     [str(cell).lower() for cell in row if cell is not None]
                 )
                 is_duplicate_header = False
 
-                # Check if this row matches any header pattern
-                if idx in header_indices[1:]:  # Skip first header
-                    is_duplicate_header = True
-                    duplicate_headers_removed += 1
-                    continue
+                # Check if this row matches any header pattern - BUT only if it has NO patient data
+                if idx in header_indices[1:]:  # This row was identified as a header during header detection
+                    # Double-check: if it has a valid Patient ID, it's NOT a header, it's data!
+                    if not patid_col_idx or patid_col_idx >= len(row) or not row[patid_col_idx]:
+                        is_duplicate_header = True
+                        duplicate_headers_removed += 1
+                        continue
 
-                # Additional check: if row closely matches header row, skip it
+                # Additional check: if row EXACTLY matches header row, skip it
+                # Changed from 50% match to 100% match to avoid removing valid data
                 if len(row) == len(header_row):
                     matches = sum(
                         1 for i, cell in enumerate(row) if cell == header_row[i]
                     )
-                    if matches > len(header_row) * 0.5:  # More than 50% match
+                    if matches == len(header_row):  # Changed from > 50% to 100% exact match
                         is_duplicate_header = True
                         duplicate_headers_removed += 1
                         continue
@@ -6843,7 +6854,15 @@ def upload_smart_assist():
             standardized["Appointment Date"] = (
                 df[appt_date_col] if appt_date_col else ""
             )
-            standardized["Patient ID"] = df[patid_col] if patid_col else ""
+            # Convert Patient ID to string and strip whitespace for consistent comparison
+            # Also remove .0 suffix from float values
+            if patid_col:
+                standardized["Patient ID"] = df[patid_col].astype(str).str.strip()
+                # Remove .0 suffix from floating point numbers
+                standardized["Patient ID"] = standardized["Patient ID"].str.replace(r'\.0$', '', regex=True)
+            else:
+                standardized["Patient ID"] = ""
+            
             if last_name_col or first_name_col:
                 ln = df[last_name_col] if last_name_col else ""
                 fn = df[first_name_col] if first_name_col else ""
@@ -6911,8 +6930,6 @@ def upload_smart_assist():
 
             # Find Eligibility column and set Remark based on its value
             eligibility_col = find_col(["eligibility"])
-            print(f"DEBUG - Looking for Eligibility column. Found: {eligibility_col}")
-            print(f"DEBUG - Available columns in df: {list(df.columns)}")
 
             # Create a temporary status column for filtering
             temp_status = pd.Series("", index=standardized.index)
@@ -6921,17 +6938,19 @@ def upload_smart_assist():
                 output_lines.append(f"   Found Eligibility column: '{eligibility_col}'")
                 workable_count = 0
                 completed_count = 0
+                blank_eligibility_count = 0
+                unrecognized_count = 0
+                
                 for idx in standardized.index:
                     eligibility_val = (
                         df.loc[idx, eligibility_col]
                         if eligibility_col and idx in df.index
                         else None
                     )
+
                     if pd.notna(eligibility_val):
                         eligibility_str = str(eligibility_val).strip()
-                        print(
-                            f"DEBUG - Row {idx}: Eligibility value = '{eligibility_str}'"
-                        )
+
                         # Check for X marks (✗, x, û - encoded version)
                         if (
                             "✗" in eligibility_str
@@ -6950,11 +6969,14 @@ def upload_smart_assist():
                         ):
                             temp_status.at[idx] = "Completed"
                             completed_count += 1
-                print(
-                    f"DEBUG - Remark set: {workable_count} Workable, {completed_count} Completed"
-                )
+                        else:
+                            # Unrecognized eligibility value
+                            unrecognized_count += 1
+                    else:
+                        blank_eligibility_count += 1
+
                 output_lines.append(
-                    f"   ✅ Remark column populated: {workable_count} Workable rows"
+                    f"   ✅ Remark column populated: {workable_count} Workable, {completed_count} Completed, {blank_eligibility_count} Blank eligibility"
                 )
             else:
                 output_lines.append(
