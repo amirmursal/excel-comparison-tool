@@ -4510,18 +4510,41 @@ def upload_conversion_file():
 
                                 return first_row.to_dict()
 
-                            # Group by Pat ID and consolidate
-                            consolidated_rows = []
-                            for pat_id, group in processed_df.groupby(pat_id_col):
-                                consolidated_row = consolidate_by_pat_id(group)
-                                consolidated_rows.append(consolidated_row)
-
-                            # Create new DataFrame from consolidated rows
-                            processed_df = pd.DataFrame(consolidated_rows)
+                            # DO NOT consolidate by Pat ID - keep all rows including duplicates
+                            # Instead, just update each row's insurance columns from the Formatted Insurance
+                            rows_before = len(processed_df)
                             
-                            # Track consolidation stats
+                            # Apply insurance values to each row without consolidating
+                            for idx, row in processed_df.iterrows():
+                                pat_id = row[pat_id_col]
+                                # Find all rows with this Pat ID to get unique insurance values
+                                same_id_rows = processed_df[processed_df[pat_id_col] == pat_id]
+                                
+                                # Get unique insurance names for this Pat ID (preserve order of first occurrence)
+                                insurance_names = []
+                                seen = set()
+                                for ins in same_id_rows["Formatted Insurance"]:
+                                    if pd.notna(ins):
+                                        ins_str = str(ins).strip()
+                                        if ins_str and ins_str not in seen:
+                                            insurance_names.append(ins_str)
+                                            seen.add(ins_str)
+                                
+                                # Set Primary Insurance (first unique insurance)
+                                if len(insurance_names) > 0:
+                                    processed_df.at[idx, "Dental Primary Ins Carr"] = insurance_names[0]
+                                else:
+                                    processed_df.at[idx, "Dental Primary Ins Carr"] = ""
+                                
+                                # Set Secondary Insurance (second unique insurance if exists)
+                                if len(insurance_names) > 1:
+                                    processed_df.at[idx, "Dental Secondary Ins Carr"] = insurance_names[1]
+                                else:
+                                    processed_df.at[idx, "Dental Secondary Ins Carr"] = ""
+                            
+                            # Track stats (no rows consolidated since we keep duplicates)
                             rows_after = len(processed_df)
-                            rows_consolidated = rows_before - rows_after
+                            rows_consolidated = 0  # No consolidation
                             total_duplicates_removed += rows_consolidated
 
 
