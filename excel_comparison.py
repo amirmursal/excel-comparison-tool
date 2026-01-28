@@ -4102,7 +4102,7 @@ def upload_conversion_file():
         )
         conversion_filename = filename
 
-        # Step 1: Find header row, set it as column names, then remove first 4 data rows and last 9 rows
+        # Step 1: Find header row, set it as column names, then remove blank rows
         cleaned_data = {}
         for sheet_name, df in conversion_data.items():
             # Convert all column names to strings (they'll be 0, 1, 2, etc. since header=None)
@@ -4137,35 +4137,47 @@ def upload_conversion_file():
                 # Remove all rows up to and including the header row
                 df = df.iloc[header_row_index + 1 :].reset_index(drop=True)
 
-                # Remove first 4 data rows (after header)
-                if len(df) > 4:
-                    df = df.iloc[4:].reset_index(drop=True)
-                elif len(df) > 0:
-                    rows_deleted = len(df)
-                    df = df.iloc[rows_deleted:].reset_index(drop=True)
+                # Find Pat ID column
+                pat_id_col = None
+                for col in df.columns:
+                    if col.lower().strip().replace(" ", "").replace("_", "") == "patid":
+                        pat_id_col = col
+                        break
+                
+                # Only remove blank rows at the beginning (rows with no Patient ID)
+                rows_to_remove_from_start = 0
+                if pat_id_col:
+                    for i in range(min(4, len(df))):
+                        pat_id = df.iloc[i][pat_id_col]
+                        pat_id_str = str(pat_id).strip() if pd.notna(pat_id) else ""
+                        
+                        # If this row has no Patient ID, mark it for removal
+                        if not pat_id_str or pat_id_str == "nan":
+                            rows_to_remove_from_start += 1
+                        else:
+                            # Stop when we hit the first row with a Patient ID
+                            break
+                
+                if rows_to_remove_from_start > 0:
+                    df = df.iloc[rows_to_remove_from_start:].reset_index(drop=True)
 
-                # Remove last 9 rows from bottom
-                if len(df) > 9:
-                    df = df.iloc[:-9].reset_index(drop=True)
-                elif len(df) > 0:
-                    rows_deleted_from_bottom = len(df)
-                    df = df.iloc[:0].reset_index(drop=True)
-            else:
-                # If header not found, try default: remove first 4 rows and last 9 rows
-                if len(df) > 4:
-                    df = df.iloc[4:].reset_index(drop=True)
-                elif len(df) > 0:
-                    rows_deleted = len(df)
-                    df = df.iloc[rows_deleted:].reset_index(drop=True)
-
-                # Remove last 9 rows from bottom
-                if len(df) > 9:
-                    df = df.iloc[:-9].reset_index(drop=True)
-                elif len(df) > 0:
-                    rows_deleted_from_bottom = len(df)
-                    df = df.iloc[:0].reset_index(drop=True)
+                # Remove blank rows from the bottom (rows with no Patient ID)
+                rows_to_remove_from_end = 0
+                if pat_id_col:
+                    start_idx = max(0, len(df) - 9)
+                    for i in range(start_idx, len(df)):
+                        pat_id = df.iloc[i][pat_id_col]
+                        pat_id_str = str(pat_id).strip() if pd.notna(pat_id) else ""
+                        
+                        # If this row has no Patient ID, it's blank and should be removed
+                        if not pat_id_str or pat_id_str == "nan":
+                            rows_to_remove_from_end += 1
+                
+                if rows_to_remove_from_end > 0:
+                    df = df.iloc[:-rows_to_remove_from_end].reset_index(drop=True)
 
             cleaned_data[sheet_name] = df
+            
         conversion_data = cleaned_data
 
         # Step 2: Remove "Unnamed_<random_number>" columns from all sheets
@@ -4506,6 +4518,12 @@ def upload_conversion_file():
 
                             # Create new DataFrame from consolidated rows
                             processed_df = pd.DataFrame(consolidated_rows)
+                            
+                            # Track consolidation stats
+                            rows_after = len(processed_df)
+                            rows_consolidated = rows_before - rows_after
+                            total_duplicates_removed += rows_consolidated
+
 
                             # Remove the old "Formatted Insurance" column
                             if "Formatted Insurance" in processed_df.columns:
