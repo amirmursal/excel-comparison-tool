@@ -6119,7 +6119,6 @@ def upload_appointment_report():
                 "Medical Primary Ins Carr",
                 "Medical Secondary Ins Carr",
                 "Pref Provider",
-                "Provider Name",
                 "Procedure (Code  Th  Surf  Descr)",
                 "Appointment Notes",
                 "Created On",
@@ -6187,6 +6186,22 @@ def upload_appointment_report():
             output_lines.append(
                 f"   Shape after cleanup: {rows_after_cleanup} rows × {df_processed.shape[1]} columns"
             )
+
+            # Reorder columns to place Provider Name in column B (after Office Name)
+            if "Office Name" in df_processed.columns and "Provider Name" in df_processed.columns:
+                # Get all columns
+                all_cols = list(df_processed.columns)
+                # Remove Provider Name from its current position
+                all_cols.remove("Provider Name")
+                # Find Office Name position
+                office_name_idx = all_cols.index("Office Name")
+                # Insert Provider Name right after Office Name (column B)
+                all_cols.insert(office_name_idx + 1, "Provider Name")
+                # Reorder the dataframe
+                df_processed = df_processed[all_cols]
+                output_lines.append(
+                    f"   ✅ Reordered columns: Provider Name placed in column B (after Office Name)"
+                )
 
             # Show column names for verification
             if len(df_processed.columns) > 0:
@@ -6809,6 +6824,7 @@ def upload_smart_assist():
             # Step 8: Build standardized output with requested columns
             standard_columns = [
                 "Office Name",
+                "Provider",
                 "Appointment Date",
                 "Patient ID",
                 "Patient Name",
@@ -6892,6 +6908,7 @@ def upload_smart_assist():
 
             standardized = pd.DataFrame(index=df.index, columns=standard_columns)
             standardized["Office Name"] = df[office_col] if office_col else ""
+            standardized["Provider"] = df[provider_col] if provider_col else ""
             standardized["Appointment Date"] = (
                 df[appt_date_col] if appt_date_col else ""
             )
