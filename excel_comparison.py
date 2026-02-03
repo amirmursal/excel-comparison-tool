@@ -844,11 +844,11 @@ HTML_TEMPLATE = """
                         <div class="status-success" style="margin-top: 10px;">
                             ✅ {{ merge_file2_filename }}<br>
                             📋 {{ merge_file2_data.keys() | list | length if merge_file2_data else 0 }} sheet(s)
-                        </div>
-                        {% endif %}
                     </div>
+                        {% endif %}
                 </div>
-                
+            </div>
+
                 {% if merge_file1_filename and merge_file2_filename %}
                 <div style="margin-top: 20px; text-align: center;">
                     <form action="/merge_files" method="post" id="merge-form">
@@ -859,15 +859,15 @@ HTML_TEMPLATE = """
                     <div class="loading" id="merge-loading">
                         <div class="spinner"></div>
                         <p>Merging files...</p>
-                    </div>
                 </div>
-                {% endif %}
-                
+            </div>
+            {% endif %}
+
                 {% if merge_result %}
                 <div class="status-message" style="margin-top: 15px;">
                     {{ merge_result | safe }}
-                </div>
-                {% endif %}
+                        </div>
+                    {% endif %}
             </div>
 
             <!-- STEP 2: Upload Smart Assist File Section -->
@@ -888,17 +888,17 @@ HTML_TEMPLATE = """
                     <div class="spinner"></div>
                     <p>Processing Smart Assist file...</p>
                 </div>
-                
-                {% if previous_filename %}
+                    
+                    {% if previous_filename %}
                 <div class="status-success" style="margin-top: 10px;">
                     ✅ {{ previous_filename }}<br>
                     📋 {{ previous_data.keys() | list | length if previous_data else 0 }} sheet(s)
-                </div>
+                        </div>
                 {% elif not raw_data %}
                 <div class="status-info" style="margin-top: 10px;">
                     ⏳ Please complete Step 1 first (merge files to create Appointment Report)
-                </div>
-                {% endif %}
+                        </div>
+                    {% endif %}
             </div>
 
             <!-- STEP 3: Compare Section -->
@@ -906,7 +906,7 @@ HTML_TEMPLATE = """
                 <h3>🔄 STEP 3: Compare Files</h3>
                 <p style="margin-bottom: 15px;">Compare Patient ID from Merged Appointment Report with Patient ID from Smart Assist file. When matched, insurance columns will be added to the Smart Assist file.</p>
                 
-                {% if raw_data and previous_data %}
+            {% if raw_data and previous_data %}
                 <form action="/compare" method="post" id="compare-form">
                     <div class="form-group">
                         <label for="raw_sheet">Select Merged Appointment Report Sheet:</label>
@@ -3115,6 +3115,7 @@ def normalize_patient_id(patient_id_val):
 
 def compare_patient_names(raw_df, previous_df):
     """Compare Patient ID from Appointment report with PATID from Smart Assist and add insurance columns"""
+    global merge_file2_data  # Access Conversion Report data for replacing CONVERSION values
     try:
         # Debug: Show available columns
         raw_columns = list(raw_df.columns)
@@ -3280,6 +3281,94 @@ def compare_patient_names(raw_df, previous_df):
                     "secondary": secondary_value,
                 }
 
+        # Build mapping from Patient ID to "Dental Primary Ins Carr" and "Dental Secondary Ins Carr" from Conversion Report (File 2)
+        # This is used to replace "CONVERSION <text>" values with actual insurance names
+        conversion_insurance_map = {}  # Primary insurance mapping
+        conversion_secondary_insurance_map = {}  # Secondary insurance mapping
+        if merge_file2_data:
+            # Search through all sheets in Conversion Report (except "Zero ID")
+            for sheet_name, conversion_df in merge_file2_data.items():
+                if sheet_name.lower().strip() == "zero id":
+                    continue
+
+                # Find Patient ID column in Conversion Report
+                conversion_pat_id_col = None
+                for col in conversion_df.columns:
+                    col_lower = str(col).lower().strip()
+                    # Try exact matches first
+                    if col_lower in ["pat id", "patid", "patient id", "patientid"]:
+                        conversion_pat_id_col = col
+                        break
+                # If not found, try flexible matching (pat and id together)
+                if not conversion_pat_id_col:
+                    for col in conversion_df.columns:
+                        col_lower = str(col).lower().strip()
+                        if "pat" in col_lower and "id" in col_lower:
+                            conversion_pat_id_col = col
+                            break
+
+                # Find "Dental Primary Ins Carr" column in Conversion Report
+                conversion_primary_ins_col = None
+                for col in conversion_df.columns:
+                    col_lower = str(col).lower().strip()
+                    if (
+                        "dental" in col_lower
+                        and "primary" in col_lower
+                        and "ins" in col_lower
+                    ) or (
+                        "dental" in col_lower
+                        and "primary" in col_lower
+                        and "insurance" in col_lower
+                    ):
+                        conversion_primary_ins_col = col
+                        break
+
+                # Find "Dental Secondary Ins Carr" column in Conversion Report
+                conversion_secondary_ins_col = None
+                for col in conversion_df.columns:
+                    col_lower = str(col).lower().strip()
+                    if (
+                        "dental" in col_lower
+                        and "secondary" in col_lower
+                        and "ins" in col_lower
+                    ) or (
+                        "dental" in col_lower
+                        and "secondary" in col_lower
+                        and "insurance" in col_lower
+                    ):
+                        conversion_secondary_ins_col = col
+                        break
+
+                # Build mapping if Patient ID and at least one insurance column found
+                if conversion_pat_id_col:
+                    for idx, row in conversion_df.iterrows():
+                        pat_id_val = row[conversion_pat_id_col]
+                        pat_id = normalize_patient_id(pat_id_val)
+                        if pat_id:
+                            # Map primary insurance (only add if not already in map - first occurrence wins)
+                            if (
+                                conversion_primary_ins_col
+                                and pat_id not in conversion_insurance_map
+                            ):
+                                ins_val = row[conversion_primary_ins_col]
+                                if pd.notna(ins_val):
+                                    ins_str = str(ins_val).strip()
+                                    if ins_str:  # Only add non-empty values
+                                        conversion_insurance_map[pat_id] = ins_str
+
+                            # Map secondary insurance (only add if not already in map - first occurrence wins)
+                            if (
+                                conversion_secondary_ins_col
+                                and pat_id not in conversion_secondary_insurance_map
+                            ):
+                                ins_val = row[conversion_secondary_ins_col]
+                                if pd.notna(ins_val):
+                                    ins_str = str(ins_val).strip()
+                                    if ins_str:  # Only add non-empty values
+                                        conversion_secondary_insurance_map[pat_id] = (
+                                            ins_str
+                                        )
+
         # Use Smart Assist file as the result file (base)
         result_df = smart_assist_df.copy()
 
@@ -3312,6 +3401,12 @@ def compare_patient_names(raw_df, previous_df):
         # Compare and populate insurance columns in Smart Assist file from Appointment Report
         matched_count = 0
         unmatched_patids = []  # Track unmatched PATIDs for debugging
+        conversion_replaced_count = (
+            0  # Track how many primary CONVERSION values were replaced
+        )
+        conversion_secondary_replaced_count = (
+            0  # Track how many secondary CONVERSION values were replaced
+        )
         for idx, row in result_df.iterrows():
             patid_val = row[previous_patient_col]
             # Normalize patient ID for consistent matching
@@ -3321,12 +3416,46 @@ def compare_patient_names(raw_df, previous_df):
                 # Copy insurance data FROM Appointment Report TO Smart Assist file
                 # Format the insurance names before adding
                 insurance_data = appointment_insurance_map[patid]
-                result_df.at[idx, primary_col_name] = format_insurance_name(
+                primary_insurance_value = format_insurance_name(
                     insurance_data["primary"]
                 )
-                result_df.at[idx, secondary_col_name] = format_insurance_name(
+
+                # Check if primary insurance contains "CONVERSION" (case-insensitive)
+                if (
+                    primary_insurance_value
+                    and "conversion" in primary_insurance_value.lower()
+                ):
+                    # Try to replace with insurance from Conversion Report (File 2)
+                    if patid in conversion_insurance_map:
+                        primary_insurance_value = format_insurance_name(
+                            conversion_insurance_map[patid]
+                        )
+                        conversion_replaced_count += 1
+                    else:
+                        # If no match found in Conversion Report, set to blank
+                        primary_insurance_value = ""
+
+                secondary_insurance_value = format_insurance_name(
                     insurance_data["secondary"]
                 )
+
+                # Check if secondary insurance contains "CONVERSION" (case-insensitive)
+                if (
+                    secondary_insurance_value
+                    and "conversion" in secondary_insurance_value.lower()
+                ):
+                    # Try to replace with insurance from Conversion Report (File 2)
+                    if patid in conversion_secondary_insurance_map:
+                        secondary_insurance_value = format_insurance_name(
+                            conversion_secondary_insurance_map[patid]
+                        )
+                        conversion_secondary_replaced_count += 1
+                    else:
+                        # If no match found in Conversion Report, set to blank
+                        secondary_insurance_value = ""
+
+                result_df.at[idx, primary_col_name] = primary_insurance_value
+                result_df.at[idx, secondary_col_name] = secondary_insurance_value
                 matched_count += 1
             elif patid:
                 # Track unmatched PATIDs (limit to first 10 for display)
@@ -3348,13 +3477,25 @@ def compare_patient_names(raw_df, previous_df):
             unmatched_info = f"\n\n🔍 Sample unmatched PATIDs from Smart Assist (first 10): {', '.join(unmatched_patids)}"
             unmatched_info += f"\n💡 Tip: Check if these Patient IDs exist in the Appointment Report file with the same values."
 
+        # Build conversion replacement info
+        conversion_info = ""
+        if conversion_replaced_count > 0 or conversion_secondary_replaced_count > 0:
+            conversion_info_parts = []
+            if conversion_replaced_count > 0:
+                conversion_info_parts.append(f"Primary: {conversion_replaced_count}")
+            if conversion_secondary_replaced_count > 0:
+                conversion_info_parts.append(
+                    f"Secondary: {conversion_secondary_replaced_count}"
+                )
+            conversion_info = f"\n- CONVERSION values replaced with Conversion Report insurance ({', '.join(conversion_info_parts)})"
+
         result_message = f"""✅ Comparison completed successfully!
 
 📊 Statistics:
 - Total records in Smart Assist file: {total_patients}
 - Records matched with Appointment report: {matched_count}
 - Records not matched: {not_matched_patients}
-- Match rate: {(matched_count/total_patients*100):.1f}%
+- Match rate: {(matched_count/total_patients*100):.1f}%{conversion_info}
 
 📋 Columns used:
 - Appointment report (Raw file): "{raw_patient_col}"
@@ -3373,6 +3514,7 @@ def compare_patient_names(raw_df, previous_df):
 - "Dental Primary Ins Carr" - populated from Appointment Report for matched records
 - "Dental Secondary Ins Carr" - populated from Appointment Report for matched records
 - Empty cells for records not found in Appointment report
+{f'- "CONVERSION" values replaced with insurance from Conversion Report (Primary: {conversion_replaced_count}, Secondary: {conversion_secondary_replaced_count})' if (conversion_replaced_count > 0 or conversion_secondary_replaced_count > 0) else ''}
 
 💾 Ready to download the result file!"""
 
@@ -3856,14 +3998,14 @@ def download_result():
             # Process data: Extract "No insurance" rows and remove from main sheets
             processed_data = {}
             no_ins_rows_list = []
-            
+
             for sheet_name, df in previous_data.items():
                 # Skip "NO INS" sheet if it already exists (to avoid processing it)
                 if sheet_name == "NO INS":
                     continue
-                    
+
                 df_clean = df.copy()
-                
+
                 # Find "Dental Primary Ins Carr" column (case-insensitive, flexible matching)
                 primary_ins_col = None
                 for col in df_clean.columns:
@@ -3877,7 +4019,7 @@ def download_result():
                     ):
                         primary_ins_col = col
                         break
-                
+
                 # Fallback: if exact match not found, try simpler pattern
                 if not primary_ins_col:
                     for col in df_clean.columns:
@@ -3889,17 +4031,20 @@ def download_result():
                         ):
                             primary_ins_col = col
                             break
-                
+
                 # Last resort: look for any column with "primary" and "insurance"
                 if not primary_ins_col:
                     for col in df_clean.columns:
                         col_lower = str(col).lower().strip()
-                        if "primary" in col_lower and ("ins" in col_lower or "insurance" in col_lower):
+                        if "primary" in col_lower and (
+                            "ins" in col_lower or "insurance" in col_lower
+                        ):
                             primary_ins_col = col
                             break
-                
+
                 # Extract rows with "No insurance" in "Dental Primary Ins Carr"
                 if primary_ins_col:
+
                     def is_no_insurance(val):
                         if pd.isna(val):
                             return False
@@ -3908,45 +4053,47 @@ def download_result():
                         val_lower = val_str.lower()
                         # Check for exact matches or common variations
                         return (
-                            val_lower == "no insurance" or 
-                            val_lower == "no ins" or
-                            val_lower == "noinsurance" or
-                            val_lower == "noins" or
-                            val_lower.startswith("no insurance") or
-                            val_lower.startswith("no ins")
+                            val_lower == "no insurance"
+                            or val_lower == "no ins"
+                            or val_lower == "noinsurance"
+                            or val_lower == "noins"
+                            or val_lower.startswith("no insurance")
+                            or val_lower.startswith("no ins")
                         )
-                    
+
                     no_ins_mask = df_clean[primary_ins_col].apply(is_no_insurance)
                     no_ins_df = df_clean[no_ins_mask].copy()
-                    
+
                     if len(no_ins_df) > 0:
                         no_ins_rows_list.append(no_ins_df)
-                    
+
                     # Remove "No insurance" rows from main sheet
                     df_clean = df_clean[~no_ins_mask].copy()
-                
+
                 processed_data[sheet_name] = df_clean
-            
+
             # Create "NO INS" sheet from collected rows
             if no_ins_rows_list:
                 no_ins_combined = pd.concat(no_ins_rows_list, ignore_index=True)
                 if len(no_ins_combined) > 0:
                     processed_data["NO INS"] = no_ins_combined
-            
+
             # Write processed data to Excel
             with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 # Collect main sheets (not special sheets) to combine into "Today"
                 main_sheets_data = []
                 special_sheets = ["NO INS", "Zero ID", "zero id"]
-                
+
                 for sheet_name, df_clean in processed_data.items():
                     # Skip special sheets - they will be written separately
-                    if sheet_name in special_sheets or sheet_name.lower() in [s.lower() for s in special_sheets]:
+                    if sheet_name in special_sheets or sheet_name.lower() in [
+                        s.lower() for s in special_sheets
+                    ]:
                         continue
-                    
+
                     # Collect main sheet data
                     main_sheets_data.append((sheet_name, df_clean))
-                
+
                 # Write "Today" sheet (combine all main sheets)
                 if main_sheets_data:
                     # Combine all main sheets into one
@@ -3954,13 +4101,17 @@ def download_result():
                     for sheet_name, df_clean in main_sheets_data:
                         if not df_clean.empty:
                             today_dataframes.append(df_clean)
-                    
+
                     if today_dataframes:
                         today_df = pd.concat(today_dataframes, ignore_index=True)
                     else:
                         # If all main sheets are empty, create empty dataframe with columns from first sheet
-                        today_df = main_sheets_data[0][1] if main_sheets_data else pd.DataFrame()
-                    
+                        today_df = (
+                            main_sheets_data[0][1]
+                            if main_sheets_data
+                            else pd.DataFrame()
+                        )
+
                     # Format "Appt Date" column to MM/DD/YYYY format
                     appt_date_col = None
                     for col in today_df.columns:
@@ -3972,6 +4123,7 @@ def download_result():
                             break
 
                     if appt_date_col:
+
                         def format_date(date_val):
                             if pd.isna(date_val) or date_val == "":
                                 return ""
@@ -3990,7 +4142,9 @@ def download_result():
                             except (ValueError, TypeError, AttributeError):
                                 return str(date_val)
 
-                        today_df[appt_date_col] = today_df[appt_date_col].apply(format_date)
+                        today_df[appt_date_col] = today_df[appt_date_col].apply(
+                            format_date
+                        )
                         today_df[appt_date_col] = today_df[appt_date_col].astype(str)
 
                     today_df.to_excel(writer, sheet_name="Today", index=False)
@@ -4008,12 +4162,14 @@ def download_result():
                                 cell = ws.cell(row=row, column=col_idx)
                                 if cell.value:
                                     cell.number_format = "@"
-                
+
                 # Write special sheets (NO INS, Zero ID, etc.)
                 for sheet_name, df_clean in processed_data.items():
-                    if sheet_name not in special_sheets and sheet_name.lower() not in [s.lower() for s in special_sheets]:
+                    if sheet_name not in special_sheets and sheet_name.lower() not in [
+                        s.lower() for s in special_sheets
+                    ]:
                         continue  # Already written as "Today"
-                    
+
                     # Format "Appt Date" column to MM/DD/YYYY format
                     appt_date_col = None
                     for col in df_clean.columns:
@@ -4025,6 +4181,7 @@ def download_result():
                             break
 
                     if appt_date_col:
+
                         def format_date(date_val):
                             if pd.isna(date_val) or date_val == "":
                                 return ""
@@ -4043,7 +4200,9 @@ def download_result():
                             except (ValueError, TypeError, AttributeError):
                                 return str(date_val)
 
-                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(format_date)
+                        df_clean[appt_date_col] = df_clean[appt_date_col].apply(
+                            format_date
+                        )
                         df_clean[appt_date_col] = df_clean[appt_date_col].astype(str)
 
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -4143,21 +4302,21 @@ def upload_conversion_file():
                     if col.lower().strip().replace(" ", "").replace("_", "") == "patid":
                         pat_id_col = col
                         break
-                
+
                 # Only remove blank rows at the beginning (rows with no Patient ID)
                 rows_to_remove_from_start = 0
                 if pat_id_col:
                     for i in range(min(4, len(df))):
                         pat_id = df.iloc[i][pat_id_col]
                         pat_id_str = str(pat_id).strip() if pd.notna(pat_id) else ""
-                        
+
                         # If this row has no Patient ID, mark it for removal
                         if not pat_id_str or pat_id_str == "nan":
                             rows_to_remove_from_start += 1
                         else:
                             # Stop when we hit the first row with a Patient ID
                             break
-                
+
                 if rows_to_remove_from_start > 0:
                     df = df.iloc[rows_to_remove_from_start:].reset_index(drop=True)
 
@@ -4168,16 +4327,16 @@ def upload_conversion_file():
                     for i in range(start_idx, len(df)):
                         pat_id = df.iloc[i][pat_id_col]
                         pat_id_str = str(pat_id).strip() if pd.notna(pat_id) else ""
-                        
+
                         # If this row has no Patient ID, it's blank and should be removed
                         if not pat_id_str or pat_id_str == "nan":
                             rows_to_remove_from_end += 1
-                
+
                 if rows_to_remove_from_end > 0:
                     df = df.iloc[:-rows_to_remove_from_end].reset_index(drop=True)
 
             cleaned_data[sheet_name] = df
-            
+
         conversion_data = cleaned_data
 
         # Step 2: Remove "Unnamed_<random_number>" columns from all sheets
@@ -4513,13 +4672,15 @@ def upload_conversion_file():
                             # DO NOT consolidate by Pat ID - keep all rows including duplicates
                             # Instead, just update each row's insurance columns from the Formatted Insurance
                             rows_before = len(processed_df)
-                            
+
                             # Apply insurance values to each row without consolidating
                             for idx, row in processed_df.iterrows():
                                 pat_id = row[pat_id_col]
                                 # Find all rows with this Pat ID to get unique insurance values
-                                same_id_rows = processed_df[processed_df[pat_id_col] == pat_id]
-                                
+                                same_id_rows = processed_df[
+                                    processed_df[pat_id_col] == pat_id
+                                ]
+
                                 # Get unique insurance names for this Pat ID (preserve order of first occurrence)
                                 insurance_names = []
                                 seen = set()
@@ -4529,24 +4690,29 @@ def upload_conversion_file():
                                         if ins_str and ins_str not in seen:
                                             insurance_names.append(ins_str)
                                             seen.add(ins_str)
-                                
+
                                 # Set Primary Insurance (first unique insurance)
                                 if len(insurance_names) > 0:
-                                    processed_df.at[idx, "Dental Primary Ins Carr"] = insurance_names[0]
+                                    processed_df.at[idx, "Dental Primary Ins Carr"] = (
+                                        insurance_names[0]
+                                    )
                                 else:
                                     processed_df.at[idx, "Dental Primary Ins Carr"] = ""
-                                
+
                                 # Set Secondary Insurance (second unique insurance if exists)
                                 if len(insurance_names) > 1:
-                                    processed_df.at[idx, "Dental Secondary Ins Carr"] = insurance_names[1]
+                                    processed_df.at[
+                                        idx, "Dental Secondary Ins Carr"
+                                    ] = insurance_names[1]
                                 else:
-                                    processed_df.at[idx, "Dental Secondary Ins Carr"] = ""
-                            
+                                    processed_df.at[
+                                        idx, "Dental Secondary Ins Carr"
+                                    ] = ""
+
                             # Track stats (no rows consolidated since we keep duplicates)
                             rows_after = len(processed_df)
                             rows_consolidated = 0  # No consolidation
                             total_duplicates_removed += rows_consolidated
-
 
                             # Remove the old "Formatted Insurance" column
                             if "Formatted Insurance" in processed_df.columns:
@@ -6188,7 +6354,10 @@ def upload_appointment_report():
             )
 
             # Reorder columns to place Provider Name in column B (after Office Name)
-            if "Office Name" in df_processed.columns and "Provider Name" in df_processed.columns:
+            if (
+                "Office Name" in df_processed.columns
+                and "Provider Name" in df_processed.columns
+            ):
                 # Get all columns
                 all_cols = list(df_processed.columns)
                 # Remove Provider Name from its current position
@@ -6350,11 +6519,11 @@ def upload_appointment_report():
                     f"   ⚠️  Cannot check duplicates: Patient ID column not found"
                 )
 
-            # Show sample data (first 5 rows)
-            output_lines.append("")
-            output_lines.append(f"   Sample of formatted data (first 5 rows):")
-            sample_df = df_processed.head(5)
-            output_lines.append(sample_df.to_string(index=False))
+                # Show sample data (first 5 rows)
+                output_lines.append("")
+                output_lines.append(f"   Sample of formatted data (first 5 rows):")
+                sample_df = df_processed.head(5)
+                output_lines.append(sample_df.to_string(index=False))
 
             processed_sheets[sheet_name] = df_processed
             total_rows_processed += len(df_processed)
@@ -6717,11 +6886,19 @@ def upload_smart_assist():
             blank_rows_removed = 0
             duplicate_headers_removed = 0
             summary_rows_removed = 0
-            
+
             # Find PATID column index in header for tracking
             patid_col_idx = None
             for col_idx, header_cell in enumerate(headers):
-                if header_cell and str(header_cell).lower().strip().replace(" ", "").replace("_", "") == "patid":
+                if (
+                    header_cell
+                    and str(header_cell)
+                    .lower()
+                    .strip()
+                    .replace(" ", "")
+                    .replace("_", "")
+                    == "patid"
+                ):
                     patid_col_idx = col_idx
                     break
 
@@ -6743,9 +6920,15 @@ def upload_smart_assist():
                 is_duplicate_header = False
 
                 # Check if this row matches any header pattern - BUT only if it has NO patient data
-                if idx in header_indices[1:]:  # This row was identified as a header during header detection
+                if (
+                    idx in header_indices[1:]
+                ):  # This row was identified as a header during header detection
                     # Double-check: if it has a valid Patient ID, it's NOT a header, it's data!
-                    if not patid_col_idx or patid_col_idx >= len(row) or not row[patid_col_idx]:
+                    if (
+                        not patid_col_idx
+                        or patid_col_idx >= len(row)
+                        or not row[patid_col_idx]
+                    ):
                         is_duplicate_header = True
                         duplicate_headers_removed += 1
                         continue
@@ -6756,7 +6939,9 @@ def upload_smart_assist():
                     matches = sum(
                         1 for i, cell in enumerate(row) if cell == header_row[i]
                     )
-                    if matches == len(header_row):  # Changed from > 50% to 100% exact match
+                    if matches == len(
+                        header_row
+                    ):  # Changed from > 50% to 100% exact match
                         is_duplicate_header = True
                         duplicate_headers_removed += 1
                         continue
@@ -6917,10 +7102,12 @@ def upload_smart_assist():
             if patid_col:
                 standardized["Patient ID"] = df[patid_col].astype(str).str.strip()
                 # Remove .0 suffix from floating point numbers
-                standardized["Patient ID"] = standardized["Patient ID"].str.replace(r'\.0$', '', regex=True)
+                standardized["Patient ID"] = standardized["Patient ID"].str.replace(
+                    r"\.0$", "", regex=True
+                )
             else:
                 standardized["Patient ID"] = ""
-            
+
             if last_name_col or first_name_col:
                 ln = df[last_name_col] if last_name_col else ""
                 fn = df[first_name_col] if first_name_col else ""
@@ -6998,7 +7185,7 @@ def upload_smart_assist():
                 completed_count = 0
                 blank_eligibility_count = 0
                 unrecognized_count = 0
-                
+
                 for idx in standardized.index:
                     eligibility_val = (
                         df.loc[idx, eligibility_col]
@@ -7199,26 +7386,29 @@ def download_smart_assist():
 
                     # Set date column format to text
                     ws = writer.sheets[sheet_name]
-                    
+
                     # Set header row background color to #92d050
                     from openpyxl.styles import PatternFill, Border, Side
-                    header_fill = PatternFill(start_color="92d050", end_color="92d050", fill_type="solid")
+
+                    header_fill = PatternFill(
+                        start_color="92d050", end_color="92d050", fill_type="solid"
+                    )
                     for col_idx in range(1, len(df_clean.columns) + 1):
                         header_cell = ws.cell(row=1, column=col_idx)
                         header_cell.fill = header_fill
-                    
+
                     # Add borders to all cells
                     thin_border = Border(
-                        left=Side(style='thin'),
-                        right=Side(style='thin'),
-                        top=Side(style='thin'),
-                        bottom=Side(style='thin')
+                        left=Side(style="thin"),
+                        right=Side(style="thin"),
+                        top=Side(style="thin"),
+                        bottom=Side(style="thin"),
                     )
                     for row in range(1, ws.max_row + 1):
                         for col_idx in range(1, len(df_clean.columns) + 1):
                             cell = ws.cell(row=row, column=col_idx)
                             cell.border = thin_border
-                    
+
                     for col in df_clean.columns:
                         col_lower = (
                             col.lower().strip().replace(" ", "").replace("_", "")
@@ -7358,7 +7548,9 @@ def process_data_cleanser():
         sheet_name = request.form.get("sheet", "")
         column_name = request.form.get("column", "")
         values_to_remove = request.form.getlist("values")
-        removed_sheet_name = request.form.get("removed_sheet_name", "Removed Data").strip()
+        removed_sheet_name = request.form.get(
+            "removed_sheet_name", "Removed Data"
+        ).strip()
 
         if not sheet_name or sheet_name not in data_cleanser_data:
             data_cleanser_result = "❌ Error: Invalid sheet name"
@@ -7375,7 +7567,9 @@ def process_data_cleanser():
         df = data_cleanser_data[sheet_name].copy()
 
         if column_name not in df.columns:
-            data_cleanser_result = f"❌ Error: Column '{column_name}' not found in sheet"
+            data_cleanser_result = (
+                f"❌ Error: Column '{column_name}' not found in sheet"
+            )
             return redirect("/comparison?tab=datacleanser")
 
         # Convert values to remove to strings for matching
@@ -7391,7 +7585,7 @@ def process_data_cleanser():
         # Create output with both sheets
         data_cleanser_processed_data = {
             sheet_name: clean_df,  # Clean main sheet (same name as original)
-            removed_sheet_name: removed_df  # Removed data sheet (user-defined name)
+            removed_sheet_name: removed_df,  # Removed data sheet (user-defined name)
         }
 
         # Generate output message
@@ -7493,7 +7687,9 @@ def upload_agent_remark_transfer():
         file.seek(0)
 
         # Read Excel file with all sheets
-        agent_remark_transfer_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+        agent_remark_transfer_data = pd.read_excel(
+            file, sheet_name=None, engine="openpyxl"
+        )
         agent_remark_transfer_filename = filename
         agent_remark_transfer_result = f"✅ File uploaded successfully: {filename}"
         agent_remark_transfer_output = f"Loaded {len(agent_remark_transfer_data)} sheet(s): {', '.join(agent_remark_transfer_data.keys())}"
@@ -7610,12 +7806,14 @@ def process_agent_remark_transfer():
             "Regarding Dentistry - Membership",
             "O'Bryan Advanced Dentistry Membership Pl",
             "SRD MEMBERSHIP",
-            "OMAP in house"
+            "OMAP in house",
         ]
-        
+
         # Normalize insurance company names for case-insensitive matching
-        insurance_companies_lower = [ic.lower().strip() for ic in insurance_companies_to_mark]
-        
+        insurance_companies_lower = [
+            ic.lower().strip() for ic in insurance_companies_to_mark
+        ]
+
         # Find "Dental Primary Ins Carr" column (case-insensitive, flexible matching)
         dental_primary_ins_col = None
         for col in df.columns:
@@ -7623,24 +7821,24 @@ def process_agent_remark_transfer():
             if "dental" in col_lower and "primary" in col_lower and "ins" in col_lower:
                 dental_primary_ins_col = col
                 break
-        
+
         # Ensure "Remark" column exists (create if it doesn't)
         if remark_col not in df.columns:
             df[remark_col] = ""
-        
+
         rows_marked_not_to_work = 0
-        
+
         if dental_primary_ins_col:
             for idx in df.index:
                 dental_primary_val = df.at[idx, dental_primary_ins_col]
-                
+
                 # Skip if Dental Primary Ins Carr is empty/blank
                 if pd.isna(dental_primary_val) or str(dental_primary_val).strip() == "":
                     continue
-                
+
                 dental_primary_str = str(dental_primary_val).strip()
                 dental_primary_lower = dental_primary_str.lower()
-                
+
                 # Check if it matches any of the insurance companies (case-insensitive)
                 if dental_primary_lower in insurance_companies_lower:
                     # Set Remark to "Not to work" (overwrite existing value)
@@ -7661,21 +7859,27 @@ def process_agent_remark_transfer():
         output_lines.append(f"Agent Name Column: {agent_name_col}")
         output_lines.append(f"Remark Column: {remark_col}")
         if dental_primary_ins_col:
-            output_lines.append(f"Dental Primary Ins Carr Column: {dental_primary_ins_col}")
+            output_lines.append(
+                f"Dental Primary Ins Carr Column: {dental_primary_ins_col}"
+            )
         output_lines.append("")
         output_lines.append(f"Total rows: {len(df)}")
         output_lines.append(f"Rows processed: {rows_processed}")
         output_lines.append(f"Rows skipped (empty Agent Name): {rows_skipped_empty}")
         output_lines.append(f"Rows skipped (excluded values): {rows_skipped_excluded}")
         if dental_primary_ins_col:
-            output_lines.append(f"Rows marked 'Not to work' (insurance match): {rows_marked_not_to_work}")
+            output_lines.append(
+                f"Rows marked 'Not to work' (insurance match): {rows_marked_not_to_work}"
+            )
         output_lines.append("")
         output_lines.append(f"✅ Agent Name values copied to '{agent1_col}'")
         output_lines.append(f"✅ Agent Name column cleared for processed rows")
         output_lines.append(f"✅ Remark values copied to '{remark1_col}'")
         output_lines.append(f"✅ Remark column preserved (not deleted)")
         if dental_primary_ins_col:
-            output_lines.append(f"✅ Remark set to 'Not to work' for {rows_marked_not_to_work} row(s) with matching insurance companies")
+            output_lines.append(
+                f"✅ Remark set to 'Not to work' for {rows_marked_not_to_work} row(s) with matching insurance companies"
+            )
 
         agent_remark_transfer_output = "\n".join(output_lines)
         agent_remark_transfer_result = f"✅ Transfer completed successfully! Processed {rows_processed} row(s) in sheet '{sheet_name}'."
@@ -7737,7 +7941,9 @@ def reset_agent_remark_transfer():
         return redirect("/comparison?tab=agentremarktransfer")
 
     except Exception as e:
-        agent_remark_transfer_result = f"❌ Error resetting agent & remark transfer tool: {str(e)}"
+        agent_remark_transfer_result = (
+            f"❌ Error resetting agent & remark transfer tool: {str(e)}"
+        )
         return redirect("/comparison?tab=agentremarktransfer")
 
 
