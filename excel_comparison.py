@@ -7,6 +7,7 @@ Compare Patient IDs between two Excel files and add insurance columns
 from flask import Flask, render_template_string, request, jsonify, send_file, redirect
 import pandas as pd
 import os
+import io
 from datetime import datetime
 from werkzeug.utils import secure_filename
 import re
@@ -102,6 +103,137 @@ agent_remark_transfer_filename = None
 agent_remark_transfer_result = None
 agent_remark_transfer_output = ""
 agent_remark_transfer_processed_data = None
+
+# Global variables for EV Allocation report (multi-file upload by filename)
+ev_allocation_files = (
+    {}
+)  # filename -> {"data": {sheet_name: df}, "filename": original_filename}
+ev_allocation_result = None
+ev_allocation_output = None  # bytes for download when ready
+ev_allocation_output_filename = ""
+
+# EV Allocation: fixed output column order (you will map each input file's columns to these)
+EV_ALLOCATION_OUTPUT_COLUMNS = [
+    "System",
+    "Office/Doctor Name",
+    "Practice ID",
+    "Location/EntityCode",
+    "Department",
+    "Source",
+    "Received Date",
+    "Appointment",
+    "Reference",
+    "Patients Name",
+    "DOB",
+    "Patient ID/Chart#",
+    "Group/Employer",
+    "Insurance",
+    "Policy ID",
+    "Carrier Phone",
+    "Status",
+    "Comments",
+    "Pre Auth Status",
+    "Subscriber Name",
+    "Subscriber DOB",
+    "Zip Code",
+    "Rep",
+    "Agent",
+    "Remark",
+    "Work Date",
+    "QC Agent",
+    "QC Comments",
+    "QC Date Work",
+]
+
+# File identification: if filename contains this string -> use this format_key for column mapping.
+EV_ALLOCATION_FILENAME_RULES = [
+    {"contains": "Erickson", "format_key": "erickson"},
+    {"contains": "Hoang", "format_key": "hoang"},
+    {"contains": "Kates", "format_key": "kates"},
+    {"contains": "Montefiore", "format_key": "montefiore"},
+    {"contains": "ortho", "format_key": "ortho"},
+    {"contains": "SL Evening", "format_key": "sl_evening"},
+    {"contains": "SL_Evening", "format_key": "sl_evening"},
+    {"contains": "SL medicaid", "format_key": "sl_medicaid"},
+    {"contains": "SL_medicaid", "format_key": "sl_medicaid"},
+]
+
+# Column mapping per format_key: output column name -> input column name (or list of input cols to join).
+# Office/Doctor Name is filled only for sl_evening (Office Name). All other formats leave it blank.
+EV_ALLOCATION_COLUMN_MAPPING = {
+    "erickson": {
+        "Location/EntityCode": "Patient Office",
+        "Appointment": "Appointment Next Date",
+        "Patients Name": "Patient Full Name",
+        "DOB": "Patient Birthdate",
+        "Patient ID/Chart#": "Patient Primary Code",
+        "Insurance": "Insurance Company Name",
+        "Policy ID": "InsDetail Subscriber Id",
+        "Carrier Phone": "Insurance Company Phone",
+        "Subscriber Name": "InsDetal Subscriber",
+        "Subscriber DOB": "Subscriber BirthDate",
+    },
+    "hoang": {
+        "Appointment": "Next Appointment Date",
+        "Patients Name": "Patient's Name (Last First)",
+        "DOB": "Patient's BirthDate",
+        "Patient ID/Chart#": "Patient's ID",
+        "Insurance": "Insurance Company Billing Center Name",
+        "Policy ID": "Subscriber ID",
+    },
+    "kates": {
+        "Location/EntityCode": "Tx Location",
+        "Appointment": "Scheduled Appts",
+        "Patients Name": "Full Name",
+        "DOB": "DOB",
+        "Patient ID/Chart#": "Patient ID",
+        "Insurance": "Payor",
+        "Policy ID": "Member ID",
+    },
+    "montefiore": {
+        "Location/EntityCode": "Next Appointment Including Today Location",
+        "Appointment": "Next Appointment Including Today Date",
+        "Patients Name": "Patient's Name (Last First)",
+        "DOB": "Patient's BirthDate",
+        "Patient ID/Chart#": "Patient ID",
+        "Insurance": "Insurance Company Billing Center Name",
+        "Policy ID": "Subscriber ID",
+        "Subscriber Name": "Subscriber Name",
+        "Subscriber DOB": "Subscriber Birthdate",
+    },
+    "ortho": {
+        "Location/EntityCode": "Entity Code",
+        "Appointment": "Next Appt",
+        "Patients Name": "Patient",
+        "DOB": "Pats Birth Date",
+        "Patient ID/Chart#": "Chart",
+        "Insurance": "Carrier",
+        "Policy ID": "Insured ID",
+        "Carrier Phone": "Phone",
+    },
+    "sl_evening": {
+        "Office/Doctor Name": "Office Name",
+        "Appointment": "Future Appt",
+        "Patients Name": ["Pats Last Name", "Pats First Name"],
+        "DOB": "Pats Birth Date",
+        "Insurance": "Carrier Name",
+        "Policy ID": "Pol Employee SSN ID",
+        "Carrier Phone": "Carrier Phone",
+        "Subscriber Name": "Emp Name",
+        "Subscriber DOB": "Employee Birth Date",
+    },
+    "sl_medicaid": {
+        "Appointment": "Future Appt",
+        "Patients Name": ["Pats Last Name", "Pats First Name"],
+        "DOB": "Pats Birth Date",
+        "Insurance": "Carrier Name",
+        "Policy ID": "Pol Employee SSN ID",
+        "Carrier Phone": "Carrier Phone",
+        "Subscriber Name": "Emp name last, First Need to merge",
+        "Subscriber DOB": "Employee Birth Date",
+        # Office/Doctor Name: not used for sl_medicaid (left blank). Location/EntityCode: extract office_name from "Office Name: <office_name>" in Pats First Name, carry until next.
+    },
+}
 
 
 @app.route("/load_reallocation_consolidate", methods=["POST"])
@@ -750,6 +882,10 @@ HTML_TEMPLATE = """
                     <span class="menu-item-icon">10.</span>
                     <span>Generate Reallocation Data</span>
                 </div>
+                <div class="menu-item {% if active_tab == 'evallocation' %}active{% endif %}" onclick="switchTab('evallocation')">
+                    <span class="menu-item-icon">11.</span>
+                    <span>EV Allocation report</span>
+                </div>
             </nav>
         </div>
 
@@ -768,6 +904,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'general' %}🧭 General Comparison
                     {% elif active_tab == 'datacleanser' %}🧹 Data Cleanser
                     {% elif active_tab == 'agentremarktransfer' %}🔄 Agent & Remark Transfer
+                    {% elif active_tab == 'evallocation' %}📋 EV Allocation report
                     {% else %}🔄 Comparison Tool
                     {% endif %}
                 </h2>
@@ -783,6 +920,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'general' %}Compare two files and update primary rows on match
                     {% elif active_tab == 'datacleanser' %}Remove selected values from a column and create clean/removed sheets
                     {% elif active_tab == 'agentremarktransfer' %}Transfer Agent Name to Agent 1 and Remark to Remark 1
+                    {% elif active_tab == 'evallocation' %}Upload multiple files (identified by name), then generate output file
                     {% else %}Compare Patient IDs and add insurance columns
                     {% endif %}
                 </p>
@@ -2295,6 +2433,102 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
+            <!-- Tab 12: EV Allocation report -->
+            <div id="evallocation-tab" class="tab-content {% if active_tab == 'evallocation' %}active{% endif %}">
+                <div class="section">
+                    <h3>📋 EV Allocation report</h3>
+                    <p><strong>Step 1:</strong> Upload multiple files (CSV or Excel). Each file is identified by its filename (rules: if filename contains X → use that format).<br>
+                    <strong>Step 2:</strong> Generate the output file. Each input file is formatted and mapped to the output columns below.</p>
+                </div>
+
+                <!-- Output columns reference -->
+                <div class="section" style="background: #f0f4ff; border: 1px solid #667eea;">
+                    <h3>📄 Output file columns</h3>
+                    <p style="margin-bottom: 10px;">The generated file will contain these columns (in order). You will provide how to map each input file's columns to these.</p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; font-size: 0.9em;">
+                        {% for col in ev_allocation_output_columns %}
+                        <span style="background: white; padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">{{ col }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Step 1: Multiple file upload -->
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>📁 Step 1: Upload multiple files</h3>
+                    <p style="margin-bottom: 15px;">Select one or more files: <strong>CSV</strong> (.csv) or <strong>Excel</strong> (.xlsx, .xls). Each file is identified by its filename.</p>
+                    <form action="/upload_ev_allocation" method="post" enctype="multipart/form-data" id="evallocation-upload-form">
+                        <div class="form-group">
+                            <label for="ev_allocation_files">Select files (multiple allowed):</label>
+                            <input type="file" id="ev_allocation_files" name="files" accept=".csv,.xlsx,.xls" multiple required>
+                        </div>
+                        <button type="submit" id="evallocation-upload-btn">📤 Upload files</button>
+                    </form>
+                    <div class="loading" id="evallocation-upload-loading">
+                        <div class="spinner"></div>
+                        <p>Processing uploaded files...</p>
+                    </div>
+                    {% if ev_allocation_files and ev_allocation_files|length > 0 %}
+                    <div class="status-success" style="margin-top: 15px;">
+                        <strong>Uploaded {{ ev_allocation_files | length }} file(s):</strong><br>
+                        {% for fname, finfo in ev_allocation_files.items() %}
+                        ✅ {{ fname }} ({{ finfo.data.keys() | list | length }} sheet(s))<br>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Step 2: Generate output -->
+                <div class="section" style="border: 2px solid {% if ev_allocation_files and ev_allocation_files|length > 0 %}#28a745{% else %}#ffc107{% endif %}; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: {% if ev_allocation_files and ev_allocation_files|length > 0 %}#f0fff4{% else %}#fffbf0{% endif %};">
+                    <h3>📄 Step 2: Generate output file</h3>
+                    <p style="margin-bottom: 15px;">After uploading files, click below to produce the final output. File identification by name and output format will be applied once you provide the rules.</p>
+                    {% if ev_allocation_files and ev_allocation_files|length > 0 %}
+                    <form action="/process_ev_allocation" method="post" id="evallocation-process-form">
+                        <button type="submit" id="evallocation-process-btn">🚀 Generate output file</button>
+                    </form>
+                    <div class="loading" id="evallocation-process-loading">
+                        <div class="spinner"></div>
+                        <p>Generating EV Allocation report...</p>
+                    </div>
+                    {% else %}
+                    <div class="status-info">⏳ Upload at least one file in Step 1 first.</div>
+                    {% endif %}
+                </div>
+
+                <!-- Status Messages -->
+                {% if ev_allocation_result %}
+                <div class="section">
+                    <h3>📢 Processing status</h3>
+                    <div class="status-message">
+                        {{ ev_allocation_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if ev_allocation_has_output %}
+                <div class="section">
+                    <h3>💾 Download output file</h3>
+                    <form action="/download_ev_allocation" method="post">
+                        <div class="form-group">
+                            <label for="ev_allocation_output_filename">Output filename (optional):</label>
+                            <input type="text" id="ev_allocation_output_filename" name="filename" 
+                                   placeholder="ev_allocation_report.xlsx" value="{{ ev_allocation_output_filename or 'ev_allocation_report.xlsx' }}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit">💾 Download output file</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset EV Allocation tool</h3>
+                    <p>Clear all uploaded files and generated output to start fresh.</p>
+                    <form action="/reset_ev_allocation" method="post" onsubmit="return confirm('Are you sure you want to reset the EV Allocation tool? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset EV Allocation</button>
+                    </form>
+                </div>
+            </div>
+
             </div> <!-- End content -->
 
             <!-- Footer -->
@@ -2381,7 +2615,8 @@ HTML_TEMPLATE = """
                     (tabName === 'reallocation' && itemText.includes('reallocation')) ||
                     (tabName === 'general' && itemText.includes('general comparison')) ||
                     (tabName === 'datacleanser' && itemText.includes('data cleanser')) ||
-                    (tabName === 'agentremarktransfer' && itemText.includes('agent') && itemText.includes('remark'))) {
+                    (tabName === 'agentremarktransfer' && itemText.includes('agent') && itemText.includes('remark')) ||
+                    (tabName === 'evallocation' && itemText.includes('ev allocation'))) {
                     item.classList.add('active');
                 }
             });
@@ -2398,7 +2633,8 @@ HTML_TEMPLATE = """
                 'reallocation': '♻️ Generate Reallocation Data',
                 'general': '🧭 General Comparison',
                 'datacleanser': '🧹 Data Cleanser',
-                'agentremarktransfer': '🔄 Agent & Remark Transfer'
+                'agentremarktransfer': '🔄 Agent & Remark Transfer',
+                'evallocation': '📋 EV Allocation report'
             };
             
             const pageDescriptions = {
@@ -2412,7 +2648,8 @@ HTML_TEMPLATE = """
                 'reallocation': 'Generate reallocation data from consolidate file',
                 'general': 'Compare two files and update primary rows on match',
                 'datacleanser': 'Remove selected values from a column and create clean/removed sheets',
-                'agentremarktransfer': 'Transfer Agent Name to Agent 1 and Remark to Remark 1'
+                'agentremarktransfer': 'Transfer Agent Name to Agent 1 and Remark to Remark 1',
+                'evallocation': 'Upload multiple files (identified by name), then generate output file'
             };
             
             document.getElementById('page-title').textContent = pageTitles[tabName] || pageTitles['comparison'];
@@ -2595,6 +2832,24 @@ HTML_TEMPLATE = """
             });
         }
 
+        // EV Allocation form submissions
+        const evAllocationUploadForm = document.getElementById('evallocation-upload-form');
+        if (evAllocationUploadForm) {
+            evAllocationUploadForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading files', 'Processing multiple files for EV Allocation...');
+                const btn = document.getElementById('evallocation-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+        const evAllocationProcessForm = document.getElementById('evallocation-process-form');
+        if (evAllocationProcessForm) {
+            evAllocationProcessForm.addEventListener('submit', function() {
+                showProcessingModal('Generating output', 'Building EV Allocation report...');
+                const btn = document.getElementById('evallocation-process-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
         // Reset forms - show modal when form is submitted (HTML confirm already handled)
         const resetForms = document.querySelectorAll('form[action*="reset"]');
         resetForms.forEach(form => {
@@ -2640,6 +2895,8 @@ HTML_TEMPLATE = """
                 switchTab('datacleanser', true);
             } else if (activeTab === 'agentremarktransfer') {
                 switchTab('agentremarktransfer', true);
+            } else if (activeTab === 'evallocation') {
+                switchTab('evallocation', true);
             }
             
             // Show toast notification for conversion validation and processing
@@ -3543,6 +3800,7 @@ def comparison_index():
     global general_primary_data, general_main_data, general_primary_filename, general_main_filename, general_comparison_result, general_comparison_output, general_comparison_updated_data
     global data_cleanser_data, data_cleanser_filename, data_cleanser_result, data_cleanser_output, data_cleanser_processed_data
     global agent_remark_transfer_data, agent_remark_transfer_filename, agent_remark_transfer_result, agent_remark_transfer_output, agent_remark_transfer_processed_data
+    global ev_allocation_files, ev_allocation_result, ev_allocation_output, ev_allocation_output_filename
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -3614,6 +3872,12 @@ def comparison_index():
         agent_remark_transfer_result=agent_remark_transfer_result,
         agent_remark_transfer_output=agent_remark_transfer_output,
         agent_remark_transfer_processed_data=agent_remark_transfer_processed_data,
+        ev_allocation_files=ev_allocation_files,
+        ev_allocation_result=ev_allocation_result,
+        ev_allocation_output_filename=ev_allocation_output_filename
+        or "ev_allocation_report.xlsx",
+        ev_allocation_has_output=(ev_allocation_output is not None),
+        ev_allocation_output_columns=EV_ALLOCATION_OUTPUT_COLUMNS,
         active_tab=active_tab,
     )
 
@@ -8551,6 +8815,356 @@ def reset_reallocation():
     except Exception as e:
         reallocation_result = f"❌ Error resetting reallocation tool: {str(e)}"
         return redirect("/comparison?tab=reallocation")
+
+
+# =============================
+# EV Allocation report
+# =============================
+
+
+# Regex for characters Excel/openpyxl rejects in cell values (control chars). Must match openpyxl's ILLEGAL_CHARACTERS_RE.
+_EV_ALLOCATION_ILLEGAL_CHARS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
+
+
+def _ev_allocation_sanitize_cell(value):
+    """Remove control characters that cause openpyxl IllegalCharacterError (value cannot be used in worksheets)."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    s = str(value).strip()
+    return _EV_ALLOCATION_ILLEGAL_CHARS_RE.sub("", s)
+
+
+def _ev_allocation_get_format_key(filename):
+    """Return format_key if filename matches any EV_ALLOCATION_FILENAME_RULES (contains check)."""
+    if not filename:
+        return None
+    fname_lower = filename.lower()
+    for rule in EV_ALLOCATION_FILENAME_RULES:
+        contains = (rule.get("contains") or "").strip().lower()
+        if contains and contains in fname_lower:
+            return rule.get("format_key")
+    return None
+
+
+def _ev_allocation_normalize_col_name(name):
+    """Normalize column name for flexible matching: strip, lower, collapse spaces/underscores/Unicode space, then option without spaces."""
+    if name is None or (isinstance(name, float) and pd.isna(name)):
+        return "", ""
+    s = str(name).strip().lower()
+    s = s.replace("_", " ")
+    s = s.replace("\u00a0", " ")  # non-breaking space
+    s = re.sub(r"[\s\u00a0]+", " ", s)  # collapse any whitespace including nbsp
+    s_collapse = re.sub(r"\s+", " ", s)
+    s_no_space = s_collapse.replace(" ", "")
+    return s_collapse, s_no_space
+
+
+def _ev_allocation_get_cell(row_series, input_col_name):
+    """Get cell value from row, matching column by name (case-insensitive, flexible spaces). Tries alternates for known columns like Office Name."""
+    # Direct and normalized match
+    if input_col_name in row_series.index:
+        return row_series[input_col_name]
+    want_collapse, want_no_space = _ev_allocation_normalize_col_name(input_col_name)
+    for c in row_series.index:
+        col_collapse, col_no_space = _ev_allocation_normalize_col_name(c)
+        if col_collapse == want_collapse or col_no_space == want_no_space:
+            return row_series[c]
+    # Fallback: try alternate names for common columns (e.g. "Office Name" in SL Evening files)
+    alternates = {
+        "office name": ["OfficeName", "Office  Name", "Office Name ", " Office Name"],
+    }
+    key = want_collapse or want_no_space
+    for alt in alternates.get(key, []):
+        if alt in row_series.index:
+            return row_series[alt]
+        alt_c, alt_ns = _ev_allocation_normalize_col_name(alt)
+        for c in row_series.index:
+            col_collapse, col_no_space = _ev_allocation_normalize_col_name(c)
+            if col_collapse == alt_c or col_no_space == alt_ns:
+                return row_series[c]
+    # Last resort for "office name": column that contains both "office" and "name"
+    if key == "office name" or key == "officename":
+        for c in row_series.index:
+            col_collapse, _ = _ev_allocation_normalize_col_name(c)
+            if "office" in col_collapse and "name" in col_collapse:
+                return row_series[c]
+    return None
+
+
+def _ev_allocation_map_row(row_series, mapping, output_columns):
+    """Map one row (Series) to output columns using mapping. mapping: output_col -> input_col or [cols]. Sanitizes values for Excel."""
+    out = {}
+    for out_col in output_columns:
+        spec = mapping.get(out_col)
+        if spec is None:
+            out[out_col] = ""
+            continue
+        if isinstance(spec, str):
+            val = _ev_allocation_get_cell(row_series, spec)
+            raw = "" if (val is None or pd.isna(val)) else str(val).strip()
+            out[out_col] = _ev_allocation_sanitize_cell(raw)
+            continue
+        if isinstance(spec, (list, tuple)):
+            parts = []
+            for c in spec:
+                v = _ev_allocation_get_cell(row_series, c)
+                if v is not None and not pd.isna(v) and str(v).strip():
+                    parts.append(_ev_allocation_sanitize_cell(str(v).strip()))
+            out[out_col] = " ".join(parts)
+            continue
+        out[out_col] = ""
+    return out
+
+
+@app.route("/upload_ev_allocation", methods=["POST"])
+def upload_ev_allocation():
+    """Accept multiple Excel files and store them by filename for EV Allocation report."""
+    global ev_allocation_files, ev_allocation_result, ev_allocation_output, ev_allocation_output_filename
+
+    try:
+        files = request.files.getlist("files")
+        if not files or all(not f or f.filename == "" for f in files):
+            ev_allocation_result = (
+                "❌ No files selected. Please select at least one CSV or Excel file."
+            )
+            return redirect("/comparison?tab=evallocation")
+
+        ev_allocation_result = None
+        ev_allocation_output = None
+        ev_allocation_output_filename = ""
+
+        for f in files:
+            if not f or f.filename == "":
+                continue
+            name = secure_filename(f.filename)
+            lower = name.lower()
+            if not (
+                lower.endswith(".xlsx")
+                or lower.endswith(".xls")
+                or lower.endswith(".csv")
+            ):
+                continue
+            f.seek(0)
+
+            if lower.endswith(".csv"):
+                try:
+                    f.seek(0)
+                    df = pd.read_csv(f, encoding="utf-8", on_bad_lines="skip")
+                except UnicodeDecodeError:
+                    f.seek(0)
+                    df = pd.read_csv(f, encoding="latin-1", on_bad_lines="skip")
+                except Exception as csv_err:
+                    ev_allocation_result = f"❌ Error reading CSV {name}: {csv_err}"
+                    return redirect("/comparison?tab=evallocation")
+                df = df.copy()
+                df.columns = df.columns.astype(str)
+                df_cleaned = df.loc[
+                    :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+                ]
+                ev_allocation_files[name] = {
+                    "data": {"Sheet1": df_cleaned},
+                    "filename": f.filename,
+                }
+                continue
+
+            tmp_path = os.path.join("/tmp", name)
+            f.save(tmp_path)
+            try:
+                xls = pd.ExcelFile(tmp_path)
+                cleaned = {}
+                for sheet_name in xls.sheet_names:
+                    df = pd.read_excel(xls, sheet_name=sheet_name)
+                    df = df.copy()
+                    df.columns = df.columns.astype(str)
+                    df_cleaned = df.loc[
+                        :, ~df.columns.str.contains("^Unnamed:", na=False, regex=True)
+                    ]
+                    cleaned[sheet_name] = df_cleaned
+                ev_allocation_files[name] = {"data": cleaned, "filename": f.filename}
+            finally:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+
+        if not ev_allocation_files:
+            ev_allocation_result = "❌ No valid CSV or Excel files were uploaded."
+            return redirect("/comparison?tab=evallocation")
+
+        ev_allocation_result = (
+            f"✅ Uploaded {len(ev_allocation_files)} file(s): "
+            + ", ".join(ev_allocation_files.keys())
+        )
+        return redirect("/comparison?tab=evallocation")
+    except Exception as e:
+        ev_allocation_result = f"❌ Error uploading files: {str(e)}"
+        return redirect("/comparison?tab=evallocation")
+
+
+@app.route("/process_ev_allocation", methods=["POST"])
+def process_ev_allocation():
+    """Generate EV Allocation output: identify each file by filename rules, map columns, produce one Excel."""
+    global ev_allocation_files, ev_allocation_result, ev_allocation_output, ev_allocation_output_filename
+
+    try:
+        if not ev_allocation_files:
+            ev_allocation_result = "❌ Please upload at least one file in Step 1 first."
+            return redirect("/comparison?tab=evallocation")
+
+        if not EV_ALLOCATION_FILENAME_RULES or not EV_ALLOCATION_COLUMN_MAPPING:
+            ev_allocation_result = (
+                "📋 <strong>EV Allocation report</strong><br><br>"
+                "File identification and column mapping are not configured yet. "
+                "In the code, add:<br>"
+                '• <strong>EV_ALLOCATION_FILENAME_RULES</strong>: list of {contains: "substring", format_key: "key"} so files are identified by filename.<br>'
+                "• <strong>EV_ALLOCATION_COLUMN_MAPPING</strong>: dict of format_key → {output column: input column or [cols]} to map each file to the output columns.<br><br>"
+                "Output columns are fixed (System, Office/Doctor Name, Practice ID, …). "
+                f"You have <strong>{len(ev_allocation_files)}</strong> file(s) uploaded: "
+                + ", ".join(ev_allocation_files.keys())
+            )
+            ev_allocation_output = None
+            ev_allocation_output_filename = "ev_allocation_report.xlsx"
+            return redirect("/comparison?tab=evallocation")
+
+        all_rows = []
+        files_processed = []
+        files_skipped = []
+
+        for fname, finfo in ev_allocation_files.items():
+            format_key = _ev_allocation_get_format_key(fname)
+            if not format_key:
+                files_skipped.append(fname)
+                continue
+            mapping = EV_ALLOCATION_COLUMN_MAPPING.get(format_key)
+            if not mapping:
+                files_skipped.append(
+                    fname + " (no mapping for key «" + str(format_key) + "»)"
+                )
+                continue
+
+            # SL Medicaid only: find "Office Name: <office_name>" in Pats First Name, extract office_name and put in Location/EntityCode; carry until next "Office Name: ..." row
+            current_location_entity = ""
+            office_name_re = re.compile(r"Office Name:\s*(.+)", re.IGNORECASE)
+
+            for sheet_name, df in finfo["data"].items():
+                if df.empty:
+                    continue
+                for idx in range(len(df)):
+                    row_series = df.iloc[idx]
+                    mapped = _ev_allocation_map_row(
+                        row_series, mapping, EV_ALLOCATION_OUTPUT_COLUMNS
+                    )
+                    if format_key == "sl_medicaid":
+                        mapped["Office/Doctor Name"] = ""  # never fill for sl_medicaid
+                        pats_first = _ev_allocation_get_cell(
+                            row_series, "Pats First Name"
+                        )
+                        first_str = (
+                            ""
+                            if pats_first is None or pd.isna(pats_first)
+                            else str(pats_first).strip()
+                        )
+                        match = office_name_re.search(first_str)
+                        if match:
+                            current_location_entity = match.group(1).strip()
+                            mapped["Location/EntityCode"] = (
+                                _ev_allocation_sanitize_cell(current_location_entity)
+                            )
+                            pats_last = _ev_allocation_get_cell(
+                                row_series, "Pats Last Name"
+                            )
+                            last_str = (
+                                ""
+                                if pats_last is None or pd.isna(pats_last)
+                                else str(pats_last).strip()
+                            )
+                            mapped["Patients Name"] = _ev_allocation_sanitize_cell(
+                                last_str
+                            )
+                        else:
+                            mapped["Location/EntityCode"] = (
+                                _ev_allocation_sanitize_cell(current_location_entity)
+                            )
+                    all_rows.append(mapped)
+            files_processed.append(fname)
+
+        if not all_rows:
+            ev_allocation_result = (
+                "❌ No rows produced. Either no file matched the filename rules, or mapping keys did not match. "
+                + (
+                    "Skipped: " + ", ".join(files_skipped)
+                    if files_skipped
+                    else "All files were processed but had no data."
+                )
+            )
+            ev_allocation_output = None
+            return redirect("/comparison?tab=evallocation")
+
+        result_df = pd.DataFrame(all_rows, columns=EV_ALLOCATION_OUTPUT_COLUMNS)
+        # Fill NaN/NaT and strip illegal control chars so openpyxl doesn't raise "value cannot be used in worksheets"
+        result_df = result_df.fillna("")
+        for c in result_df.columns:
+            result_df[c] = result_df[c].astype(str).apply(_ev_allocation_sanitize_cell)
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            result_df.to_excel(writer, index=False, sheet_name="EVAllocation")
+        buf.seek(0)
+        ev_allocation_output = buf.getvalue()
+        ev_allocation_output_filename = "ev_allocation_report.xlsx"
+        ev_allocation_result = (
+            f"✅ Generated <strong>{len(all_rows)}</strong> row(s) from "
+            + ", ".join(files_processed)
+            + ". "
+            + (
+                "Skipped (no rule match or mapping): " + ", ".join(files_skipped) + "."
+                if files_skipped
+                else "All uploaded files were used."
+            )
+        )
+        return redirect("/comparison?tab=evallocation")
+    except Exception as e:
+        ev_allocation_result = f"❌ Error generating report: {str(e)}"
+        ev_allocation_output = None
+        return redirect("/comparison?tab=evallocation")
+
+
+@app.route("/download_ev_allocation", methods=["POST"])
+def download_ev_allocation():
+    """Send the generated EV Allocation output file if available."""
+    global ev_allocation_output, ev_allocation_output_filename
+
+    if ev_allocation_output is None:
+        return redirect("/comparison?tab=evallocation")
+
+    filename = (
+        request.form.get("filename", "ev_allocation_report.xlsx").strip()
+        or "ev_allocation_report.xlsx"
+    )
+    if not filename.lower().endswith((".xlsx", ".xls")):
+        filename = filename + ".xlsx"
+    return send_file(
+        io.BytesIO(ev_allocation_output),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@app.route("/reset_ev_allocation", methods=["POST"])
+def reset_ev_allocation():
+    """Clear all EV Allocation uploaded files and output."""
+    global ev_allocation_files, ev_allocation_result, ev_allocation_output, ev_allocation_output_filename
+
+    try:
+        ev_allocation_files = {}
+        ev_allocation_result = None
+        ev_allocation_output = None
+        ev_allocation_output_filename = ""
+        return redirect("/comparison?tab=evallocation")
+    except Exception as e:
+        ev_allocation_result = f"❌ Error resetting: {str(e)}"
+        return redirect("/comparison?tab=evallocation")
 
 
 # =============================
