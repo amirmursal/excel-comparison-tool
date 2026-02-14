@@ -8,9 +8,10 @@ Use this as a reference for which filename triggers which format and how columns
 
 | If filename **contains**   | Format key  | Used for mapping below |
 | -------------------------- | ----------- | ---------------------- |
-| Erickson                   | erickson    | ✓                      |
-| Hoang                      | hoang       | ✓                      |
-| Kates                      | kates       | ✓                      |
+| Erickson                   | erickson           | ✓                      |
+| Viva Smiles (anywhere in filename, case-insensitive) | hoang_viva_smiles  | ✓       |
+| Ismiles (anywhere in filename, case-insensitive)     | hoang_ismiles      | ✓       |
+| Kates                      | kates              | ✓                      |
 | Montefiore                 | montefiore  | ✓                      |
 | ortho                      | ortho       | ✓                      |
 | SL Evening or SL_Evening   | sl_evening  | ✓                      |
@@ -26,8 +27,13 @@ Matching is **case-insensitive**.
 
 _(filename contains "Erickson")_
 
-| Output column       | Input column            |
+| Output column       | Input column / value    |
 | ------------------- | ----------------------- |
+| System              | **"Edge"** (fixed value for all rows) |
+| Office/Doctor Name  | **"Dr. Erickson"** (fixed value for all rows) |
+| Source              | **"Evening"** (fixed value for all rows) |
+| Reference           | **"MCD"** (fixed value for all rows) |
+| Received Date       | **Today's date (MM/DD/YYYY)**        |
 | Location/EntityCode | Patient Office          |
 | Appointment         | Appointment Next Date   |
 | Patients Name       | Patient Full Name       |
@@ -41,9 +47,31 @@ _(filename contains "Erickson")_
 
 ---
 
-### hoang
+### hoang_viva_smiles
 
-_(filename contains "Hoang")_
+_(filename contains **"Viva Smiles"** anywhere, case-insensitive — e.g. Raw Dr. Hoang (Viva Smiles) 02.04.2026 (7to9))_
+
+| Output column     | Input column / value                  |
+| ----------------- | ------------------------------------- |
+| System            | **"Dolphin"** (fixed value for all rows) |
+| Office/Doctor Name | **"Dr. Hoang Viva Smiles"** (fixed value for all rows) |
+| Source            | **"Evening"** (fixed value for all rows) |
+| Reference         | **"MCD"** when Insurance Company Billing Center Name = "Humana Healthy"; **"Commercial"** when = "Aetna HMO" or "Aetna DHMO"; otherwise blank |
+| Received Date     | **Today's date (MM/DD/YYYY)**         |
+| Appointment       | Next Appointment Date                 |
+| Patients Name     | Patient's Name (Last First)           |
+| DOB               | Patient's BirthDate                   |
+| Patient ID/Chart# | Patient's ID                          |
+| Insurance         | Insurance Company Billing Center Name |
+| Policy ID         | Subscriber ID                         |
+
+---
+
+### hoang_ismiles
+
+_(filename contains **"Ismiles"** anywhere, case-insensitive — e.g. Raw Dr. Hoang Ismiles (Main) 02.04.2026 (7to9).csv)_
+
+Same column mapping as Hoang Viva Smiles (see above).
 
 | Output column     | Input column                          |
 | ----------------- | ------------------------------------- |
@@ -136,6 +164,7 @@ _(filename contains "SL medicaid" or "SL_medicaid")_
 
 | Output column           | Input column / logic                                                                                                                                                                                                                                        |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Office/Doctor Name**  | **Same value as Location/EntityCode** (see below).                                                                                                                                                                                                           |
 | **Location/EntityCode** | **Special:** Find rows where **Pats First Name** contains `Office Name: <office_name>`, extract **office_name** from that text and put it in Location/EntityCode; use that value for that row and all following rows until the next "Office Name: ..." row. |
 | Appointment             | Future Appt                                                                                                                                                                                                                                                 |
 | Patients Name           | Pats Last Name + Pats First Name (merged); on “Office Name:” header rows, only Pats Last Name is used.                                                                                                                                                      |

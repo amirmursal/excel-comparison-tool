@@ -148,7 +148,8 @@ EV_ALLOCATION_OUTPUT_COLUMNS = [
 # File identification: if filename contains this string -> use this format_key for column mapping.
 EV_ALLOCATION_FILENAME_RULES = [
     {"contains": "Erickson", "format_key": "erickson"},
-    {"contains": "Hoang", "format_key": "hoang"},
+    {"contains": "Viva Smiles", "format_key": "hoang_viva_smiles"},
+    {"contains": "Ismiles", "format_key": "hoang_ismiles"},
     {"contains": "Kates", "format_key": "kates"},
     {"contains": "Montefiore", "format_key": "montefiore"},
     {"contains": "ortho", "format_key": "ortho"},
@@ -173,7 +174,15 @@ EV_ALLOCATION_COLUMN_MAPPING = {
         "Subscriber Name": "InsDetal Subscriber",
         "Subscriber DOB": "Subscriber BirthDate",
     },
-    "hoang": {
+    "hoang_viva_smiles": {
+        "Appointment": "Next Appointment Date",
+        "Patients Name": "Patient's Name (Last First)",
+        "DOB": "Patient's BirthDate",
+        "Patient ID/Chart#": "Patient's ID",
+        "Insurance": "Insurance Company Billing Center Name",
+        "Policy ID": "Subscriber ID",
+    },
+    "hoang_ismiles": {
         "Appointment": "Next Appointment Date",
         "Patients Name": "Patient's Name (Last First)",
         "DOB": "Patient's BirthDate",
@@ -8838,7 +8847,8 @@ def _ev_allocation_get_format_key(filename):
     """Return format_key if filename matches any EV_ALLOCATION_FILENAME_RULES (contains check)."""
     if not filename:
         return None
-    fname_lower = filename.lower()
+    # Normalize: lowercase and treat underscores as spaces (secure_filename replaces spaces with _)
+    fname_lower = filename.lower().replace("_", " ")
     for rule in EV_ALLOCATION_FILENAME_RULES:
         contains = (rule.get("contains") or "").strip().lower()
         if contains and contains in fname_lower:
@@ -9056,7 +9066,6 @@ def process_ev_allocation():
                         row_series, mapping, EV_ALLOCATION_OUTPUT_COLUMNS
                     )
                     if format_key == "sl_medicaid":
-                        mapped["Office/Doctor Name"] = ""  # never fill for sl_medicaid
                         pats_first = _ev_allocation_get_cell(
                             row_series, "Pats First Name"
                         )
@@ -9086,6 +9095,51 @@ def process_ev_allocation():
                             mapped["Location/EntityCode"] = (
                                 _ev_allocation_sanitize_cell(current_location_entity)
                             )
+                        mapped["Office/Doctor Name"] = mapped["Location/EntityCode"]
+                    if format_key == "erickson":
+                        mapped["Office/Doctor Name"] = "Dr. Erickson"
+                        mapped["System"] = "Edge"
+                        mapped["Source"] = "Evening"
+                        mapped["Reference"] = "MCD"
+                        mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                    if format_key == "hoang_viva_smiles":
+                        mapped["Office/Doctor Name"] = "Dr. Hoang Viva Smiles"
+                        mapped["System"] = "Dolphin"
+                        mapped["Source"] = "Evening"
+                        mapped["Reference"] = "Commercial"
+                        mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                    if format_key == "hoang_ismiles":
+                        mapped["Office/Doctor Name"] = "Dr. Hoang Ismiles"
+                        mapped["System"] = "Dolphin"
+                        mapped["Source"] = "Evening"
+                        mapped["Reference"] = "MCD"
+                        mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                    if format_key == "kates":
+                        mapped["Office/Doctor Name"] = "Dr. Kates"
+                        mapped["System"] = "Greyfinch"
+                        mapped["Source"] = "Evening"
+                        mapped["Reference"] = "MCD"
+                        mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                    if format_key == "montefiore":
+                        mapped["Office/Doctor Name"] = "Montefiore"
+                        mapped["System"] = "Dolphin"
+                        mapped["Source"] = "Evening"
+                        mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                        billing_center = _ev_allocation_get_cell(
+                            row_series, "Insurance Company Billing Center Name"
+                        )
+                        if billing_center is not None and not pd.isna(billing_center):
+                            bc = str(billing_center).strip().lower()
+                            if bc == "humana healthy":
+                                mapped["Reference"] = "MCD"
+                            elif bc in ("aetna hmo", "aetna dhmo"):
+                                mapped["Reference"] = "Commercial"
+                    if format_key == "sl_medicaid":
+                        mapped["System"] = "Smilelink"
+                        mapped["Source"] = "Morning"
+                        mapped["Reference"] = "MCD"
+                        mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+
                     all_rows.append(mapped)
             files_processed.append(fname)
 
