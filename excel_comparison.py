@@ -159,6 +159,440 @@ EV_ALLOCATION_FILENAME_RULES = [
     {"contains": "SL_medicaid", "format_key": "sl_medicaid"},
 ]
 
+# Montefiore: Reference = "MCD" when Insurance Company Billing Center Name is in this set (case-insensitive).
+EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS = frozenset(
+    s.strip().lower()
+    for s in [
+        "Ameri health",
+        "Amerihealth Caritas",
+        "Care source",
+        "Caresource medicaid",
+        "Humana Healthy",
+        "Humana healthy horizons-medicaid",
+        "united health care",
+        "United Healthcare",
+        "#Caresource",
+        "*Ameri-Health Caritas",
+        "*Anthem BCBS Medicaid",
+        "*Caresource",
+        "*Envolve-Buckeye",
+        "*Humana Healthy Horizons",
+        "*Molina",
+        "*OH Medicaid and OH MyCare",
+        "*United Healthcare Comm Plan",
+        "ACS, Inc.",
+        "AFFINITY BY MOLINA MEDICAID",
+        "AFFINITY BY MOLINA MEDICAID CHP",
+        "Amerihealth",
+        "Amerihealth caritas Ohio",
+        "Anthem",
+        "ANTHEM-LIBERTY MEDICAID",
+        "Buckeye",
+        "Buckeye health",
+        "Buckeye health plan",
+        "Buckeye Medicaid",
+        "Care souce Claims Dept",
+        "Care source",
+        "Caresouce Medicaid",
+        "Caresource",
+        "Caresource Claims",
+        "Caresource medicaid",
+        "CareSource MyCare Ohio",
+        "Caresourse",
+        "Delta Dental of Ohio (Medicaid Claims)",
+        "DentaQuest - LA Medicaid Claims",
+        "Dentaquest (sunlife company)",
+        "DentaQuest CO",
+        "DentaQuest NM",
+        "DentaQuest of OH Claims",
+        "DentaQuest/Medicaid",
+        "DentaQuest-CHP/Medicaid",
+        "DentaQuest-Molina/Medicaid",
+        "DENTI-CAL",
+        "DQ Emblem Health Medicaid",
+        "DQ Emblem Health Medicaid CHP",
+        "EMPIREBCBS HEALTHPLUS MEDICAID",
+        "Envolve Dental OH Claims",
+        "FIDELIS MEDICAID",
+        "FIDELIS MEDICAID CHP",
+        "HEALTHFIRST MEDICAID",
+        "HEALTHFIRST MEDICAID CHP",
+        "Healthplex",
+        "HP Enterprises Claims",
+        "Humana",
+        "Humana health care",
+        "Humana Healthy Horizon",
+        "Humana Healthy Horizons",
+        "HUSKY_Medicaid_CT_HP Enterprises-",
+        "Indian Health Service (AHCCCS)",
+        "Liberty",
+        "Liberty (self bought) Plan",
+        "Liberty Dental Claims",
+        "Liberty Dental Plan (Medicaid)",
+        "Liberty Dental Plan/WV Medicaid",
+        "Maryland Healthy Smiles",
+        "Maryland Healthy Smiles (Scion)",
+        "Maryland Healthy Smiles/DDS Of MD",
+        "Maryland Healthy Smiles/Medicaid",
+        "Mass Health Claims",
+        "MassHealth Dental Claims",
+        "MCNA",
+        "MEDICAID NY DENTAL",
+        "Medicaid/Medicaid",
+        "METROPLUS MEDICAID",
+        "METROPLUS MEDICAID CHP",
+        "MHS",
+        "Molina",
+        "Molina (WV) Gainwell Technologies",
+        "Molina Healhcare Claims",
+        "molina healthcare",
+        "Molina Healthcare Claims",
+        "Molina/Medicaid",
+        "MVP",
+        "MVP CHP",
+        "MVP MEDICAID",
+        "OH Medicaid and OH MyCar",
+        "OH Medicaid and OH MyCare",
+        "Ohio Medicaid Claims",
+        "Pending Medicaid",
+        "Scion (WV) Unicare,Aenta BH, Health plan, Chip",
+        "Scion Ameri Health PA/Medicaid",
+        "Scion/Medicaid",
+        "UHC Emblem Health Medicaid",
+        "UHC HIP Medicaid",
+        "UHC HIP Medicaid CHP",
+        "UHC MVP Medicaid",
+        "UHC MVP Medicaid CHP",
+        "United Healtcare Community Pla",
+        "United health care community",
+        "United Health Care Medicad part C",
+        "United health careUnited healthcare",
+        "United Healthcare Comm Plan",
+        "United Healthcare Community Plan",
+        "UnitedHealthcare Dental Claims",
+        "UNITEDHEALTHCARE MEDICAID",
+        "VA Smiles for Children",
+        "VA Smiles For Children/Medicaid",
+        "WV Chip Blue - Molina/Medicaid Blue Plan",
+        "zzDentaQuest/Medicaid",
+    ]
+)
+
+# Montefiore: Reference = "Commercial" when Insurance Company Billing Center Name is in this set (case-insensitive).
+EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS = frozenset(
+    s.strip().lower()
+    for s in [
+        "Aetna",
+        "Aetna (Medical Address)",
+        "Aetna *",
+        "Aetna Dental",
+        "Aetna HMO/DHMO",
+        "Aetna PPO",
+        "Aetna*",
+        "Aetna* Fed VIP",
+        "Alwayscare Dental",
+        "Ameritas",
+        "Ameritas (Lincoln, NE)",
+        "Ameritas*",
+        "Anthem BCBS",
+        "Anthem BCBS (Empire)",
+        "Anthem BCBS*",
+        "ANTHEM DENTAL (NON PAR)",
+        "Asbestos Workers ( Local 24 )",
+        "BCBS",
+        "BCBS FEP",
+        "BCBS MA",
+        "BCBS of Alabama",
+        "BCBS of IL",
+        "BCBS of Illinois",
+        "BCBS Of LA Federal",
+        "Bcbs Of MA",
+        "BCBS of Minneapolis",
+        "BCBS of MN",
+        "BCBS of Oregon - Regence",
+        "BCBS of Texas",
+        "BCBS of TEXAS",
+        "BCBS Of TX",
+        "BEAM",
+        "Bento",
+        "Berkley County Board Of Education (UCR)",
+        "Best Life Dental Ins",
+        "BluCross BlueShield FEP BlueDental*",
+        "Blue Cross Blue Sheild",
+        "Blue Cross Blue Sheild of Massachusetts",
+        "Blue Cross Blue Shield",
+        "Blue Cross Blue Shield (Boston, MA)",
+        "Blue Cross Blue Shield (Care First Blue Choice)",
+        "Blue Cross Blue Shield (Care First)",
+        "Blue Cross Blue Shield (Chattanooga, TN)",
+        "Blue Cross Blue Shield (Dallas, TX)",
+        "Blue Cross Blue Shield (FEP Blue Dental)",
+        "Blue Cross Blue Shield (FEP Medical  Claims)",
+        "Blue Cross Blue Shield (Medical Federal Claims)",
+        "Blue Cross Blue Shield (Medical Plan ND50 Only)",
+        "Blue Cross Blue Shield (Seattle, WA)",
+        "Blue Cross Blue Shield Federal",
+        "Blue Cross Blue Shield FEP",
+        "Blue Cross Blue Shield of Louisiana",
+        "Blue Cross Blue Shield of Texas",
+        "Blue Cross Blue Shield of TN",
+        "Blue Cross Blue Shields Of MA.",
+        "Blue Cross Blue Shields of Texas",
+        "BlueChoice Traditional Dental",
+        "BlueCross BlueShield of Illinois",
+        "BlueCross/BlueShield (FEP BlueDental)",
+        "Care First*",
+        "Carefirst Administrators",
+        "CareFirst BCBS Mail Administrators",
+        "CareFirst Blue Choice",
+        "CareFirst BlueCross BlueShield",
+        "Careington 500 Discount plan",
+        "CF BCBS",
+        "CF BCBS - INDIV SELECT*",
+        "CF BCBS FEP*",
+        "CF BCBS Mail Administrator*",
+        "CF BCBS MD/REG*",
+        "CF BCBS REG/TRAD *",
+        "Cigna",
+        "Cigna (HMO)",
+        "Cigna (Loomis)",
+        "Cigna Dental",
+        "Cigna Dental (PPO)",
+        "Cigna Dental (TPA)",
+        "Cigna Health Care (PPO)",
+        "Cigna International",
+        "Cigna PPO",
+        "Cigna PPO*",
+        "Cigna*",
+        "Companion Life",
+        "Construction Workers Trust Fund",
+        "Cresent Dental",
+        "Delt Dental of Washington",
+        "Delta Care USA-HMO",
+        "Delta Dental",
+        "Delta Dental  GA",
+        "Delta Dental (Alpharetta, GA)",
+        "Delta Dental (Boston, MA)",
+        "Delta Dental (CA- Federal Services)",
+        "Delta Dental (CA-Federal Services)",
+        "Delta Dental (Concord, NH)",
+        "Delta Dental (Farmington, MI)",
+        "Delta Dental (Lisle, IL)",
+        "Delta Dental (Little Rock, AR)",
+        "Delta Dental (Louisville, KY)",
+        "Delta Dental (Massachusetts Claims)",
+        "Delta Dental (Mechanicsburg, PA)",
+        "Delta Dental (Milwaukee,WI)",
+        "Delta Dental (Minneapolis, MN)",
+        "Delta Dental (Nebraska Claims)",
+        "Delta Dental (New Jersey Claims)",
+        "Delta Dental (Portland, OR)",
+        "Delta Dental (Roanoke, VA)",
+        "Delta Dental (Sacramento, CA)",
+        "Delta Dental (Seattle, WA)",
+        "Delta Dental (St. Louis, MO)",
+        "Delta Dental (Stevens Point, WI)",
+        "Delta Dental (Wichita, KS)",
+        "Delta Dental *",
+        "Delta Dental CA*",
+        "Delta Dental CA* FED",
+        "Delta Dental CO",
+        "Delta Dental Federal Services",
+        "Delta Dental GA*",
+        "Delta Dental Idaho",
+        "Delta Dental IL*",
+        "Delta Dental Insurance Company",
+        "Delta Dental MA*",
+        "Delta Dental MI*",
+        "Delta Dental MN",
+        "Delta Dental MN / Wells fargo",
+        "Delta Dental MO*",
+        "Delta Dental NC",
+        "Delta Dental NM",
+        "Delta Dental NM DPO- Contracted Plan",
+        "Delta Dental of  WA",
+        "Delta Dental Of AR",
+        "Delta Dental Of AZ",
+        "Delta Dental of CA",
+        "Delta Dental Of CA*",
+        "Delta Dental of California",
+        "Delta Dental of Colorado",
+        "Delta Dental of IL",
+        "Delta Dental Of Illinois",
+        "Delta Dental of KY",
+        "Delta Dental of Mass",
+        "Delta Dental of Massachusetts",
+        "Delta Dental of Michigan",
+        "Delta Dental of Minnesota",
+        "Delta Dental of Missouri",
+        "Delta Dental of New Jersey",
+        "Delta Dental of NJ",
+        "DELTA DENTAL OF NJ PPO",
+        "Delta Dental of NJ*",
+        "Delta Dental of NM",
+        "DELTA DENTAL OF NY",
+        "DELTA DENTAL OF NY PPO",
+        "Delta Dental of OH",
+        "Delta Dental Of Ohio",
+        "Delta Dental Of Oklahoma",
+        "Delta Dental of Oregon(Alaska)",
+        "Delta Dental Of PA",
+        "DELTA DENTAL OF PA PPO",
+        "Delta Dental of Pennsylvania",
+        "Delta Dental of VA",
+        "Delta Dental of Washington",
+        "Delta Dental of WI",
+        "Delta Dental of Wisconsin",
+        "Delta Dental PA*",
+        "Delta Dental TN*",
+        "Delta Dental Va",
+        "Delta Dental VA*",
+        "Delta Dental WA*",
+        "Delta Dental-DC",
+        "Dental Claims Admin (Regency)",
+        "Dental Dental",
+        "Dentegra Insruance Company",
+        "Dina Dental",
+        "Dominion",
+        "Dominion Dental",
+        "Dominion Dental*",
+        "Dominion HMO",
+        "EBCBS DENTAL (NON PAR)",
+        "EMBLEM PPO 1199",
+        "EMBLEM PREFERRED",
+        "EMBLEM PREFERRED PLUS",
+        "EMPIRE BCBS HEALTHCHOICE (NON PAR)",
+        "Equitable Health Dental",
+        "Fedelio",
+        "FEP Blue Dental",
+        "FEP BlueDental",
+        "Geha",
+        "GEHA (medical)",
+        "GEHA Connection",
+        "Geha Connection Dental Federal",
+        "GEHA DENTAL CLAIMS",
+        "GEHA*",
+        "GHI",
+        "Guardian",
+        "Guardian - Group Dental",
+        "Guardian Dental",
+        "GUARDIAN DENTAL PPO",
+        "Guardian*",
+        "Guardian/DentalGuard",
+        "HEALTHFIRST ESSENTIAL PLAN",
+        "HEALTHPLEX PPO (TERM 12/31/23)",
+        "HMA-Verdegard",
+        "HMSA [UCCI]",
+        "Humana",
+        "Humana  Value Plus",
+        "Humana Comp Benefits-Federal Advantage Plan",
+        "Humana Dental",
+        "Humana FEDVIP",
+        "Humana TeamCare",
+        "Humana/Comp Benefits Federal Advantage",
+        "LIBERTY COMMERCIAL",
+        "Lincoln Financial",
+        "Lincoln Financial Group",
+        "Line Co.- DNOA",
+        "Local 99",
+        "Mail Administrator (CFBCBS)",
+        "Mail Administrator (CFBCBSR)",
+        "Mail Administrator (FEP)",
+        "Meritain",
+        "Meritain Dental",
+        "Met Life",
+        "Met Life*",
+        "Metlife",
+        "MetLife - Federal Dental",
+        "Metlife Dental",
+        "METLIFE PPO",
+        "Metlife TDP Dental Unit",
+        "Metro D.C. Paving Industry Employees",
+        "Mutual of Omaha",
+        "National Elevator Industry",
+        "OEBF- Local 99",
+        "Premera BCBS",
+        "Premera BlueCross BlueShield (Microsoft)",
+        "Principal",
+        "Principal Life Insurance",
+        "Principal*",
+        "Principle",
+        "regence bcbs ut",
+        "Regence Group Administrators",
+        "Reliance Standard",
+        "Southern Operators Dental",
+        "Standard Ins",
+        "Standard Ins Comp",
+        "Stone And Marble Masons Of Metropolitan Wash DC",
+        "Summit",
+        "Sun Life",
+        "Sun Life Financial",
+        "Sunlife",
+        "Sunlife Dental Insurance",
+        "Sunlife Financial",
+        "Sunlife Financial Dental",
+        "Sunlife Financial Dental Benefits Group",
+        "TeamCare",
+        "Tricare Dental Program Claims (UCCI)",
+        "UCCI - BCBS LA",
+        "UCCI - TRICARE Dent Prog*",
+        "UCCI Fed Gov*",
+        "UCCI FMDP*",
+        "UCCI PPO ST.OF MD.",
+        "UCCI*",
+        "UHC Dentcare",
+        "UHC Healthplex Commercial PPO",
+        "UMR",
+        "United Concordia",
+        "UNITED CONCORDIA - BCBS of LA",
+        "United Concordia - TDP",
+        "United Concordia - TDP Dental Claims",
+        "United Concordia (Highmark BC/BS)",
+        "United Concordia (TDP)",
+        "UNITED CONCORDIA / WEST VIRGINA CLAIMS",
+        "United Concordia Dental",
+        "United Concordia Inc.(local 26 ibew)",
+        "United Concorida Dental",
+        "United Health Care",
+        "United Health Care (Med)",
+        "United Health Care Discount Plan",
+        "United Health Care*",
+        "United Healthcare",
+        "United Healthcare*",
+        "UNUM",
+        "Unum Dental",
+        "US Health Group (3rd party UHC provider)",
+        "WEB-TPA",
+    ]
+)
+
+# Department and Practice ID by (Office/Doctor Name, Reference/Status). Keys normalized strip(); match case-insensitive.
+# (office_doctor_name, reference) -> (department, practice_id)
+EV_ALLOCATION_DEPARTMENT_PRACTICE_LOOKUP = {
+    ("FREDPEDO", "MCD"): ("Medicaid 180", "6002"),
+    ("MUSGROVE", "MCD"): ("Medicaid 180", "6003"),
+    ("REISTERS", "MCD"): ("Medicaid 180", "6008"),
+    ("FARMGEN", "Commercial"): ("Commercial 120", "6004"),
+    ("FREDPEDO", "Commercial"): ("Commercial 120", "6002"),
+    ("METAPEDO", "Commercial"): ("Commercial 120", "6006"),
+    ("MUSGROVE", "Commercial"): ("Commercial 120", "6003"),
+    ("NOLAPEDO", "Commercial"): ("Commercial 120", "6007"),
+    ("REISTERS", "Commercial"): ("Commercial 120", "6008"),
+    ("GONZALES", "Commercial"): ("Commercial 120", "6005"),
+    ("Montefiore", "MCD"): ("Medicaid 100", "7501"),
+    ("Montefiore", "Commercial"): ("Commercial 100", "7501"),
+    ("Dr. Hoang Viva Smiles", "MCD"): ("Medicaid 160", "9518"),
+    ("Dr. Hoang Ismiles", "MCD"): ("Medicaid 160", "9570"),
+    ("Dr. Kates", "MCD"): ("Medicaid 160", "9112"),
+    ("NADG", "MCD"): ("Medicaid 160", "9193"),
+    ("Dr. Erickson", "MCD"): ("Medicaid 80", "9513"),
+    ("METAPEDO", "MCD"): ("Medicaid 80", "6006"),
+    ("NOLAPEDO", "MCD"): ("Medicaid 80", "6007"),
+    ("GONZALES", "MCD"): ("Medicaid 80", "6005"),
+    ("Dr. Mansman", "MCD"): ("Medicaid 160", "9122"),
+    ("Dr. Susan Park", "MCD"): ("Medicaid 160", "9017"),
+}
+
 # Column mapping per format_key: output column name -> input column name (or list of input cols to join).
 # Office/Doctor Name is filled only for sl_evening (Office Name). All other formats leave it blank.
 EV_ALLOCATION_COLUMN_MAPPING = {
@@ -8843,6 +9277,20 @@ def _ev_allocation_sanitize_cell(value):
     return _EV_ALLOCATION_ILLEGAL_CHARS_RE.sub("", s)
 
 
+def _ev_allocation_format_date_mmddyyyy(value):
+    """Format a date/datetime value as MM/DD/YYYY for output (e.g. Appointment column). Returns "" for empty/invalid."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    s = str(value).strip()
+    if not s:
+        return ""
+    try:
+        dt = pd.to_datetime(value)
+        return dt.strftime("%m/%d/%Y")
+    except Exception:
+        return _ev_allocation_sanitize_cell(value)
+
+
 def _ev_allocation_get_format_key(filename):
     """Return format_key if filename matches any EV_ALLOCATION_FILENAME_RULES (contains check)."""
     if not filename:
@@ -9130,16 +9578,100 @@ def process_ev_allocation():
                         )
                         if billing_center is not None and not pd.isna(billing_center):
                             bc = str(billing_center).strip().lower()
-                            if bc == "humana healthy":
+                            if bc in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
                                 mapped["Reference"] = "MCD"
-                            elif bc in ("aetna hmo", "aetna dhmo"):
+                            elif (
+                                bc
+                                in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS
+                                or bc in ("aetna hmo", "aetna dhmo")
+                            ):
                                 mapped["Reference"] = "Commercial"
                     if format_key == "sl_medicaid":
                         mapped["System"] = "Smilelink"
                         mapped["Source"] = "Morning"
                         mapped["Reference"] = "MCD"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
-
+                    if format_key == "ortho":
+                        entity_code_val = _ev_allocation_get_cell(
+                            row_series, "Entity Code"
+                        )
+                        ec = (
+                            ""
+                            if entity_code_val is None or pd.isna(entity_code_val)
+                            else str(entity_code_val).strip().upper()
+                        )
+                        if ec == "FREDORMD":
+                            mapped["Office/Doctor Name"] = "Dr. Mansman"
+                        elif ec in ("SYRACUSE", "NTHSYRNY"):
+                            mapped["Office/Doctor Name"] = "Dr. Susan Park"
+                        else:
+                            mapped["Office/Doctor Name"] = ""
+                        mapped["System"] = "OrthoTrack"
+                        mapped["Source"] = "Morning"
+                        mapped["Reference"] = "MCD"
+                        mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                    if format_key == "sl_evening":
+                        mapped["System"] = "Smilelink"
+                        mapped["Source"] = "Evening"
+                        office_name_val = _ev_allocation_get_cell(
+                            row_series, "Office Name"
+                        )
+                        mapped["Office/Doctor Name"] = _ev_allocation_sanitize_cell(
+                            office_name_val
+                        )
+                        billing_center = _ev_allocation_get_cell(
+                            row_series, "Insurance Company Billing Center Name"
+                        )
+                        billing_center_lower = (
+                            ""
+                            if billing_center is None or pd.isna(billing_center)
+                            else str(billing_center).strip().lower()
+                        )
+                        carrier_name = _ev_allocation_get_cell(
+                            row_series, "Carrier Name"
+                        )
+                        carrier_str = (
+                            ""
+                            if carrier_name is None or pd.isna(carrier_name)
+                            else str(carrier_name).strip()
+                        )
+                        carrier_lower = carrier_str.lower()
+                        if (
+                            billing_center_lower
+                            in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS
+                        ):
+                            mapped["Reference"] = "MCD"
+                        elif (
+                            carrier_lower
+                            in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS
+                        ):
+                            mapped["Reference"] = "Commercial"
+                        elif carrier_str == "United Healthcare":
+                            mapped["Reference"] = "MCD"
+                        else:
+                            mapped["Reference"] = "MCD"
+                        mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                    # Department and Practice ID from (Office/Doctor Name, Reference) lookup (all formats)
+                    office_doc = (mapped.get("Office/Doctor Name") or "").strip()
+                    ref = (mapped.get("Reference") or "").strip()
+                    lookup_key = (office_doc.upper(), ref.upper())
+                    for (od, r), (
+                        dept,
+                        pid,
+                    ) in EV_ALLOCATION_DEPARTMENT_PRACTICE_LOOKUP.items():
+                        if (od.upper(), r.upper()) == lookup_key:
+                            mapped["Department"] = dept
+                            mapped["Practice ID"] = pid
+                            break
+                    mapped["Appointment"] = _ev_allocation_format_date_mmddyyyy(
+                        mapped.get("Appointment")
+                    )
+                    mapped["DOB"] = _ev_allocation_format_date_mmddyyyy(
+                        mapped.get("DOB")
+                    )
+                    mapped["Subscriber DOB"] = _ev_allocation_format_date_mmddyyyy(
+                        mapped.get("Subscriber DOB")
+                    )
                     all_rows.append(mapped)
             files_processed.append(fname)
 

@@ -106,9 +106,12 @@ _(filename contains "Kates")_
 
 _(filename contains "Montefiore")_
 
+**Reference** is derived from **Insurance Company Billing Center Name**: **"MCD"** when the billing center name is in the configured MCD list (`EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS`); **"Commercial"** when in the Commercial list (`EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS`) or when = "Aetna HMO" or "Aetna DHMO"; otherwise blank.
+
 | Output column       | Input column                              |
 | ------------------- | ----------------------------------------- |
 | Location/EntityCode | Next Appointment Including Today Location |
+| Reference           | **"MCD"** if Insurance Company Billing Center Name is in MCD list; **"Commercial"** if in Commercial list or Aetna HMO/DHMO |
 | Appointment         | Next Appointment Including Today Date     |
 | Patients Name       | Patient's Name (Last First)               |
 | DOB                 | Patient's BirthDate                       |
@@ -124,8 +127,9 @@ _(filename contains "Montefiore")_
 
 _(filename contains "ortho")_
 
-| Output column       | Input column    |
-| ------------------- | --------------- |
+| Output column       | Input column / logic |
+| ------------------- | -------------------- |
+| **Office/Doctor Name** | **"Dr. Mansman"** if Entity Code = "FREDORMD"; **"Dr. Susan Park"** if Entity Code = "SYRACUSE" or "NTHSYRNY"; otherwise **blank**. |
 | Location/EntityCode | Entity Code     |
 | Appointment         | Next Appt       |
 | Patients Name       | Patient         |
@@ -143,10 +147,11 @@ _(filename contains "SL Evening" or "SL_Evening")_
 
 **Office/Doctor Name is filled only for this file type** (from Office Name). All other file types leave Office/Doctor Name blank.
 
-| Output column       | Input column                              |
+| Output column       | Input column / logic                      |
 | ------------------- | ----------------------------------------- |
 | Office/Doctor Name  | Office Name                               |
 | Location/EntityCode | _(blank for sl_evening)_                  |
+| Reference           | **"MCD"** when Insurance Company Billing Center Name is in the MCD list (`EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS`), or when Carrier Name = "United Healthcare"; **"Commercial"** when Carrier Name is in the Commercial list (`EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS`); otherwise **"MCD"** |
 | Appointment         | Future Appt                               |
 | Patients Name       | Pats Last Name + Pats First Name (merged) |
 | DOB                 | Pats Birth Date                           |
@@ -174,6 +179,12 @@ _(filename contains "SL medicaid" or "SL_medicaid")_
 | Carrier Phone           | Carrier Phone                                                                                                                                                                                                                                               |
 | Subscriber Name         | Emp name last, First Need to merge                                                                                                                                                                                                                          |
 | Subscriber DOB          | Employee Birth Date                                                                                                                                                                                                                                         |
+
+---
+
+## Department and Practice ID (all formats)
+
+**Department** and **Practice ID** are filled from a lookup keyed by **(Office/Doctor Name, Reference)**. Reference is the value set per format (e.g. "MCD" or "Commercial"). Example: when Office/Doctor Name = "FREDPEDO" and Reference = "MCD", Department = "Medicaid 180" and Practice ID = "6002". The lookup table is `EV_ALLOCATION_DEPARTMENT_PRACTICE_LOOKUP` in code; matching is case-insensitive.
 
 ---
 
