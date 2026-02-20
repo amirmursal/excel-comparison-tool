@@ -9692,9 +9692,20 @@ def process_ev_allocation():
         result_df = result_df.fillna("")
         for c in result_df.columns:
             result_df[c] = result_df[c].astype(str).apply(_ev_allocation_sanitize_cell)
+        # "Not to work" sheet: SHAWNEE in Location/EntityCode, or Montefiore with blank Insurance
+        shawnee_mask = (
+            result_df["Location/EntityCode"].str.strip().str.upper() == "SHAWNEE"
+        )
+        montefiore_blank_insurance_mask = (
+            result_df["Office/Doctor Name"].str.strip().str.upper() == "MONTEFIORE"
+        ) & (result_df["Insurance"].str.strip() == "")
+        not_to_work_mask = shawnee_mask | montefiore_blank_insurance_mask
+        not_to_work_df = result_df[not_to_work_mask]
+        ev_allocation_df = result_df[~not_to_work_mask]
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-            result_df.to_excel(writer, index=False, sheet_name="EVAllocation")
+            ev_allocation_df.to_excel(writer, index=False, sheet_name="EVAllocation")
+            not_to_work_df.to_excel(writer, index=False, sheet_name="Not to work")
         buf.seek(0)
         ev_allocation_output = buf.getvalue()
         ev_allocation_output_filename = "ev_allocation_report.xlsx"
