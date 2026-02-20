@@ -9672,6 +9672,11 @@ def process_ev_allocation():
                     mapped["Subscriber DOB"] = _ev_allocation_format_date_mmddyyyy(
                         mapped.get("Subscriber DOB")
                     )
+                    # Skip rows with empty Patients Name for sl_medicaid
+                    if format_key == "sl_medicaid":
+                        patients_name_val = (mapped.get("Patients Name") or "").strip()
+                        if not patients_name_val:
+                            continue
                     all_rows.append(mapped)
             files_processed.append(fname)
 
