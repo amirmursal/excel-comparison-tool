@@ -9548,26 +9548,70 @@ def process_ev_allocation():
                         mapped["Office/Doctor Name"] = "Dr. Erickson"
                         mapped["System"] = "Edge"
                         mapped["Source"] = "Evening"
-                        mapped["Reference"] = "MCD"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                        ins_val = _ev_allocation_get_cell(row_series, "Insurance Company Name")
+                        ins_lower = (
+                            ""
+                            if ins_val is None or pd.isna(ins_val)
+                            else str(ins_val).strip().lower()
+                        )
+                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
+                            mapped["Reference"] = "MCD"
+                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
+                            mapped["Reference"] = "Commercial"
+                        else:
+                            mapped["Reference"] = "Commercial"
                     if format_key == "hoang_viva_smiles":
                         mapped["Office/Doctor Name"] = "Dr. Hoang Viva Smiles"
                         mapped["System"] = "Dolphin"
                         mapped["Source"] = "Evening"
-                        mapped["Reference"] = "Commercial"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                        ins_val = _ev_allocation_get_cell(row_series, "Insurance Company Billing Center Name")
+                        ins_lower = (
+                            ""
+                            if ins_val is None or pd.isna(ins_val)
+                            else str(ins_val).strip().lower()
+                        )
+                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
+                            mapped["Reference"] = "MCD"
+                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
+                            mapped["Reference"] = "Commercial"
+                        else:
+                            mapped["Reference"] = "Commercial"
                     if format_key == "hoang_ismiles":
                         mapped["Office/Doctor Name"] = "Dr. Hoang Ismiles"
                         mapped["System"] = "Dolphin"
                         mapped["Source"] = "Evening"
-                        mapped["Reference"] = "MCD"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                        ins_val = _ev_allocation_get_cell(row_series, "Insurance Company Billing Center Name")
+                        ins_lower = (
+                            ""
+                            if ins_val is None or pd.isna(ins_val)
+                            else str(ins_val).strip().lower()
+                        )
+                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
+                            mapped["Reference"] = "MCD"
+                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
+                            mapped["Reference"] = "Commercial"
+                        else:
+                            mapped["Reference"] = "Commercial"
                     if format_key == "kates":
                         mapped["Office/Doctor Name"] = "Dr. Kates"
                         mapped["System"] = "Greyfinch"
                         mapped["Source"] = "Evening"
-                        mapped["Reference"] = "MCD"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                        ins_val = _ev_allocation_get_cell(row_series, "Payor")
+                        ins_lower = (
+                            ""
+                            if ins_val is None or pd.isna(ins_val)
+                            else str(ins_val).strip().lower()
+                        )
+                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
+                            mapped["Reference"] = "MCD"
+                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
+                            mapped["Reference"] = "Commercial"
+                        else:
+                            mapped["Reference"] = "Commercial"
                     if format_key == "montefiore":
                         mapped["Office/Doctor Name"] = "Montefiore"
                         mapped["System"] = "Dolphin"
@@ -9576,21 +9620,34 @@ def process_ev_allocation():
                         billing_center = _ev_allocation_get_cell(
                             row_series, "Insurance Company Billing Center Name"
                         )
+                        bc = ""
                         if billing_center is not None and not pd.isna(billing_center):
                             bc = str(billing_center).strip().lower()
-                            if bc in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
-                                mapped["Reference"] = "MCD"
-                            elif (
-                                bc
-                                in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS
-                                or bc in ("aetna hmo", "aetna dhmo")
-                            ):
-                                mapped["Reference"] = "Commercial"
+                        if bc in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
+                            mapped["Reference"] = "MCD"
+                        elif (
+                            bc in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS
+                            or bc in ("aetna hmo", "aetna dhmo")
+                        ):
+                            mapped["Reference"] = "Commercial"
+                        else:
+                            mapped["Reference"] = "Commercial"
                     if format_key == "sl_medicaid":
                         mapped["System"] = "Smilelink"
                         mapped["Source"] = "Morning"
-                        mapped["Reference"] = "MCD"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                        ins_val = _ev_allocation_get_cell(row_series, "Carrier Name")
+                        ins_lower = (
+                            ""
+                            if ins_val is None or pd.isna(ins_val)
+                            else str(ins_val).strip().lower()
+                        )
+                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
+                            mapped["Reference"] = "MCD"
+                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
+                            mapped["Reference"] = "Commercial"
+                        else:
+                            mapped["Reference"] = "Commercial"
                     if format_key == "ortho":
                         entity_code_val = _ev_allocation_get_cell(
                             row_series, "Entity Code"
@@ -9608,8 +9665,19 @@ def process_ev_allocation():
                             mapped["Office/Doctor Name"] = ""
                         mapped["System"] = "OrthoTrack"
                         mapped["Source"] = "Morning"
-                        mapped["Reference"] = "MCD"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
+                        ins_val = _ev_allocation_get_cell(row_series, "Carrier")
+                        ins_lower = (
+                            ""
+                            if ins_val is None or pd.isna(ins_val)
+                            else str(ins_val).strip().lower()
+                        )
+                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
+                            mapped["Reference"] = "MCD"
+                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
+                            mapped["Reference"] = "Commercial"
+                        else:
+                            mapped["Reference"] = "Commercial"
                     if format_key == "sl_evening":
                         mapped["System"] = "Smilelink"
                         mapped["Source"] = "Evening"
@@ -9649,7 +9717,7 @@ def process_ev_allocation():
                         elif carrier_str == "United Healthcare":
                             mapped["Reference"] = "MCD"
                         else:
-                            mapped["Reference"] = "MCD"
+                            mapped["Reference"] = "Commercial"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
                     # Department and Practice ID from (Office/Doctor Name, Reference) lookup (all formats)
                     office_doc = (mapped.get("Office/Doctor Name") or "").strip()
@@ -9697,14 +9765,23 @@ def process_ev_allocation():
         result_df = result_df.fillna("")
         for c in result_df.columns:
             result_df[c] = result_df[c].astype(str).apply(_ev_allocation_sanitize_cell)
-        # "Not to work" sheet: SHAWNEE in Location/EntityCode, or Montefiore with blank Insurance
+        # "Not to work" sheet: SHAWNEE in Location/EntityCode, or Montefiore with blank Insurance, or Dr. Kates with Commercial Reference,
+        # or Smilelink system with Office/Doctor Name not in allowed list
         shawnee_mask = (
             result_df["Location/EntityCode"].str.strip().str.upper() == "SHAWNEE"
         )
         montefiore_blank_insurance_mask = (
             result_df["Office/Doctor Name"].str.strip().str.upper() == "MONTEFIORE"
         ) & (result_df["Insurance"].str.strip() == "")
-        not_to_work_mask = shawnee_mask | montefiore_blank_insurance_mask
+        kates_commercial_mask = (
+            result_df["Office/Doctor Name"].str.strip().str.upper() == "DR. KATES"
+        ) & (result_df["Reference"].str.strip().str.upper() == "COMMERCIAL")
+        # Smilelink: only allow FREDPEDO, MUSGROVE, REISTERS in Office/Doctor Name
+        smilelink_allowed_offices = {"FREDPEDO", "MUSGROVE", "REISTERS"}
+        smilelink_invalid_office_mask = (
+            result_df["System"].str.strip().str.upper() == "SMILELINK"
+        ) & (~result_df["Office/Doctor Name"].str.strip().str.upper().isin(smilelink_allowed_offices))
+        not_to_work_mask = shawnee_mask | montefiore_blank_insurance_mask | kates_commercial_mask | smilelink_invalid_office_mask
         not_to_work_df = result_df[not_to_work_mask]
         ev_allocation_df = result_df[~not_to_work_mask]
         buf = io.BytesIO()
