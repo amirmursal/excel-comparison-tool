@@ -9781,7 +9781,13 @@ def process_ev_allocation():
         smilelink_invalid_office_mask = (
             result_df["System"].str.strip().str.upper() == "SMILELINK"
         ) & (~result_df["Office/Doctor Name"].str.strip().str.upper().isin(smilelink_allowed_offices))
-        not_to_work_mask = shawnee_mask | montefiore_blank_insurance_mask | kates_commercial_mask | smilelink_invalid_office_mask
+        # Hoang Viva Smiles / Hoang Ismiles: Commercial Reference goes to Not to work
+        hoang_commercial_mask = (
+            result_df["Office/Doctor Name"].str.strip().str.upper().isin(
+                {"DR. HOANG VIVA SMILES", "DR. HOANG ISMILES"}
+            )
+        ) & (result_df["Reference"].str.strip().str.upper() == "COMMERCIAL")
+        not_to_work_mask = shawnee_mask | montefiore_blank_insurance_mask | kates_commercial_mask | smilelink_invalid_office_mask | hoang_commercial_mask
         not_to_work_df = result_df[not_to_work_mask]
         ev_allocation_df = result_df[~not_to_work_mask]
         buf = io.BytesIO()
