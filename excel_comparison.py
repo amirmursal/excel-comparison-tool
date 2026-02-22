@@ -112,6 +112,109 @@ ev_allocation_result = None
 ev_allocation_output = None  # bytes for download when ready
 ev_allocation_output_filename = ""
 
+# Dental BV Report globals
+dental_bv_step1_data = None  # DataFrame of combined Step 1 rows
+dental_bv_step2_data = None  # DataFrame of combined Step 2 rows
+dental_bv_step3_data = None  # DataFrame of combined Step 3 rows
+dental_bv_step1_output = None  # bytes for step 1 download
+dental_bv_step2_output = None  # bytes for step 2 download
+dental_bv_step3_output = None  # bytes for step 3 download
+dental_bv_result_step1 = None
+dental_bv_result_step2 = None
+dental_bv_result_step3 = None
+dental_bv_final_output = None  # bytes for final combined download
+
+DENTAL_BV_OUTPUT_COLUMNS = [
+    "Software",
+    "Office Name",
+    "Practice ID",
+    "Location",
+    "Doctor Name",
+    "Department",
+    "Source",
+    "Received date",
+    "Appointment",
+    "Patient Name",
+    "DOB",
+    "Patient ID",
+    "Insurance",
+    "Policy ID",
+    "Phone",
+    "Status",
+    "Comments",
+    "Fee Schedule",
+    "Rep",
+    "Agent",
+    "Remark",
+    "Work Date",
+    "Subscriber Name",
+    "Subscriber DOB",
+    "Zip Code",
+    "Group No",
+    "QC Agent",
+    "QC Comments",
+    "Date work",
+]
+
+# Dental BV Step 1: allowed filename patterns
+DENTAL_BV_STEP1_FILE_RULES = [
+    {"contains": "Stovall", "sheet": "Today"},
+    {"contains": "Suri", "sheet": "Sheet1"},
+]
+
+# Dental BV Step 2: allowed filename patterns (order matters — "Previous Day" checked before "Today")
+DENTAL_BV_STEP2_FILE_RULES = [
+    {"contains": "Previous Day", "role": "previous"},
+    {"contains": "Yesterday", "role": "yesterday"},
+    {"contains": "Today", "role": "today"},
+]
+
+DENTAL_BV_STEP2_COMPARE_COLUMNS = [
+    "Entity Code",
+    "Pats Number",
+    "Patient Name",
+    "Carrier Name",
+    "Insurer ID",
+]
+
+DENTAL_BV_STEP2_COLUMN_MAPPING = {
+    "Entity Code": "Office Name",
+    "Pats Number": "Patient ID",
+    "Patient Name": "Patient Name",
+    "Pats Birth Date": "DOB",
+    "Next Appt": "Appointment",
+    "Carrier Name": "Insurance",
+    "Carrier Phone": "Phone",
+    "Insurer ID": "Policy ID",
+}
+
+# Dental BV Step 3: allowed filename patterns
+DENTAL_BV_STEP3_FILE_RULES = [
+    {"contains": "Raw Smilelink", "role": "raw", "sheet": "Sheet1"},
+    {"contains": "Consolidated", "role": "consolidated", "sheet": None},
+]
+
+DENTAL_BV_STEP3_MATCH_COLUMNS = ["Patient Name", "Insurance", "Policy ID"]
+
+# Column mapping from Raw Smilelink input columns to output columns
+DENTAL_BV_STEP3_COLUMN_MAPPING = {
+    "Entity Code": "Office Name",
+    "PatsLastname": "Patient Name",
+    "PatsFirstname": "Patient Name",
+    "Pats Last Name": "Patient Name",
+    "Pats First Name": "Patient Name",
+    "Pats Birth Date": "DOB",
+    "PatsDOB": "DOB",
+    "Future Appt": "Appointment",
+    "Next Appt": "Appointment",
+    "Carrier Name": "Insurance",
+    "Carrier Phone": "Phone",
+    "Pol Employee SSN ID": "Policy ID",
+    "Insurer ID": "Policy ID",
+    "Employee Birth Date": "Subscriber DOB",
+    "Emp name last, First Need to merge": "Subscriber Name",
+}
+
 # EV Allocation: fixed output column order (you will map each input file's columns to these)
 EV_ALLOCATION_OUTPUT_COLUMNS = [
     "System",
@@ -1329,6 +1432,10 @@ HTML_TEMPLATE = """
                     <span class="menu-item-icon">11.</span>
                     <span>EV Allocation report</span>
                 </div>
+                <div class="menu-item {% if active_tab == 'dentalbv' %}active{% endif %}" onclick="switchTab('dentalbv')">
+                    <span class="menu-item-icon">12.</span>
+                    <span>Dental BV Report</span>
+                </div>
             </nav>
         </div>
 
@@ -1348,6 +1455,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'datacleanser' %}🧹 Data Cleanser
                     {% elif active_tab == 'agentremarktransfer' %}🔄 Agent & Remark Transfer
                     {% elif active_tab == 'evallocation' %}📋 EV Allocation report
+                    {% elif active_tab == 'dentalbv' %}🦷 Dental BV Report
                     {% else %}🔄 Comparison Tool
                     {% endif %}
                 </h2>
@@ -1364,6 +1472,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'datacleanser' %}Remove selected values from a column and create clean/removed sheets
                     {% elif active_tab == 'agentremarktransfer' %}Transfer Agent Name to Agent 1 and Remark to Remark 1
                     {% elif active_tab == 'evallocation' %}Upload multiple files (identified by name), then generate output file
+                    {% elif active_tab == 'dentalbv' %}3-step process to generate Dental BV report
                     {% else %}Compare Patient IDs and add insurance columns
                     {% endif %}
                 </p>
@@ -2972,6 +3081,122 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
+            <!-- Tab 13: Dental BV Report -->
+            <div id="dentalbv-tab" class="tab-content {% if active_tab == 'dentalbv' %}active{% endif %}">
+                <div class="section">
+                    <h3>🦷 Dental BV Report</h3>
+                    <p>3-step process: each step uploads files, processes them, and stores the output. The final report combines all steps into one file.</p>
+                </div>
+
+                <!-- Output columns reference -->
+                <div class="section" style="background: #f0f4ff; border: 1px solid #667eea;">
+                    <h3>📄 Output file columns</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; font-size: 0.9em;">
+                        {% for col in dental_bv_output_columns %}
+                        <span style="background: white; padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">{{ col }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Step 1 -->
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>📁 Step 1: Upload files</h3>
+                    <p style="margin-bottom: 10px;">Upload files with <strong>"Stovall"</strong> (reads <em>Today</em> sheet) and/or <strong>"Suri"</strong> (reads <em>Sheet1</em>) in the filename. Only these two file types are accepted.</p>
+                    <form action="/upload_dental_bv_step1" method="post" enctype="multipart/form-data" id="dentalbv-step1-upload-form">
+                        <div class="form-group">
+                            <label for="dental_bv_step1_files">Select files (multiple allowed):</label>
+                            <input type="file" id="dental_bv_step1_files" name="files" accept=".csv,.xlsx,.xls" multiple required>
+                        </div>
+                        <button type="submit" id="dentalbv-step1-upload-btn">📤 Upload & Process Step 1</button>
+                    </form>
+                    <div class="loading" id="dentalbv-step1-loading">
+                        <div class="spinner"></div>
+                        <p>Processing Step 1 files...</p>
+                    </div>
+                    {% if dental_bv_result_step1 %}
+                    <div class="status-message" style="margin-top: 15px;">{{ dental_bv_result_step1 | safe }}</div>
+                    {% endif %}
+                    {% if dental_bv_has_step1_output %}
+                    <form action="/download_dental_bv_step" method="post" style="margin-top: 10px;">
+                        <input type="hidden" name="step" value="1">
+                        <button type="submit">💾 Download Step 1 output</button>
+                    </form>
+                    {% endif %}
+                </div>
+
+                <!-- Step 2 -->
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>📁 Step 2: Upload files (Today vs Previous Day + Yesterday)</h3>
+                    <p style="margin-bottom: 10px;">Upload files with <strong>"Today"</strong>, <strong>"Previous Day"</strong>, and optionally <strong>"Yesterday"</strong> in the filename. New rows from Today (not in Previous Day) are included. From Yesterday, rows where Remark is not "updated" are included.</p>
+                    <form action="/upload_dental_bv_step2" method="post" enctype="multipart/form-data" id="dentalbv-step2-upload-form">
+                        <div class="form-group">
+                            <label for="dental_bv_step2_files">Select files (Today + Previous Day + Yesterday):</label>
+                            <input type="file" id="dental_bv_step2_files" name="files" accept=".csv,.xlsx,.xls" multiple required>
+                        </div>
+                        <button type="submit" id="dentalbv-step2-upload-btn">📤 Upload & Process Step 2</button>
+                    </form>
+                    <div class="loading" id="dentalbv-step2-loading">
+                        <div class="spinner"></div>
+                        <p>Processing Step 2 files...</p>
+                    </div>
+                    {% if dental_bv_result_step2 %}
+                    <div class="status-message" style="margin-top: 15px;">{{ dental_bv_result_step2 | safe }}</div>
+                    {% endif %}
+                    {% if dental_bv_has_step2_output %}
+                    <form action="/download_dental_bv_step" method="post" style="margin-top: 10px;">
+                        <input type="hidden" name="step" value="2">
+                        <button type="submit">💾 Download Step 2 output</button>
+                    </form>
+                    {% endif %}
+                </div>
+
+                <!-- Step 3 -->
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>📁 Step 3: Upload files (Raw Smilelink vs Smilelink Consolidated)</h3>
+                    <p style="margin-bottom: 10px;">Upload files with <strong>"Raw Smilelink"</strong> and <strong>"Smilelink Consolidated"</strong> in the filename. Matches on Patient Name, Insurance, Policy ID where the consolidated Date is older than 350 days are included.</p>
+                    <form action="/upload_dental_bv_step3" method="post" enctype="multipart/form-data" id="dentalbv-step3-upload-form">
+                        <div class="form-group">
+                            <label for="dental_bv_step3_files">Select files (Raw Smilelink + Smilelink Consolidated):</label>
+                            <input type="file" id="dental_bv_step3_files" name="files" accept=".csv,.xlsx,.xls" multiple required>
+                        </div>
+                        <button type="submit" id="dentalbv-step3-upload-btn">📤 Upload & Process Step 3</button>
+                    </form>
+                    <div class="loading" id="dentalbv-step3-loading">
+                        <div class="spinner"></div>
+                        <p>Processing Step 3 files...</p>
+                    </div>
+                    {% if dental_bv_result_step3 %}
+                    <div class="status-message" style="margin-top: 15px;">{{ dental_bv_result_step3 | safe }}</div>
+                    {% endif %}
+                    {% if dental_bv_has_step3_output %}
+                    <form action="/download_dental_bv_step" method="post" style="margin-top: 10px;">
+                        <input type="hidden" name="step" value="3">
+                        <button type="submit">💾 Download Step 3 output</button>
+                    </form>
+                    {% endif %}
+                </div>
+
+                <!-- Final combined download -->
+                {% if dental_bv_has_final_output %}
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>💾 Download final Dental BV Report</h3>
+                    <p>Combined output from all completed steps.</p>
+                    <form action="/download_dental_bv_final" method="post">
+                        <button type="submit">💾 Download dental_bv_report.xlsx</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Dental BV Report</h3>
+                    <p>Clear all steps' data and start fresh.</p>
+                    <form action="/reset_dental_bv" method="post" onsubmit="return confirm('Are you sure you want to reset the Dental BV Report? This will clear all uploaded files and data.')">
+                        <button type="submit" class="reset-btn">🗑️ Reset Dental BV Report</button>
+                    </form>
+                </div>
+            </div>
+
             </div> <!-- End content -->
 
             <!-- Footer -->
@@ -3059,7 +3284,8 @@ HTML_TEMPLATE = """
                     (tabName === 'general' && itemText.includes('general comparison')) ||
                     (tabName === 'datacleanser' && itemText.includes('data cleanser')) ||
                     (tabName === 'agentremarktransfer' && itemText.includes('agent') && itemText.includes('remark')) ||
-                    (tabName === 'evallocation' && itemText.includes('ev allocation'))) {
+                    (tabName === 'evallocation' && itemText.includes('ev allocation')) ||
+                    (tabName === 'dentalbv' && itemText.includes('dental bv'))) {
                     item.classList.add('active');
                 }
             });
@@ -3077,7 +3303,8 @@ HTML_TEMPLATE = """
                 'general': '🧭 General Comparison',
                 'datacleanser': '🧹 Data Cleanser',
                 'agentremarktransfer': '🔄 Agent & Remark Transfer',
-                'evallocation': '📋 EV Allocation report'
+                'evallocation': '📋 EV Allocation report',
+                'dentalbv': '🦷 Dental BV Report'
             };
             
             const pageDescriptions = {
@@ -3092,7 +3319,8 @@ HTML_TEMPLATE = """
                 'general': 'Compare two files and update primary rows on match',
                 'datacleanser': 'Remove selected values from a column and create clean/removed sheets',
                 'agentremarktransfer': 'Transfer Agent Name to Agent 1 and Remark to Remark 1',
-                'evallocation': 'Upload multiple files (identified by name), then generate output file'
+                'evallocation': 'Upload multiple files (identified by name), then generate output file',
+                'dentalbv': '3-step process to generate Dental BV report'
             };
             
             document.getElementById('page-title').textContent = pageTitles[tabName] || pageTitles['comparison'];
@@ -3293,6 +3521,33 @@ HTML_TEMPLATE = """
             });
         }
 
+        const dentalBvStep1Form = document.getElementById('dentalbv-step1-upload-form');
+        if (dentalBvStep1Form) {
+            dentalBvStep1Form.addEventListener('submit', function() {
+                showProcessingModal('Processing Step 1', 'Uploading and processing Dental BV Step 1 files...');
+                const btn = document.getElementById('dentalbv-step1-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const dentalBvStep2Form = document.getElementById('dentalbv-step2-upload-form');
+        if (dentalBvStep2Form) {
+            dentalBvStep2Form.addEventListener('submit', function() {
+                showProcessingModal('Processing Step 2', 'Comparing Today vs Previous Day files...');
+                const btn = document.getElementById('dentalbv-step2-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const dentalBvStep3Form = document.getElementById('dentalbv-step3-upload-form');
+        if (dentalBvStep3Form) {
+            dentalBvStep3Form.addEventListener('submit', function() {
+                showProcessingModal('Processing Step 3', 'Comparing Raw Smilelink vs Consolidated...');
+                const btn = document.getElementById('dentalbv-step3-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
         // Reset forms - show modal when form is submitted (HTML confirm already handled)
         const resetForms = document.querySelectorAll('form[action*="reset"]');
         resetForms.forEach(form => {
@@ -3340,6 +3595,8 @@ HTML_TEMPLATE = """
                 switchTab('agentremarktransfer', true);
             } else if (activeTab === 'evallocation') {
                 switchTab('evallocation', true);
+            } else if (activeTab === 'dentalbv') {
+                switchTab('dentalbv', true);
             }
             
             // Show toast notification for conversion validation and processing
@@ -4321,6 +4578,14 @@ def comparison_index():
         or "ev_allocation_report.xlsx",
         ev_allocation_has_output=(ev_allocation_output is not None),
         ev_allocation_output_columns=EV_ALLOCATION_OUTPUT_COLUMNS,
+        dental_bv_output_columns=DENTAL_BV_OUTPUT_COLUMNS,
+        dental_bv_result_step1=dental_bv_result_step1,
+        dental_bv_result_step2=dental_bv_result_step2,
+        dental_bv_result_step3=dental_bv_result_step3,
+        dental_bv_has_step1_output=(dental_bv_step1_output is not None),
+        dental_bv_has_step2_output=(dental_bv_step2_output is not None),
+        dental_bv_has_step3_output=(dental_bv_step3_output is not None),
+        dental_bv_has_final_output=(dental_bv_final_output is not None),
         active_tab=active_tab,
     )
 
@@ -9850,6 +10115,744 @@ def reset_ev_allocation():
     except Exception as e:
         ev_allocation_result = f"❌ Error resetting: {str(e)}"
         return redirect("/comparison?tab=evallocation")
+
+
+# =============================
+# Dental BV Report
+# =============================
+
+
+def _dental_bv_build_final_output():
+    """Rebuild the final combined output from all step DataFrames."""
+    global dental_bv_final_output
+    frames = []
+    for df in (dental_bv_step1_data, dental_bv_step2_data, dental_bv_step3_data):
+        if df is not None and not df.empty:
+            frames.append(df)
+    if not frames:
+        dental_bv_final_output = None
+        return
+    combined = pd.concat(frames, ignore_index=True)
+    combined = combined.fillna("")
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        combined.to_excel(writer, index=False, sheet_name="Dental BV Report")
+    buf.seek(0)
+    dental_bv_final_output = buf.getvalue()
+
+
+def _dental_bv_format_date_mmddyyyy(val):
+    """Format date-like values to MM/DD/YYYY string."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    s = str(val).strip()
+    if not s or s.lower() in ("nan", "nat", "none"):
+        return ""
+    try:
+        dt = pd.to_datetime(s)
+        return dt.strftime("%m/%d/%Y")
+    except Exception:
+        return s
+
+
+@app.route("/upload_dental_bv_step1", methods=["POST"])
+def upload_dental_bv_step1():
+    """Upload and process Dental BV Step 1 files (Stovall + Suri)."""
+    global dental_bv_step1_data, dental_bv_step1_output, dental_bv_result_step1
+
+    try:
+        files = request.files.getlist("files")
+        if not files or all(f.filename == "" for f in files):
+            dental_bv_result_step1 = "❌ No files selected."
+            return redirect("/comparison?tab=dentalbv")
+
+        all_frames = []
+        files_processed = []
+        files_rejected = []
+
+        for f in files:
+            if not f or f.filename == "":
+                continue
+            original_name = f.filename
+            name_lower = original_name.lower()
+
+            matched_rule = None
+            for rule in DENTAL_BV_STEP1_FILE_RULES:
+                if rule["contains"].lower() in name_lower:
+                    matched_rule = rule
+                    break
+
+            if matched_rule is None:
+                files_rejected.append(original_name)
+                continue
+
+            sheet_name = matched_rule["sheet"]
+
+            try:
+                f.seek(0)
+                if original_name.lower().endswith(".csv"):
+                    df = pd.read_csv(f)
+                else:
+                    engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+                    all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
+                    sheet_found = None
+                    for sn in all_sheets:
+                        if sn.strip().lower() == sheet_name.strip().lower():
+                            sheet_found = sn
+                            break
+                    if sheet_found is None:
+                        files_rejected.append(
+                            f"{original_name} (sheet '{sheet_name}' not found)"
+                        )
+                        continue
+                    df = all_sheets[sheet_found]
+
+                df.columns = df.columns.astype(str)
+                df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
+                if df.empty:
+                    files_rejected.append(f"{original_name} (empty sheet)")
+                    continue
+
+                all_frames.append(df)
+                files_processed.append(
+                    f"{original_name} → sheet '{sheet_name}' ({len(df)} rows)"
+                )
+            except Exception as ex:
+                files_rejected.append(f"{original_name} (error: {str(ex)})")
+
+        if files_rejected and not files_processed:
+            dental_bv_result_step1 = (
+                "❌ No valid files processed. Only files with <strong>Stovall</strong> or <strong>Suri</strong> "
+                "in the filename are allowed.<br>Rejected: " + ", ".join(files_rejected)
+            )
+            dental_bv_step1_data = None
+            dental_bv_step1_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        if not all_frames:
+            dental_bv_result_step1 = "❌ No data produced from uploaded files."
+            dental_bv_step1_data = None
+            dental_bv_step1_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        combined_df = pd.concat(all_frames, ignore_index=True)
+        combined_df = combined_df.fillna("")
+
+        date_cols = [c for c in combined_df.columns if c.strip().lower() in (
+            "appointment", "dob", "subscriber dob", "next appt", "pats birth date",
+        )]
+        for dc in date_cols:
+            combined_df[dc] = combined_df[dc].apply(_dental_bv_format_date_mmddyyyy)
+
+        dental_bv_step1_data = combined_df
+
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            combined_df.to_excel(writer, index=False, sheet_name="Step1")
+        buf.seek(0)
+        dental_bv_step1_output = buf.getvalue()
+
+        _dental_bv_build_final_output()
+
+        msg = (
+            f"✅ Step 1 processed <strong>{len(combined_df)}</strong> row(s) from "
+            + ", ".join(files_processed)
+            + "."
+        )
+        if files_rejected:
+            msg += "<br>⚠️ Rejected: " + ", ".join(files_rejected)
+        dental_bv_result_step1 = msg
+        return redirect("/comparison?tab=dentalbv")
+    except Exception as e:
+        dental_bv_result_step1 = f"❌ Error processing Step 1: {str(e)}"
+        dental_bv_step1_data = None
+        dental_bv_step1_output = None
+        return redirect("/comparison?tab=dentalbv")
+
+
+@app.route("/upload_dental_bv_step2", methods=["POST"])
+def upload_dental_bv_step2():
+    """Upload and process Dental BV Step 2 files (Today vs Previous Day comparison)."""
+    global dental_bv_step2_data, dental_bv_step2_output, dental_bv_result_step2
+
+    try:
+        files = request.files.getlist("files")
+        if not files or all(f.filename == "" for f in files):
+            dental_bv_result_step2 = "❌ No files selected."
+            return redirect("/comparison?tab=dentalbv")
+
+        today_df = None
+        previous_df = None
+        yesterday_df = None
+        files_rejected = []
+
+        for f in files:
+            if not f or f.filename == "":
+                continue
+            original_name = f.filename
+            name_lower = original_name.lower()
+
+            matched_role = None
+            for rule in DENTAL_BV_STEP2_FILE_RULES:
+                if rule["contains"].lower() in name_lower:
+                    matched_role = rule["role"]
+                    break
+
+            if matched_role is None:
+                files_rejected.append(original_name)
+                continue
+
+            try:
+                f.seek(0)
+                if original_name.lower().endswith(".csv"):
+                    df = pd.read_csv(f)
+                else:
+                    engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+                    all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
+                    first_sheet = list(all_sheets.keys())[0]
+                    df = all_sheets[first_sheet]
+
+                df.columns = df.columns.astype(str)
+                df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
+
+                if matched_role == "today":
+                    today_df = df
+                elif matched_role == "previous":
+                    previous_df = df
+                elif matched_role == "yesterday":
+                    yesterday_df = df
+            except Exception as ex:
+                files_rejected.append(f"{original_name} (error: {str(ex)})")
+
+        if today_df is None:
+            dental_bv_result_step2 = (
+                "❌ Missing <strong>Today</strong> file. Upload a file with 'Today' in the filename."
+                + (
+                    "<br>⚠️ Rejected: " + ", ".join(files_rejected)
+                    if files_rejected
+                    else ""
+                )
+            )
+            dental_bv_step2_data = None
+            dental_bv_step2_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        if previous_df is None:
+            dental_bv_result_step2 = (
+                "❌ Missing <strong>Previous Day</strong> file. Upload a file with 'Previous Day' in the filename."
+                + (
+                    "<br>⚠️ Rejected: " + ", ".join(files_rejected)
+                    if files_rejected
+                    else ""
+                )
+            )
+            dental_bv_step2_data = None
+            dental_bv_step2_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        compare_cols = DENTAL_BV_STEP2_COMPARE_COLUMNS
+
+        missing_today = [c for c in compare_cols if c not in today_df.columns]
+        missing_prev = [c for c in compare_cols if c not in previous_df.columns]
+        if missing_today:
+            dental_bv_result_step2 = (
+                f"❌ Today file is missing comparison columns: {', '.join(missing_today)}"
+            )
+            dental_bv_step2_data = None
+            dental_bv_step2_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+        if missing_prev:
+            dental_bv_result_step2 = (
+                f"❌ Previous Day file is missing comparison columns: {', '.join(missing_prev)}"
+            )
+            dental_bv_step2_data = None
+            dental_bv_step2_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        today_compare = today_df[compare_cols].fillna("").astype(str).apply(
+            lambda x: x.str.strip().str.lower()
+        )
+        previous_compare = previous_df[compare_cols].fillna("").astype(str).apply(
+            lambda x: x.str.strip().str.lower()
+        )
+
+        today_keys = today_compare.apply(tuple, axis=1)
+        previous_keys_set = set(previous_compare.apply(tuple, axis=1))
+
+        not_matched_mask = ~today_keys.isin(previous_keys_set)
+        new_rows_df = today_df[not_matched_mask].copy()
+
+        total_today = len(today_df)
+        matched_count = total_today - len(new_rows_df)
+
+        mapped_rows = []
+        for _, row in new_rows_df.iterrows():
+            mapped = {col: "" for col in DENTAL_BV_OUTPUT_COLUMNS}
+            for input_col, output_col in DENTAL_BV_STEP2_COLUMN_MAPPING.items():
+                val = row.get(input_col, "")
+                if pd.isna(val):
+                    val = ""
+                mapped[output_col] = str(val).strip()
+            mapped["DOB"] = _dental_bv_format_date_mmddyyyy(mapped.get("DOB"))
+            mapped["Appointment"] = _dental_bv_format_date_mmddyyyy(
+                mapped.get("Appointment")
+            )
+            mapped_rows.append(mapped)
+
+        # Process Yesterday file: include rows where Remark != "updated"
+        # Yesterday file may already have output column names, so map directly
+        yesterday_mapped_rows = []
+        yesterday_total = 0
+        yesterday_excluded = 0
+        if yesterday_df is not None:
+            yesterday_total = len(yesterday_df)
+            output_cols_lower = {c.strip().lower(): c for c in DENTAL_BV_OUTPUT_COLUMNS}
+            input_map_lower = {k.strip().lower(): v for k, v in DENTAL_BV_STEP2_COLUMN_MAPPING.items()}
+            yesterday_col_map = {}
+            for src_col in yesterday_df.columns:
+                src_lower = src_col.strip().lower()
+                if src_lower in output_cols_lower:
+                    yesterday_col_map[src_col] = output_cols_lower[src_lower]
+                elif src_lower in input_map_lower:
+                    yesterday_col_map[src_col] = input_map_lower[src_lower]
+
+            remark_col = None
+            for c in yesterday_df.columns:
+                if c.strip().lower() == "remark":
+                    remark_col = c
+                    break
+
+            for _, row in yesterday_df.iterrows():
+                if remark_col is not None:
+                    remark_val = str(row.get(remark_col, "")).strip().lower()
+                    if remark_val == "updated":
+                        yesterday_excluded += 1
+                        continue
+                mapped = {col: "" for col in DENTAL_BV_OUTPUT_COLUMNS}
+                for src_col, out_col in yesterday_col_map.items():
+                    val = row.get(src_col, "")
+                    if pd.isna(val):
+                        val = ""
+                    mapped[out_col] = str(val).strip()
+                mapped["DOB"] = _dental_bv_format_date_mmddyyyy(mapped.get("DOB"))
+                mapped["Appointment"] = _dental_bv_format_date_mmddyyyy(
+                    mapped.get("Appointment")
+                )
+                mapped["Subscriber DOB"] = _dental_bv_format_date_mmddyyyy(
+                    mapped.get("Subscriber DOB")
+                )
+                yesterday_mapped_rows.append(mapped)
+
+        all_step2_rows = mapped_rows + yesterday_mapped_rows
+
+        if not all_step2_rows:
+            dental_bv_result_step2 = (
+                f"⚠️ No rows to output. Today: {total_today} rows all matched Previous Day."
+                + (f" Yesterday: {yesterday_total} rows all had 'updated' remark." if yesterday_df is not None else "")
+            )
+            dental_bv_step2_data = None
+            dental_bv_step2_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        result_df = pd.DataFrame(all_step2_rows, columns=DENTAL_BV_OUTPUT_COLUMNS)
+        result_df = result_df.fillna("")
+
+        dental_bv_step2_data = result_df
+
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            result_df.to_excel(writer, index=False, sheet_name="Step2")
+        buf.seek(0)
+        dental_bv_step2_output = buf.getvalue()
+
+        _dental_bv_build_final_output()
+
+        msg = (
+            f"✅ Step 2: Today had <strong>{total_today}</strong> rows, "
+            f"<strong>{matched_count}</strong> matched Previous Day (excluded), "
+            f"<strong>{len(mapped_rows)}</strong> new rows from Today."
+        )
+        if yesterday_df is not None:
+            msg += (
+                f"<br>Yesterday: <strong>{yesterday_total}</strong> rows, "
+                f"<strong>{yesterday_excluded}</strong> with 'updated' remark (excluded), "
+                f"<strong>{len(yesterday_mapped_rows)}</strong> rows added."
+            )
+        msg += f"<br>Total Step 2 output: <strong>{len(all_step2_rows)}</strong> rows."
+        if files_rejected:
+            msg += "<br>⚠️ Rejected: " + ", ".join(files_rejected)
+        dental_bv_result_step2 = msg
+        return redirect("/comparison?tab=dentalbv")
+    except Exception as e:
+        dental_bv_result_step2 = f"❌ Error processing Step 2: {str(e)}"
+        dental_bv_step2_data = None
+        dental_bv_step2_output = None
+        return redirect("/comparison?tab=dentalbv")
+
+
+@app.route("/upload_dental_bv_step3", methods=["POST"])
+def upload_dental_bv_step3():
+    """Upload and process Dental BV Step 3 files (Raw Smilelink vs Smilelink Consolidated)."""
+    global dental_bv_step3_data, dental_bv_step3_output, dental_bv_result_step3
+
+    try:
+        files = request.files.getlist("files")
+        if not files or all(f.filename == "" for f in files):
+            dental_bv_result_step3 = "❌ No files selected."
+            return redirect("/comparison?tab=dentalbv")
+
+        raw_df = None
+        consolidated_df = None
+        files_rejected = []
+
+        for f in files:
+            if not f or f.filename == "":
+                continue
+            original_name = f.filename
+            name_lower = original_name.lower()
+
+            matched_role = None
+            matched_rule = None
+            for rule in DENTAL_BV_STEP3_FILE_RULES:
+                if rule["contains"].lower() in name_lower:
+                    matched_role = rule["role"]
+                    matched_rule = rule
+                    break
+
+            if matched_role is None:
+                files_rejected.append(original_name)
+                continue
+
+            try:
+                f.seek(0)
+                if original_name.lower().endswith(".csv"):
+                    df = pd.read_csv(f)
+                    sheet_names_info = "CSV"
+                else:
+                    engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+                    all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
+                    sheet_names_info = list(all_sheets.keys())
+
+                    target_sheet = matched_rule.get("sheet") if matched_rule else None
+                    if target_sheet:
+                        sheet_found = None
+                        for sn in all_sheets:
+                            if sn.strip().lower() == target_sheet.strip().lower():
+                                sheet_found = sn
+                                break
+                        if sheet_found is None:
+                            files_rejected.append(f"{original_name} (sheet '{target_sheet}' not found, available: {sheet_names_info})")
+                            continue
+                        df = all_sheets[sheet_found]
+                    else:
+                        df = all_sheets[sheet_names_info[0]]
+
+                df.columns = df.columns.astype(str)
+                df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
+
+                if matched_role == "raw":
+                    raw_df = df
+                    raw_sheet_names = sheet_names_info
+                elif matched_role == "consolidated":
+                    consolidated_df = df
+            except Exception as ex:
+                files_rejected.append(f"{original_name} (error: {str(ex)})")
+
+        if raw_df is None:
+            dental_bv_result_step3 = (
+                "❌ Missing <strong>Raw Smilelink</strong> file."
+                + ("<br>⚠️ Rejected: " + ", ".join(files_rejected) if files_rejected else "")
+            )
+            dental_bv_step3_data = None
+            dental_bv_step3_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        if consolidated_df is None:
+            dental_bv_result_step3 = (
+                "❌ Missing <strong>Smilelink Consolidated</strong> file."
+                + ("<br>⚠️ Rejected: " + ", ".join(files_rejected) if files_rejected else "")
+            )
+            dental_bv_step3_data = None
+            dental_bv_step3_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        # Build Patient Name from PatsLastname + ", " + PatsFirstname in Raw Smilelink
+        lastname_col = None
+        firstname_col = None
+        for c in raw_df.columns:
+            cl = c.strip().lower()
+            if cl == "patslastname":
+                lastname_col = c
+            elif cl == "patsfirstname":
+                firstname_col = c
+
+        if lastname_col is None or firstname_col is None:
+            available_cols = ", ".join(raw_df.columns.tolist()[:30]) or "(none)"
+            sheet_info = str(raw_sheet_names) if 'raw_sheet_names' in dir() else "unknown"
+            row_count = len(raw_df)
+            preview = ""
+            if row_count > 0:
+                preview = "<br>First row preview: " + str(dict(raw_df.iloc[0]))[:500]
+            dental_bv_result_step3 = (
+                "❌ Raw Smilelink file is missing 'PatsLastname' and/or 'PatsFirstname' columns."
+                f"<br>Sheets: {sheet_info}"
+                f"<br>Columns ({len(raw_df.columns)}): {available_cols}"
+                f"<br>Rows: {row_count}"
+                f"{preview}"
+            )
+            dental_bv_step3_data = None
+            dental_bv_step3_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        raw_df["_PatientName"] = (
+            raw_df[lastname_col].fillna("").astype(str).str.strip()
+            + ", "
+            + raw_df[firstname_col].fillna("").astype(str).str.strip()
+        )
+
+        # Find Insurance and Policy ID columns in Raw Smilelink
+        raw_insurance_col = None
+        raw_policyid_col = None
+        for c in raw_df.columns:
+            cl = c.strip().lower()
+            if cl == "insurance":
+                raw_insurance_col = c
+            elif cl == "policy id":
+                raw_policyid_col = c
+
+        if raw_insurance_col is None or raw_policyid_col is None:
+            available_cols = ", ".join(raw_df.columns.tolist()[:30])
+            dental_bv_result_step3 = (
+                "❌ Raw Smilelink file is missing 'Insurance' and/or 'Policy ID' columns."
+                f"<br>Available columns: {available_cols}"
+            )
+            dental_bv_step3_data = None
+            dental_bv_step3_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        # Find matching columns in Consolidated file
+        cons_patient_col = None
+        cons_insurance_col = None
+        cons_policyid_col = None
+        cons_date_col = None
+        for c in consolidated_df.columns:
+            cl = c.strip().lower()
+            if cl == "patient name":
+                cons_patient_col = c
+            elif cl == "insurance":
+                cons_insurance_col = c
+            elif cl == "policy id":
+                cons_policyid_col = c
+            elif cl == "date":
+                cons_date_col = c
+
+        missing_cons = []
+        if cons_patient_col is None:
+            missing_cons.append("Patient Name")
+        if cons_insurance_col is None:
+            missing_cons.append("Insurance")
+        if cons_policyid_col is None:
+            missing_cons.append("Policy ID")
+        if cons_date_col is None:
+            missing_cons.append("Date")
+        if missing_cons:
+            dental_bv_result_step3 = (
+                f"❌ Smilelink Consolidated file is missing columns: {', '.join(missing_cons)}"
+            )
+            dental_bv_step3_data = None
+            dental_bv_step3_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        # Build lookup from Consolidated: key=(patient_name, insurance, policy_id) -> date
+        from datetime import datetime
+
+        today_date = datetime.now()
+        # Store full consolidated row + parsed date, keyed by (patient_name, insurance, policy_id)
+        cons_lookup = {}
+        for idx, crow in consolidated_df.iterrows():
+            pn = str(crow.get(cons_patient_col, "")).strip().lower()
+            ins = str(crow.get(cons_insurance_col, "")).strip().lower()
+            pid = str(crow.get(cons_policyid_col, "")).strip().lower()
+            date_val = crow.get(cons_date_col)
+            key = (pn, ins, pid)
+            try:
+                dt = pd.to_datetime(date_val)
+                if key not in cons_lookup or dt > cons_lookup[key][0]:
+                    cons_lookup[key] = (dt, crow)
+            except Exception:
+                pass
+
+        # Build column mapping for Consolidated file → output columns
+        output_cols_lower = {c.strip().lower(): c for c in DENTAL_BV_OUTPUT_COLUMNS}
+        step3_input_map = {k.strip().lower(): v for k, v in DENTAL_BV_STEP3_COLUMN_MAPPING.items()}
+
+        cons_col_map = {}
+        for src_col in consolidated_df.columns:
+            sl = src_col.strip().lower()
+            if sl in output_cols_lower:
+                cons_col_map[src_col] = output_cols_lower[sl]
+            elif sl in step3_input_map:
+                cons_col_map[src_col] = step3_input_map[sl]
+
+        # Match Raw Smilelink rows against Consolidated
+        mapped_rows = []
+        total_raw = len(raw_df)
+        match_count = 0
+        old_enough_count = 0
+
+        for _, row in raw_df.iterrows():
+            pn = str(row.get("_PatientName", "")).strip().lower()
+            ins = str(row.get(raw_insurance_col, "")).strip().lower()
+            pid = str(row.get(raw_policyid_col, "")).strip().lower()
+            key = (pn, ins, pid)
+
+            if key not in cons_lookup:
+                continue
+            match_count += 1
+
+            cons_date, cons_row = cons_lookup[key]
+            diff_days = (today_date - cons_date).days
+            if diff_days <= 350:
+                continue
+            old_enough_count += 1
+
+            mapped = {col: "" for col in DENTAL_BV_OUTPUT_COLUMNS}
+
+            # Fill from Consolidated row
+            for src_col, out_col in cons_col_map.items():
+                val = cons_row.get(src_col, "")
+                if pd.isna(val):
+                    val = ""
+                mapped[out_col] = str(val).strip()
+
+            # Patient Name, Insurance, Policy ID from Raw Smilelink (the matching keys)
+            mapped["Patient Name"] = row.get("_PatientName", "").strip()
+            raw_ins_val = row.get(raw_insurance_col, "")
+            if pd.isna(raw_ins_val):
+                raw_ins_val = ""
+            mapped["Insurance"] = str(raw_ins_val).strip()
+            raw_pid_val = row.get(raw_policyid_col, "")
+            if pd.isna(raw_pid_val):
+                raw_pid_val = ""
+            mapped["Policy ID"] = str(raw_pid_val).strip()
+
+            mapped["DOB"] = _dental_bv_format_date_mmddyyyy(mapped.get("DOB"))
+            mapped["Appointment"] = _dental_bv_format_date_mmddyyyy(mapped.get("Appointment"))
+            mapped["Subscriber DOB"] = _dental_bv_format_date_mmddyyyy(mapped.get("Subscriber DOB"))
+            mapped["Received date"] = _dental_bv_format_date_mmddyyyy(mapped.get("Received date"))
+            mapped["Work Date"] = _dental_bv_format_date_mmddyyyy(mapped.get("Work Date"))
+            mapped["Date work"] = _dental_bv_format_date_mmddyyyy(mapped.get("Date work"))
+            mapped_rows.append(mapped)
+
+        if not mapped_rows:
+            dental_bv_result_step3 = (
+                f"⚠️ No rows qualified. Raw Smilelink: {total_raw} rows, "
+                f"{match_count} matched Consolidated, "
+                f"{old_enough_count} had Date > 350 days old."
+            )
+            dental_bv_step3_data = None
+            dental_bv_step3_output = None
+            _dental_bv_build_final_output()
+            return redirect("/comparison?tab=dentalbv")
+
+        result_df = pd.DataFrame(mapped_rows, columns=DENTAL_BV_OUTPUT_COLUMNS)
+        result_df = result_df.fillna("")
+
+        dental_bv_step3_data = result_df
+
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            result_df.to_excel(writer, index=False, sheet_name="Step3")
+        buf.seek(0)
+        dental_bv_step3_output = buf.getvalue()
+
+        _dental_bv_build_final_output()
+
+        msg = (
+            f"✅ Step 3: Raw Smilelink had <strong>{total_raw}</strong> rows, "
+            f"<strong>{match_count}</strong> matched Consolidated, "
+            f"<strong>{old_enough_count}</strong> had Date > 350 days → included in output."
+        )
+        if files_rejected:
+            msg += "<br>⚠️ Rejected: " + ", ".join(files_rejected)
+        dental_bv_result_step3 = msg
+        return redirect("/comparison?tab=dentalbv")
+    except Exception as e:
+        dental_bv_result_step3 = f"❌ Error processing Step 3: {str(e)}"
+        dental_bv_step3_data = None
+        dental_bv_step3_output = None
+        return redirect("/comparison?tab=dentalbv")
+
+
+@app.route("/download_dental_bv_step", methods=["POST"])
+def download_dental_bv_step():
+    """Download a specific step's output."""
+    step = request.form.get("step", "")
+    outputs = {
+        "1": dental_bv_step1_output,
+        "2": dental_bv_step2_output,
+        "3": dental_bv_step3_output,
+    }
+    output = outputs.get(step)
+    if output is None:
+        return redirect("/comparison?tab=dentalbv")
+    return send_file(
+        io.BytesIO(output),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"dental_bv_step{step}_output.xlsx",
+    )
+
+
+@app.route("/download_dental_bv_final", methods=["POST"])
+def download_dental_bv_final():
+    """Download the final combined Dental BV report."""
+    global dental_bv_final_output
+    if dental_bv_final_output is None:
+        return redirect("/comparison?tab=dentalbv")
+    return send_file(
+        io.BytesIO(dental_bv_final_output),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="dental_bv_report.xlsx",
+    )
+
+
+@app.route("/reset_dental_bv", methods=["POST"])
+def reset_dental_bv():
+    """Clear all Dental BV data and start fresh."""
+    global dental_bv_step1_data, dental_bv_step2_data, dental_bv_step3_data
+    global dental_bv_step1_output, dental_bv_step2_output, dental_bv_step3_output
+    global dental_bv_result_step1, dental_bv_result_step2, dental_bv_result_step3
+    global dental_bv_final_output
+
+    try:
+        dental_bv_step1_data = None
+        dental_bv_step2_data = None
+        dental_bv_step3_data = None
+        dental_bv_step1_output = None
+        dental_bv_step2_output = None
+        dental_bv_step3_output = None
+        dental_bv_result_step1 = None
+        dental_bv_result_step2 = None
+        dental_bv_result_step3 = None
+        dental_bv_final_output = None
+        return redirect("/comparison?tab=dentalbv")
+    except Exception as e:
+        dental_bv_result_step1 = f"❌ Error resetting: {str(e)}"
+        return redirect("/comparison?tab=dentalbv")
 
 
 # =============================
