@@ -378,6 +378,8 @@ EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS = frozenset(
         "VA Smiles For Children/Medicaid",
         "WV Chip Blue - Molina/Medicaid Blue Plan",
         "zzDentaQuest/Medicaid",
+        "DentaQuest",
+        "sooner care",
     ]
 )
 
