@@ -10134,6 +10134,8 @@ def _dental_bv_build_final_output():
         return
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.fillna("")
+    if "Insurance" in combined.columns:
+        combined["Insurance"] = combined["Insurance"].apply(format_insurance_name)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         combined.to_excel(writer, index=False, sheet_name="Dental BV Report")
@@ -10245,6 +10247,9 @@ def upload_dental_bv_step1():
         )]
         for dc in date_cols:
             combined_df[dc] = combined_df[dc].apply(_dental_bv_format_date_mmddyyyy)
+
+        if "Insurance" in combined_df.columns:
+            combined_df["Insurance"] = combined_df["Insurance"].apply(format_insurance_name)
 
         dental_bv_step1_data = combined_df
 
@@ -10463,6 +10468,7 @@ def upload_dental_bv_step2():
 
         result_df = pd.DataFrame(all_step2_rows, columns=DENTAL_BV_OUTPUT_COLUMNS)
         result_df = result_df.fillna("")
+        result_df["Insurance"] = result_df["Insurance"].apply(format_insurance_name)
 
         dental_bv_step2_data = result_df
 
@@ -10769,6 +10775,7 @@ def upload_dental_bv_step3():
 
         result_df = pd.DataFrame(mapped_rows, columns=DENTAL_BV_OUTPUT_COLUMNS)
         result_df = result_df.fillna("")
+        result_df["Insurance"] = result_df["Insurance"].apply(format_insurance_name)
 
         dental_bv_step3_data = result_df
 
