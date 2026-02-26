@@ -262,8 +262,8 @@ EV_ALLOCATION_FILENAME_RULES = [
     {"contains": "SL_medicaid", "format_key": "sl_medicaid"},
 ]
 
-# Montefiore: Reference = "MCD" when Insurance Company Billing Center Name is in this set (case-insensitive).
-EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS = frozenset(
+# MCD insurance list: Reference = "MCD" when insurance name is in this set (case-insensitive). Used across all file formats.
+EV_ALLOCATION_MCD_INSURANCE_LIST = frozenset(
     s.strip().lower()
     for s in [
         "Ameri health",
@@ -331,7 +331,9 @@ EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS = frozenset(
         "Liberty",
         "Liberty (self bought) Plan",
         "Liberty Dental Claims",
+        "Liberty Dental Plan",
         "Liberty Dental Plan (Medicaid)",
+        "Libery Dental Plan",
         "Liberty Dental Plan/WV Medicaid",
         "Maryland Healthy Smiles",
         "Maryland Healthy Smiles (Scion)",
@@ -358,7 +360,10 @@ EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS = frozenset(
         "OH Medicaid and OH MyCare",
         "Ohio Medicaid Claims",
         "Pending Medicaid",
-        "Scion (WV) Unicare,Aenta BH, Health plan, Chip",
+        "Scion (WV) Unicare",
+        "Aenta BH",
+        "Health plan",
+        "Chip",
         "Scion Ameri Health PA/Medicaid",
         "Scion/Medicaid",
         "UHC Emblem Health Medicaid",
@@ -383,8 +388,8 @@ EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS = frozenset(
     ]
 )
 
-# Montefiore: Reference = "Commercial" when Insurance Company Billing Center Name is in this set (case-insensitive).
-EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS = frozenset(
+# Commercial insurance list: Reference = "Commercial" when insurance name is in this set (case-insensitive). Used across all file formats.
+EV_ALLOCATION_COMMERCIAL_INSURANCE_LIST = frozenset(
     s.strip().lower()
     for s in [
         "Aetna",
@@ -9558,6 +9563,27 @@ def _ev_allocation_format_date_mmddyyyy(value):
         return _ev_allocation_sanitize_cell(value)
 
 
+def _ev_allocation_classify_insurance(ins_lower):
+    """Classify an insurance name as 'MCD', 'Commercial', or None (unknown).
+    First tries exact match, then checks if the input contains any MCD/Commercial entry
+    or if any entry contains the input."""
+    if not ins_lower:
+        return None
+    # Exact match first
+    if ins_lower in EV_ALLOCATION_MCD_INSURANCE_LIST:
+        return "MCD"
+    if ins_lower in EV_ALLOCATION_COMMERCIAL_INSURANCE_LIST:
+        return "Commercial"
+    # Partial match: check if any MCD entry is contained in the input or vice versa
+    for mcd_name in EV_ALLOCATION_MCD_INSURANCE_LIST:
+        if mcd_name in ins_lower or ins_lower in mcd_name:
+            return "MCD"
+    for comm_name in EV_ALLOCATION_COMMERCIAL_INSURANCE_LIST:
+        if comm_name in ins_lower or ins_lower in comm_name:
+            return "Commercial"
+    return None
+
+
 def _ev_allocation_get_format_key(filename):
     """Return format_key if filename matches any EV_ALLOCATION_FILENAME_RULES (contains check)."""
     if not filename:
@@ -9816,33 +9842,31 @@ def process_ev_allocation():
                         mapped["System"] = "Edge"
                         mapped["Source"] = "Evening"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
-                        ins_val = _ev_allocation_get_cell(row_series, "Insurance Company Name")
+                        ins_val = _ev_allocation_get_cell(
+                            row_series, "Insurance Company Name"
+                        )
                         ins_lower = (
                             ""
                             if ins_val is None or pd.isna(ins_val)
                             else str(ins_val).strip().lower()
                         )
-                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
-                            mapped["Reference"] = "MCD"
-                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
-                            mapped["Reference"] = "Commercial"
-                        else:
-                            mapped["Reference"] = "Commercial"
+                        ins_class = _ev_allocation_classify_insurance(ins_lower)
+                        mapped["Reference"] = ins_class if ins_class else "Commercial"
                     if format_key == "hoang_viva_smiles":
                         mapped["Office/Doctor Name"] = "Dr. Hoang Viva Smiles"
                         mapped["System"] = "Dolphin"
                         mapped["Source"] = "Evening"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
-                        ins_val = _ev_allocation_get_cell(row_series, "Insurance Company Billing Center Name")
+                        ins_val = _ev_allocation_get_cell(
+                            row_series, "Insurance Company Billing Center Name"
+                        )
                         ins_lower = (
                             ""
                             if ins_val is None or pd.isna(ins_val)
                             else str(ins_val).strip().lower()
                         )
-                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
+                        if ins_lower == "denti-cal":
                             mapped["Reference"] = "MCD"
-                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
-                            mapped["Reference"] = "Commercial"
                         else:
                             mapped["Reference"] = "Commercial"
                     if format_key == "hoang_ismiles":
@@ -9850,16 +9874,16 @@ def process_ev_allocation():
                         mapped["System"] = "Dolphin"
                         mapped["Source"] = "Evening"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
-                        ins_val = _ev_allocation_get_cell(row_series, "Insurance Company Billing Center Name")
+                        ins_val = _ev_allocation_get_cell(
+                            row_series, "Insurance Company Billing Center Name"
+                        )
                         ins_lower = (
                             ""
                             if ins_val is None or pd.isna(ins_val)
                             else str(ins_val).strip().lower()
                         )
-                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
+                        if ins_lower == "denti-cal":
                             mapped["Reference"] = "MCD"
-                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
-                            mapped["Reference"] = "Commercial"
                         else:
                             mapped["Reference"] = "Commercial"
                     if format_key == "kates":
@@ -9873,12 +9897,8 @@ def process_ev_allocation():
                             if ins_val is None or pd.isna(ins_val)
                             else str(ins_val).strip().lower()
                         )
-                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
-                            mapped["Reference"] = "MCD"
-                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
-                            mapped["Reference"] = "Commercial"
-                        else:
-                            mapped["Reference"] = "Commercial"
+                        ins_class = _ev_allocation_classify_insurance(ins_lower)
+                        mapped["Reference"] = ins_class if ins_class else "Commercial"
                     if format_key == "montefiore":
                         mapped["Office/Doctor Name"] = "Montefiore"
                         mapped["System"] = "Dolphin"
@@ -9890,12 +9910,10 @@ def process_ev_allocation():
                         bc = ""
                         if billing_center is not None and not pd.isna(billing_center):
                             bc = str(billing_center).strip().lower()
-                        if bc in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
-                            mapped["Reference"] = "MCD"
-                        elif (
-                            bc in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS
-                            or bc in ("aetna hmo", "aetna dhmo")
-                        ):
+                        ins_class = _ev_allocation_classify_insurance(bc)
+                        if ins_class:
+                            mapped["Reference"] = ins_class
+                        elif bc in ("aetna hmo", "aetna dhmo"):
                             mapped["Reference"] = "Commercial"
                         else:
                             mapped["Reference"] = "Commercial"
@@ -9909,12 +9927,8 @@ def process_ev_allocation():
                             if ins_val is None or pd.isna(ins_val)
                             else str(ins_val).strip().lower()
                         )
-                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
-                            mapped["Reference"] = "MCD"
-                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
-                            mapped["Reference"] = "Commercial"
-                        else:
-                            mapped["Reference"] = "Commercial"
+                        ins_class = _ev_allocation_classify_insurance(ins_lower)
+                        mapped["Reference"] = ins_class if ins_class else "Commercial"
                     if format_key == "ortho":
                         entity_code_val = _ev_allocation_get_cell(
                             row_series, "Entity Code"
@@ -9939,12 +9953,8 @@ def process_ev_allocation():
                             if ins_val is None or pd.isna(ins_val)
                             else str(ins_val).strip().lower()
                         )
-                        if ins_lower in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS:
-                            mapped["Reference"] = "MCD"
-                        elif ins_lower in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS:
-                            mapped["Reference"] = "Commercial"
-                        else:
-                            mapped["Reference"] = "Commercial"
+                        ins_class = _ev_allocation_classify_insurance(ins_lower)
+                        mapped["Reference"] = ins_class if ins_class else "Commercial"
                     if format_key == "sl_evening":
                         mapped["System"] = "Smilelink"
                         mapped["Source"] = "Evening"
@@ -9971,17 +9981,17 @@ def process_ev_allocation():
                             else str(carrier_name).strip()
                         )
                         carrier_lower = carrier_str.lower()
-                        if (
-                            billing_center_lower
-                            in EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS
-                        ):
+                        bc_class = _ev_allocation_classify_insurance(billing_center_lower)
+                        carrier_class = _ev_allocation_classify_insurance(carrier_lower)
+                        if bc_class == "MCD":
                             mapped["Reference"] = "MCD"
-                        elif (
-                            carrier_lower
-                            in EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS
-                        ):
+                        elif carrier_class == "Commercial":
                             mapped["Reference"] = "Commercial"
-                        elif carrier_str == "United Healthcare":
+                        elif carrier_lower == "united healthcare":
+                            mapped["Reference"] = "MCD"
+                        elif bc_class == "Commercial":
+                            mapped["Reference"] = "Commercial"
+                        elif carrier_class == "MCD":
                             mapped["Reference"] = "MCD"
                         else:
                             mapped["Reference"] = "Commercial"
@@ -10043,18 +10053,46 @@ def process_ev_allocation():
         kates_commercial_mask = (
             result_df["Office/Doctor Name"].str.strip().str.upper() == "DR. KATES"
         ) & (result_df["Reference"].str.strip().str.upper() == "COMMERCIAL")
-        # Smilelink: only allow FREDPEDO, MUSGROVE, REISTERS in Office/Doctor Name
+        kates_excluded_insurance_mask = (
+            result_df["Office/Doctor Name"].str.strip().str.upper() == "DR. KATES"
+        ) & (
+            result_df["Insurance"].str.strip().str.upper().str.rstrip(".").isin({"HUMANA", "ANTHEM"})
+        )
+        # Smilelink: only allow FREDPEDO, MUSGROVE, REISTERS in Office/Doctor Name (except SL Evening which keeps all)
         smilelink_allowed_offices = {"FREDPEDO", "MUSGROVE", "REISTERS"}
         smilelink_invalid_office_mask = (
             result_df["System"].str.strip().str.upper() == "SMILELINK"
-        ) & (~result_df["Office/Doctor Name"].str.strip().str.upper().isin(smilelink_allowed_offices))
+        ) & (
+            result_df["Source"].str.strip().str.upper() != "EVENING"
+        ) & (
+            ~result_df["Office/Doctor Name"]
+            .str.strip()
+            .str.upper()
+            .isin(smilelink_allowed_offices)
+        )
         # Hoang Viva Smiles / Hoang Ismiles: Commercial Reference goes to Not to work
         hoang_commercial_mask = (
-            result_df["Office/Doctor Name"].str.strip().str.upper().isin(
-                {"DR. HOANG VIVA SMILES", "DR. HOANG ISMILES"}
-            )
+            result_df["Office/Doctor Name"]
+            .str.strip()
+            .str.upper()
+            .isin({"DR. HOANG VIVA SMILES", "DR. HOANG ISMILES"})
         ) & (result_df["Reference"].str.strip().str.upper() == "COMMERCIAL")
-        not_to_work_mask = shawnee_mask | montefiore_blank_insurance_mask | kates_commercial_mask | smilelink_invalid_office_mask | hoang_commercial_mask
+        # Dr. Hoang Ismiles: Humana or Anthem insurance goes to Not to work
+        hoang_ismiles_excluded_insurance = (
+            result_df["Office/Doctor Name"].str.strip().str.upper()
+            == "DR. HOANG ISMILES"
+        ) & (result_df["Insurance"].str.strip().str.upper().isin({"HUMANA", "ANTHEM"}))
+        not_to_work_mask = (
+            shawnee_mask
+            | montefiore_blank_insurance_mask
+            | kates_commercial_mask
+            | kates_excluded_insurance_mask
+            | smilelink_invalid_office_mask
+            | hoang_commercial_mask
+            | hoang_ismiles_excluded_insurance
+        )
+        # Mark Dr. Kates Humana/Anthem rows as Commercial before moving to Not to work
+        result_df.loc[kates_excluded_insurance_mask, "Reference"] = "Commercial"
         not_to_work_df = result_df[not_to_work_mask]
         ev_allocation_df = result_df[~not_to_work_mask]
         buf = io.BytesIO()
@@ -10197,7 +10235,9 @@ def upload_dental_bv_step1():
                 if original_name.lower().endswith(".csv"):
                     df = pd.read_csv(f)
                 else:
-                    engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+                    engine = (
+                        "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+                    )
                     all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
                     sheet_found = None
                     for sn in all_sheets:
@@ -10244,14 +10284,25 @@ def upload_dental_bv_step1():
         combined_df = pd.concat(all_frames, ignore_index=True)
         combined_df = combined_df.fillna("")
 
-        date_cols = [c for c in combined_df.columns if c.strip().lower() in (
-            "appointment", "dob", "subscriber dob", "next appt", "pats birth date",
-        )]
+        date_cols = [
+            c
+            for c in combined_df.columns
+            if c.strip().lower()
+            in (
+                "appointment",
+                "dob",
+                "subscriber dob",
+                "next appt",
+                "pats birth date",
+            )
+        ]
         for dc in date_cols:
             combined_df[dc] = combined_df[dc].apply(_dental_bv_format_date_mmddyyyy)
 
         if "Insurance" in combined_df.columns:
-            combined_df["Insurance"] = combined_df["Insurance"].apply(format_insurance_name)
+            combined_df["Insurance"] = combined_df["Insurance"].apply(
+                format_insurance_name
+            )
 
         dental_bv_step1_data = combined_df
 
@@ -10316,7 +10367,9 @@ def upload_dental_bv_step2():
                 if original_name.lower().endswith(".csv"):
                     df = pd.read_csv(f)
                 else:
-                    engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+                    engine = (
+                        "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+                    )
                     all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
                     first_sheet = list(all_sheets.keys())[0]
                     df = all_sheets[first_sheet]
@@ -10366,27 +10419,29 @@ def upload_dental_bv_step2():
         missing_today = [c for c in compare_cols if c not in today_df.columns]
         missing_prev = [c for c in compare_cols if c not in previous_df.columns]
         if missing_today:
-            dental_bv_result_step2 = (
-                f"❌ Today file is missing comparison columns: {', '.join(missing_today)}"
-            )
+            dental_bv_result_step2 = f"❌ Today file is missing comparison columns: {', '.join(missing_today)}"
             dental_bv_step2_data = None
             dental_bv_step2_output = None
             _dental_bv_build_final_output()
             return redirect("/comparison?tab=dentalbv")
         if missing_prev:
-            dental_bv_result_step2 = (
-                f"❌ Previous Day file is missing comparison columns: {', '.join(missing_prev)}"
-            )
+            dental_bv_result_step2 = f"❌ Previous Day file is missing comparison columns: {', '.join(missing_prev)}"
             dental_bv_step2_data = None
             dental_bv_step2_output = None
             _dental_bv_build_final_output()
             return redirect("/comparison?tab=dentalbv")
 
-        today_compare = today_df[compare_cols].fillna("").astype(str).apply(
-            lambda x: x.str.strip().str.lower()
+        today_compare = (
+            today_df[compare_cols]
+            .fillna("")
+            .astype(str)
+            .apply(lambda x: x.str.strip().str.lower())
         )
-        previous_compare = previous_df[compare_cols].fillna("").astype(str).apply(
-            lambda x: x.str.strip().str.lower()
+        previous_compare = (
+            previous_df[compare_cols]
+            .fillna("")
+            .astype(str)
+            .apply(lambda x: x.str.strip().str.lower())
         )
 
         today_keys = today_compare.apply(tuple, axis=1)
@@ -10420,7 +10475,9 @@ def upload_dental_bv_step2():
         if yesterday_df is not None:
             yesterday_total = len(yesterday_df)
             output_cols_lower = {c.strip().lower(): c for c in DENTAL_BV_OUTPUT_COLUMNS}
-            input_map_lower = {k.strip().lower(): v for k, v in DENTAL_BV_STEP2_COLUMN_MAPPING.items()}
+            input_map_lower = {
+                k.strip().lower(): v for k, v in DENTAL_BV_STEP2_COLUMN_MAPPING.items()
+            }
             yesterday_col_map = {}
             for src_col in yesterday_df.columns:
                 src_lower = src_col.strip().lower()
@@ -10461,7 +10518,11 @@ def upload_dental_bv_step2():
         if not all_step2_rows:
             dental_bv_result_step2 = (
                 f"⚠️ No rows to output. Today: {total_today} rows all matched Previous Day."
-                + (f" Yesterday: {yesterday_total} rows all had 'updated' remark." if yesterday_df is not None else "")
+                + (
+                    f" Yesterday: {yesterday_total} rows all had 'updated' remark."
+                    if yesterday_df is not None
+                    else ""
+                )
             )
             dental_bv_step2_data = None
             dental_bv_step2_output = None
@@ -10544,7 +10605,9 @@ def upload_dental_bv_step3():
                     df = pd.read_csv(f)
                     sheet_names_info = "CSV"
                 else:
-                    engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+                    engine = (
+                        "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+                    )
                     all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
                     sheet_names_info = list(all_sheets.keys())
 
@@ -10556,7 +10619,9 @@ def upload_dental_bv_step3():
                                 sheet_found = sn
                                 break
                         if sheet_found is None:
-                            files_rejected.append(f"{original_name} (sheet '{target_sheet}' not found, available: {sheet_names_info})")
+                            files_rejected.append(
+                                f"{original_name} (sheet '{target_sheet}' not found, available: {sheet_names_info})"
+                            )
                             continue
                         df = all_sheets[sheet_found]
                     else:
@@ -10576,7 +10641,11 @@ def upload_dental_bv_step3():
         if raw_df is None:
             dental_bv_result_step3 = (
                 "❌ Missing <strong>Raw Smilelink</strong> file."
-                + ("<br>⚠️ Rejected: " + ", ".join(files_rejected) if files_rejected else "")
+                + (
+                    "<br>⚠️ Rejected: " + ", ".join(files_rejected)
+                    if files_rejected
+                    else ""
+                )
             )
             dental_bv_step3_data = None
             dental_bv_step3_output = None
@@ -10586,7 +10655,11 @@ def upload_dental_bv_step3():
         if consolidated_df is None:
             dental_bv_result_step3 = (
                 "❌ Missing <strong>Smilelink Consolidated</strong> file."
-                + ("<br>⚠️ Rejected: " + ", ".join(files_rejected) if files_rejected else "")
+                + (
+                    "<br>⚠️ Rejected: " + ", ".join(files_rejected)
+                    if files_rejected
+                    else ""
+                )
             )
             dental_bv_step3_data = None
             dental_bv_step3_output = None
@@ -10605,7 +10678,9 @@ def upload_dental_bv_step3():
 
         if lastname_col is None or firstname_col is None:
             available_cols = ", ".join(raw_df.columns.tolist()[:30]) or "(none)"
-            sheet_info = str(raw_sheet_names) if 'raw_sheet_names' in dir() else "unknown"
+            sheet_info = (
+                str(raw_sheet_names) if "raw_sheet_names" in dir() else "unknown"
+            )
             row_count = len(raw_df)
             preview = ""
             if row_count > 0:
@@ -10675,9 +10750,7 @@ def upload_dental_bv_step3():
         if cons_date_col is None:
             missing_cons.append("Date")
         if missing_cons:
-            dental_bv_result_step3 = (
-                f"❌ Smilelink Consolidated file is missing columns: {', '.join(missing_cons)}"
-            )
+            dental_bv_result_step3 = f"❌ Smilelink Consolidated file is missing columns: {', '.join(missing_cons)}"
             dental_bv_step3_data = None
             dental_bv_step3_output = None
             _dental_bv_build_final_output()
@@ -10704,7 +10777,9 @@ def upload_dental_bv_step3():
 
         # Build column mapping for Consolidated file → output columns
         output_cols_lower = {c.strip().lower(): c for c in DENTAL_BV_OUTPUT_COLUMNS}
-        step3_input_map = {k.strip().lower(): v for k, v in DENTAL_BV_STEP3_COLUMN_MAPPING.items()}
+        step3_input_map = {
+            k.strip().lower(): v for k, v in DENTAL_BV_STEP3_COLUMN_MAPPING.items()
+        }
 
         cons_col_map = {}
         for src_col in consolidated_df.columns:
@@ -10757,11 +10832,21 @@ def upload_dental_bv_step3():
             mapped["Policy ID"] = str(raw_pid_val).strip()
 
             mapped["DOB"] = _dental_bv_format_date_mmddyyyy(mapped.get("DOB"))
-            mapped["Appointment"] = _dental_bv_format_date_mmddyyyy(mapped.get("Appointment"))
-            mapped["Subscriber DOB"] = _dental_bv_format_date_mmddyyyy(mapped.get("Subscriber DOB"))
-            mapped["Received date"] = _dental_bv_format_date_mmddyyyy(mapped.get("Received date"))
-            mapped["Work Date"] = _dental_bv_format_date_mmddyyyy(mapped.get("Work Date"))
-            mapped["Date work"] = _dental_bv_format_date_mmddyyyy(mapped.get("Date work"))
+            mapped["Appointment"] = _dental_bv_format_date_mmddyyyy(
+                mapped.get("Appointment")
+            )
+            mapped["Subscriber DOB"] = _dental_bv_format_date_mmddyyyy(
+                mapped.get("Subscriber DOB")
+            )
+            mapped["Received date"] = _dental_bv_format_date_mmddyyyy(
+                mapped.get("Received date")
+            )
+            mapped["Work Date"] = _dental_bv_format_date_mmddyyyy(
+                mapped.get("Work Date")
+            )
+            mapped["Date work"] = _dental_bv_format_date_mmddyyyy(
+                mapped.get("Date work")
+            )
             mapped_rows.append(mapped)
 
         if not mapped_rows:

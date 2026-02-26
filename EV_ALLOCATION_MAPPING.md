@@ -6,16 +6,16 @@ Use this as a reference for which filename triggers which format and how columns
 
 ## Filename rules (order matters: first match wins)
 
-| If filename **contains**   | Format key  | Used for mapping below |
-| -------------------------- | ----------- | ---------------------- |
-| Erickson                   | erickson           | ✓                      |
-| Viva Smiles (anywhere in filename, case-insensitive) | hoang_viva_smiles  | ✓       |
-| Ismiles (anywhere in filename, case-insensitive)     | hoang_ismiles      | ✓       |
-| Kates                      | kates              | ✓                      |
-| Montefiore                 | montefiore  | ✓                      |
-| ortho                      | ortho       | ✓                      |
-| SL Evening or SL_Evening   | sl_evening  | ✓                      |
-| SL medicaid or SL_medicaid | sl_medicaid | ✓                      |
+| If filename **contains**                             | Format key        | Used for mapping below |
+| ---------------------------------------------------- | ----------------- | ---------------------- |
+| Erickson                                             | erickson          | ✓                      |
+| Viva Smiles (anywhere in filename, case-insensitive) | hoang_viva_smiles | ✓                      |
+| Ismiles (anywhere in filename, case-insensitive)     | hoang_ismiles     | ✓                      |
+| Kates                                                | kates             | ✓                      |
+| Montefiore                                           | montefiore        | ✓                      |
+| ortho                                                | ortho             | ✓                      |
+| SL Evening or SL_Evening                             | sl_evening        | ✓                      |
+| SL medicaid or SL_medicaid                           | sl_medicaid       | ✓                      |
 
 Matching is **case-insensitive**.
 
@@ -27,23 +27,23 @@ Matching is **case-insensitive**.
 
 _(filename contains "Erickson")_
 
-| Output column       | Input column / value    |
-| ------------------- | ----------------------- |
-| System              | **"Edge"** (fixed value for all rows) |
+| Output column       | Input column / value                          |
+| ------------------- | --------------------------------------------- |
+| System              | **"Edge"** (fixed value for all rows)         |
 | Office/Doctor Name  | **"Dr. Erickson"** (fixed value for all rows) |
-| Source              | **"Evening"** (fixed value for all rows) |
-| Reference           | **"MCD"** (fixed value for all rows) |
-| Received Date       | **Today's date (MM/DD/YYYY)**        |
-| Location/EntityCode | Patient Office          |
-| Appointment         | Appointment Next Date   |
-| Patients Name       | Patient Full Name       |
-| DOB                 | Patient Birthdate       |
-| Patient ID/Chart#   | Patient Primary Code    |
-| Insurance           | Insurance Company Name  |
-| Policy ID           | InsDetail Subscriber Id |
-| Carrier Phone       | Insurance Company Phone |
-| Subscriber Name     | InsDetal Subscriber     |
-| Subscriber DOB      | Subscriber BirthDate    |
+| Source              | **"Evening"** (fixed value for all rows)      |
+| Reference           | **"MCD"** (fixed value for all rows)          |
+| Received Date       | **Today's date (MM/DD/YYYY)**                 |
+| Location/EntityCode | Patient Office                                |
+| Appointment         | Appointment Next Date                         |
+| Patients Name       | Patient Full Name                             |
+| DOB                 | Patient Birthdate                             |
+| Patient ID/Chart#   | Patient Primary Code                          |
+| Insurance           | Insurance Company Name                        |
+| Policy ID           | InsDetail Subscriber Id                       |
+| Carrier Phone       | Insurance Company Phone                       |
+| Subscriber Name     | InsDetal Subscriber                           |
+| Subscriber DOB      | Subscriber BirthDate                          |
 
 ---
 
@@ -51,19 +51,19 @@ _(filename contains "Erickson")_
 
 _(filename contains **"Viva Smiles"** anywhere, case-insensitive — e.g. Raw Dr. Hoang (Viva Smiles) 02.04.2026 (7to9))_
 
-| Output column     | Input column / value                  |
-| ----------------- | ------------------------------------- |
-| System            | **"Dolphin"** (fixed value for all rows) |
-| Office/Doctor Name | **"Dr. Hoang Viva Smiles"** (fixed value for all rows) |
-| Source            | **"Evening"** (fixed value for all rows) |
-| Reference         | **"MCD"** when Insurance Company Billing Center Name = "Humana Healthy"; **"Commercial"** when = "Aetna HMO" or "Aetna DHMO"; otherwise blank |
-| Received Date     | **Today's date (MM/DD/YYYY)**         |
-| Appointment       | Next Appointment Date                 |
-| Patients Name     | Patient's Name (Last First)           |
-| DOB               | Patient's BirthDate                   |
-| Patient ID/Chart# | Patient's ID                          |
-| Insurance         | Insurance Company Billing Center Name |
-| Policy ID         | Subscriber ID                         |
+| Output column      | Input column / value                                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| System             | **"Dolphin"** (fixed value for all rows)                                                                                                      |
+| Office/Doctor Name | **"Dr. Hoang Viva Smiles"** (fixed value for all rows)                                                                                        |
+| Source             | **"Evening"** (fixed value for all rows)                                                                                                      |
+| Reference          | **"MCD"** when Insurance Company Billing Center Name = "Humana Healthy"; **"Commercial"** when = "Aetna HMO" or "Aetna DHMO"; otherwise blank |
+| Received Date      | **Today's date (MM/DD/YYYY)**                                                                                                                 |
+| Appointment        | Next Appointment Date                                                                                                                         |
+| Patients Name      | Patient's Name (Last First)                                                                                                                   |
+| DOB                | Patient's BirthDate                                                                                                                           |
+| Patient ID/Chart#  | Patient's ID                                                                                                                                  |
+| Insurance          | Insurance Company Billing Center Name                                                                                                         |
+| Policy ID          | Subscriber ID                                                                                                                                 |
 
 ---
 
@@ -108,18 +108,18 @@ _(filename contains "Montefiore")_
 
 **Reference** is derived from **Insurance Company Billing Center Name**: **"MCD"** when the billing center name is in the configured MCD list (`EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS`); **"Commercial"** when in the Commercial list (`EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS`) or when = "Aetna HMO" or "Aetna DHMO"; otherwise blank.
 
-| Output column       | Input column                              |
-| ------------------- | ----------------------------------------- |
-| Location/EntityCode | Next Appointment Including Today Location |
+| Output column       | Input column                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Location/EntityCode | Next Appointment Including Today Location                                                                                   |
 | Reference           | **"MCD"** if Insurance Company Billing Center Name is in MCD list; **"Commercial"** if in Commercial list or Aetna HMO/DHMO |
-| Appointment         | Next Appointment Including Today Date     |
-| Patients Name       | Patient's Name (Last First)               |
-| DOB                 | Patient's BirthDate                       |
-| Patient ID/Chart#   | Patient ID                                |
-| Insurance           | Insurance Company Billing Center Name     |
-| Policy ID           | Subscriber ID                             |
-| Subscriber Name     | Subscriber Name                           |
-| Subscriber DOB      | Subscriber Birthdate                      |
+| Appointment         | Next Appointment Including Today Date                                                                                       |
+| Patients Name       | Patient's Name (Last First)                                                                                                 |
+| DOB                 | Patient's BirthDate                                                                                                         |
+| Patient ID/Chart#   | Patient ID                                                                                                                  |
+| Insurance           | Insurance Company Billing Center Name                                                                                       |
+| Policy ID           | Subscriber ID                                                                                                               |
+| Subscriber Name     | Subscriber Name                                                                                                             |
+| Subscriber DOB      | Subscriber Birthdate                                                                                                        |
 
 ---
 
@@ -127,17 +127,17 @@ _(filename contains "Montefiore")_
 
 _(filename contains "ortho")_
 
-| Output column       | Input column / logic |
-| ------------------- | -------------------- |
+| Output column          | Input column / logic                                                                                                                |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | **Office/Doctor Name** | **"Dr. Mansman"** if Entity Code = "FREDORMD"; **"Dr. Susan Park"** if Entity Code = "SYRACUSE" or "NTHSYRNY"; otherwise **blank**. |
-| Location/EntityCode | Entity Code     |
-| Appointment         | Next Appt       |
-| Patients Name       | Patient         |
-| DOB                 | Pats Birth Date |
-| Patient ID/Chart#   | Chart           |
-| Insurance           | Carrier         |
-| Policy ID           | Insured ID      |
-| Carrier Phone       | Phone           |
+| Location/EntityCode    | Entity Code                                                                                                                         |
+| Appointment            | Next Appt                                                                                                                           |
+| Patients Name          | Patient                                                                                                                             |
+| DOB                    | Pats Birth Date                                                                                                                     |
+| Patient ID/Chart#      | Chart                                                                                                                               |
+| Insurance              | Carrier                                                                                                                             |
+| Policy ID              | Insured ID                                                                                                                          |
+| Carrier Phone          | Phone                                                                                                                               |
 
 ---
 
@@ -147,19 +147,19 @@ _(filename contains "SL Evening" or "SL_Evening")_
 
 **Office/Doctor Name is filled only for this file type** (from Office Name). All other file types leave Office/Doctor Name blank.
 
-| Output column       | Input column / logic                      |
-| ------------------- | ----------------------------------------- |
-| Office/Doctor Name  | Office Name                               |
-| Location/EntityCode | _(blank for sl_evening)_                  |
+| Output column       | Input column / logic                                                                                                                                                                                                                                                                                            |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Office/Doctor Name  | Office Name                                                                                                                                                                                                                                                                                                     |
+| Location/EntityCode | _(blank for sl_evening)_                                                                                                                                                                                                                                                                                        |
 | Reference           | **"MCD"** when Insurance Company Billing Center Name is in the MCD list (`EV_ALLOCATION_MONTEFIORE_MCD_BILLING_CENTERS`), or when Carrier Name = "United Healthcare"; **"Commercial"** when Carrier Name is in the Commercial list (`EV_ALLOCATION_MONTEFIORE_COMMERCIAL_BILLING_CENTERS`); otherwise **"MCD"** |
-| Appointment         | Future Appt                               |
-| Patients Name       | Pats Last Name + Pats First Name (merged) |
-| DOB                 | Pats Birth Date                           |
-| Insurance           | Carrier Name                              |
-| Policy ID           | Pol Employee SSN ID                       |
-| Carrier Phone       | Carrier Phone                             |
-| Subscriber Name     | Emp Name                                  |
-| Subscriber DOB      | Employee Birth Date                       |
+| Appointment         | Future Appt                                                                                                                                                                                                                                                                                                     |
+| Patients Name       | Pats Last Name + Pats First Name (merged)                                                                                                                                                                                                                                                                       |
+| DOB                 | Pats Birth Date                                                                                                                                                                                                                                                                                                 |
+| Insurance           | Carrier Name                                                                                                                                                                                                                                                                                                    |
+| Policy ID           | Pol Employee SSN ID                                                                                                                                                                                                                                                                                             |
+| Carrier Phone       | Carrier Phone                                                                                                                                                                                                                                                                                                   |
+| Subscriber Name     | Emp Name                                                                                                                                                                                                                                                                                                        |
+| Subscriber DOB      | Employee Birth Date                                                                                                                                                                                                                                                                                             |
 
 ---
 
@@ -169,7 +169,7 @@ _(filename contains "SL medicaid" or "SL_medicaid")_
 
 | Output column           | Input column / logic                                                                                                                                                                                                                                        |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Office/Doctor Name**  | **Same value as Location/EntityCode** (see below).                                                                                                                                                                                                           |
+| **Office/Doctor Name**  | **Same value as Location/EntityCode** (see below).                                                                                                                                                                                                          |
 | **Location/EntityCode** | **Special:** Find rows where **Pats First Name** contains `Office Name: <office_name>`, extract **office_name** from that text and put it in Location/EntityCode; use that value for that row and all following rows until the next "Office Name: ..." row. |
 | Appointment             | Future Appt                                                                                                                                                                                                                                                 |
 | Patients Name           | Pats Last Name + Pats First Name (merged); on “Office Name:” header rows, only Pats Last Name is used.                                                                                                                                                      |
