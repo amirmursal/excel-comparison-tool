@@ -124,6 +124,15 @@ dental_bv_result_step2 = None
 dental_bv_result_step3 = None
 dental_bv_final_output = None  # bytes for final combined download
 
+# Agent Productivity Tracker globals
+apt_data = None  # {sheet_name: df}
+apt_filename = None
+apt_selected_sheet = None
+apt_remark_values = []  # unique remark values from selected sheet
+apt_selected_remarks = []
+apt_result = None
+apt_output = None  # bytes for download
+
 DENTAL_BV_OUTPUT_COLUMNS = [
     "Software",
     "Office Name",
@@ -954,7 +963,18 @@ HTML_TEMPLATE = """
         }
         
         .sidebar-menu {
-            padding: 20px 0;
+            padding: 10px 0;
+        }
+        
+        .menu-group-header {
+            padding: 12px 20px 6px 20px;
+            font-weight: 800;
+            letter-spacing: 1.2px;
+            margin-top: 10px;
+        }
+        
+        .menu-group-header:first-child {
+            margin-top: 0;
         }
         
         .menu-item {
@@ -1395,52 +1415,50 @@ HTML_TEMPLATE = """
                 <p>Automation Suite</p>
             </div>
             <nav class="sidebar-menu">
+                <div class="menu-group-header">Imagen Allocation Automation</div>
                 <div class="menu-item {% if active_tab == 'appointment' %}active{% endif %}" onclick="switchTab('appointment')">
-                    <span class="menu-item-icon">1.</span>
                     <span>Appointment Report</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'conversion' %}active{% endif %}" onclick="switchTab('conversion')">
-                    <span class="menu-item-icon">2.</span>
                     <span>Conversion Report</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'smartassist' %}active{% endif %}" onclick="switchTab('smartassist')">
-                    <span class="menu-item-icon">3.</span>
                     <span>Smart Assist Report</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'comparison' %}active{% endif %}" onclick="switchTab('comparison')">
-                    <span class="menu-item-icon">4.</span>
                     <span>Comparison Tool</span>
                 </div>
+                <div class="menu-item {% if active_tab == 'reallocation' %}active{% endif %}" onclick="switchTab('reallocation')">
+                    <span>Generate Reallocation Data</span>
+                </div>
+
+                <div class="menu-group-header">General Automation</div>
                 <div class="menu-item {% if active_tab == 'general' %}active{% endif %}" onclick="switchTab('general')">
-                    <span class="menu-item-icon">5.</span>
                     <span>General Comparison</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'datacleanser' %}active{% endif %}" onclick="switchTab('datacleanser')">
-                    <span class="menu-item-icon">6.</span>
                     <span>Data Cleanser</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'agentremarktransfer' %}active{% endif %}" onclick="switchTab('agentremarktransfer')">
-                    <span class="menu-item-icon">7.</span>
                     <span>Agent & Remark Transfer</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'remarks' %}active{% endif %}" onclick="switchTab('remarks')">
-                    <span class="menu-item-icon">8.</span>
                     <span>Update Remarks</span>
                 </div>
                 <div class="menu-item {% if active_tab == 'insurance' %}active{% endif %}" onclick="switchTab('insurance')">
-                    <span class="menu-item-icon">9.</span>
                     <span>Insurance Formatting</span>
                 </div>
-                <div class="menu-item {% if active_tab == 'reallocation' %}active{% endif %}" onclick="switchTab('reallocation')">
-                    <span class="menu-item-icon">10.</span>
-                    <span>Generate Reallocation Data</span>
+                <div class="menu-item {% if active_tab == 'agentproductivity' %}active{% endif %}" onclick="switchTab('agentproductivity')">
+                    <span>Agent Productivity Tracker</span>
                 </div>
+
+                <div class="menu-group-header">EV Allocation Automation</div>
                 <div class="menu-item {% if active_tab == 'evallocation' %}active{% endif %}" onclick="switchTab('evallocation')">
-                    <span class="menu-item-icon">11.</span>
-                    <span>EV Allocation report</span>
+                    <span>EV Allocation Report</span>
                 </div>
+
+                <div class="menu-group-header">Dental BV Allocation Automation</div>
                 <div class="menu-item {% if active_tab == 'dentalbv' %}active{% endif %}" onclick="switchTab('dentalbv')">
-                    <span class="menu-item-icon">12.</span>
                     <span>Dental BV Report</span>
                 </div>
             </nav>
@@ -1461,6 +1479,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'general' %}🧭 General Comparison
                     {% elif active_tab == 'datacleanser' %}🧹 Data Cleanser
                     {% elif active_tab == 'agentremarktransfer' %}🔄 Agent & Remark Transfer
+                    {% elif active_tab == 'agentproductivity' %}📊 Agent Productivity Tracker
                     {% elif active_tab == 'evallocation' %}📋 EV Allocation report
                     {% elif active_tab == 'dentalbv' %}🦷 Dental BV Report
                     {% else %}🔄 Comparison Tool
@@ -1478,6 +1497,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'general' %}Compare two files and update primary rows on match
                     {% elif active_tab == 'datacleanser' %}Remove selected values from a column and create clean/removed sheets
                     {% elif active_tab == 'agentremarktransfer' %}Transfer Agent Name to Agent 1 and Remark to Remark 1
+                    {% elif active_tab == 'agentproductivity' %}Calculate agent productivity based on remark values and working days
                     {% elif active_tab == 'evallocation' %}Upload multiple files (identified by name), then generate output file
                     {% elif active_tab == 'dentalbv' %}3-step process to generate Dental BV report
                     {% else %}Compare Patient IDs and add insurance columns
@@ -3204,6 +3224,107 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
+            <!-- Tab 14: Agent Productivity Tracker -->
+            <div id="agentproductivity-tab" class="tab-content {% if active_tab == 'agentproductivity' %}active{% endif %}">
+                <div class="section">
+                    <h3>📊 Agent Productivity Tracker</h3>
+                    <p>Upload a file, select a sheet, choose remark values, and calculate agent productivity based on working days.</p>
+                </div>
+
+                <!-- Step 1: Upload file -->
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>📁 Step 1: Upload file</h3>
+                    <form action="/upload_apt" method="post" enctype="multipart/form-data" id="apt-upload-form">
+                        <div class="form-group">
+                            <label for="apt_file">Select file (Excel):</label>
+                            <input type="file" id="apt_file" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" id="apt-upload-btn">📤 Upload file</button>
+                    </form>
+                    <div class="loading" id="apt-upload-loading">
+                        <div class="spinner"></div>
+                        <p>Uploading file...</p>
+                    </div>
+                    {% if apt_filename %}
+                    <div class="status-success" style="margin-top: 15px;">
+                        ✅ Uploaded: <strong>{{ apt_filename }}</strong>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if apt_data %}
+                <!-- Step 2: Select sheet -->
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>📄 Step 2: Select sheet</h3>
+                    <form action="/apt_select_sheet" method="post" id="apt-sheet-form">
+                        <div class="form-group">
+                            <label for="apt_sheet">Choose a sheet:</label>
+                            <select id="apt_sheet" name="sheet" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="">-- Select sheet --</option>
+                                {% for sheet_name in apt_data.keys() %}
+                                <option value="{{ sheet_name }}" {% if apt_selected_sheet == sheet_name %}selected{% endif %}>{{ sheet_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" id="apt-sheet-btn">📋 Load sheet</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if apt_remark_values %}
+                <!-- Step 3: Select remark values -->
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>🏷️ Step 3: Select remark values</h3>
+                    <p style="margin-bottom: 10px;">Select one or more remark values to calculate productivity for:</p>
+                    <form action="/process_apt" method="post" id="apt-process-form">
+                        <div class="form-group" style="max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: white;">
+                            <label style="display: block; margin-bottom: 8px; cursor: pointer;">
+                                <input type="checkbox" id="apt-select-all" onclick="toggleAllAptRemarks(this)"> <strong>Select All</strong>
+                            </label>
+                            <hr style="margin: 5px 0;">
+                            {% for remark in apt_remark_values %}
+                            <label style="display: block; margin-bottom: 5px; cursor: pointer;">
+                                <input type="checkbox" name="remarks" value="{{ remark }}" class="apt-remark-cb"> {{ remark }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <button type="submit" id="apt-process-btn" style="margin-top: 10px;">🚀 Calculate Productivity</button>
+                    </form>
+                    <div class="loading" id="apt-process-loading">
+                        <div class="spinner"></div>
+                        <p>Calculating agent productivity...</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Status Messages -->
+                {% if apt_result %}
+                <div class="section">
+                    <h3>📢 Result</h3>
+                    <div class="status-message">{{ apt_result | safe }}</div>
+                </div>
+                {% endif %}
+
+                <!-- Download Section -->
+                {% if apt_has_output %}
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>💾 Download Productivity Report</h3>
+                    <form action="/download_apt" method="post">
+                        <button type="submit">💾 Download agent_productivity_report.xlsx</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset Agent Productivity Tracker</h3>
+                    <p>Clear all data and start fresh.</p>
+                    <form action="/reset_apt" method="post" onsubmit="return confirm('Are you sure you want to reset?')">
+                        <button type="submit" class="reset-btn">🗑️ Reset</button>
+                    </form>
+                </div>
+            </div>
+
             </div> <!-- End content -->
 
             <!-- Footer -->
@@ -3292,7 +3413,8 @@ HTML_TEMPLATE = """
                     (tabName === 'datacleanser' && itemText.includes('data cleanser')) ||
                     (tabName === 'agentremarktransfer' && itemText.includes('agent') && itemText.includes('remark')) ||
                     (tabName === 'evallocation' && itemText.includes('ev allocation')) ||
-                    (tabName === 'dentalbv' && itemText.includes('dental bv'))) {
+                    (tabName === 'dentalbv' && itemText.includes('dental bv')) ||
+                    (tabName === 'agentproductivity' && itemText.includes('agent productivity'))) {
                     item.classList.add('active');
                 }
             });
@@ -3311,7 +3433,8 @@ HTML_TEMPLATE = """
                 'datacleanser': '🧹 Data Cleanser',
                 'agentremarktransfer': '🔄 Agent & Remark Transfer',
                 'evallocation': '📋 EV Allocation report',
-                'dentalbv': '🦷 Dental BV Report'
+                'dentalbv': '🦷 Dental BV Report',
+                'agentproductivity': '📊 Agent Productivity Tracker'
             };
             
             const pageDescriptions = {
@@ -3327,7 +3450,8 @@ HTML_TEMPLATE = """
                 'datacleanser': 'Remove selected values from a column and create clean/removed sheets',
                 'agentremarktransfer': 'Transfer Agent Name to Agent 1 and Remark to Remark 1',
                 'evallocation': 'Upload multiple files (identified by name), then generate output file',
-                'dentalbv': '3-step process to generate Dental BV report'
+                'dentalbv': '3-step process to generate Dental BV report',
+                'agentproductivity': 'Calculate agent productivity based on remark values and working days'
             };
             
             document.getElementById('page-title').textContent = pageTitles[tabName] || pageTitles['comparison'];
@@ -3555,6 +3679,24 @@ HTML_TEMPLATE = """
             });
         }
 
+        const aptUploadForm = document.getElementById('apt-upload-form');
+        if (aptUploadForm) {
+            aptUploadForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading', 'Reading file...');
+                const btn = document.getElementById('apt-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const aptProcessForm = document.getElementById('apt-process-form');
+        if (aptProcessForm) {
+            aptProcessForm.addEventListener('submit', function() {
+                showProcessingModal('Calculating', 'Computing agent productivity...');
+                const btn = document.getElementById('apt-process-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
         // Reset forms - show modal when form is submitted (HTML confirm already handled)
         const resetForms = document.querySelectorAll('form[action*="reset"]');
         resetForms.forEach(form => {
@@ -3563,6 +3705,11 @@ HTML_TEMPLATE = """
                 showProcessingModal('Resetting', 'Clearing all data and files');
             });
         });
+
+        function toggleAllAptRemarks(source) {
+            var checkboxes = document.querySelectorAll('.apt-remark-cb');
+            checkboxes.forEach(function(cb) { cb.checked = source.checked; });
+        }
 
         // Auto-scroll results to bottom
         function scrollResults() {
@@ -3604,6 +3751,8 @@ HTML_TEMPLATE = """
                 switchTab('evallocation', true);
             } else if (activeTab === 'dentalbv') {
                 switchTab('dentalbv', true);
+            } else if (activeTab === 'agentproductivity') {
+                switchTab('agentproductivity', true);
             }
             
             // Show toast notification for conversion validation and processing
@@ -4593,6 +4742,12 @@ def comparison_index():
         dental_bv_has_step2_output=(dental_bv_step2_output is not None),
         dental_bv_has_step3_output=(dental_bv_step3_output is not None),
         dental_bv_has_final_output=(dental_bv_final_output is not None),
+        apt_data=apt_data,
+        apt_filename=apt_filename,
+        apt_selected_sheet=apt_selected_sheet,
+        apt_remark_values=apt_remark_values,
+        apt_result=apt_result,
+        apt_has_output=(apt_output is not None),
         active_tab=active_tab,
     )
 
@@ -9981,7 +10136,9 @@ def process_ev_allocation():
                             else str(carrier_name).strip()
                         )
                         carrier_lower = carrier_str.lower()
-                        bc_class = _ev_allocation_classify_insurance(billing_center_lower)
+                        bc_class = _ev_allocation_classify_insurance(
+                            billing_center_lower
+                        )
                         carrier_class = _ev_allocation_classify_insurance(carrier_lower)
                         if bc_class == "MCD":
                             mapped["Reference"] = "MCD"
@@ -10054,19 +10211,23 @@ def process_ev_allocation():
         kates_excluded_insurance_mask = (
             result_df["Office/Doctor Name"].str.strip().str.upper() == "DR. KATES"
         ) & (
-            result_df["Insurance"].str.strip().str.upper().str.rstrip(".").isin({"HUMANA", "ANTHEM"})
+            result_df["Insurance"]
+            .str.strip()
+            .str.upper()
+            .str.rstrip(".")
+            .isin({"HUMANA", "ANTHEM"})
         )
         # Smilelink: only allow FREDPEDO, MUSGROVE, REISTERS in Office/Doctor Name (except SL Evening which keeps all)
         smilelink_allowed_offices = {"FREDPEDO", "MUSGROVE", "REISTERS"}
         smilelink_invalid_office_mask = (
-            result_df["System"].str.strip().str.upper() == "SMILELINK"
-        ) & (
-            result_df["Source"].str.strip().str.upper() != "EVENING"
-        ) & (
-            ~result_df["Office/Doctor Name"]
-            .str.strip()
-            .str.upper()
-            .isin(smilelink_allowed_offices)
+            (result_df["System"].str.strip().str.upper() == "SMILELINK")
+            & (result_df["Source"].str.strip().str.upper() != "EVENING")
+            & (
+                ~result_df["Office/Doctor Name"]
+                .str.strip()
+                .str.upper()
+                .isin(smilelink_allowed_offices)
+            )
         )
         # Hoang Viva Smiles / Hoang Ismiles: Commercial Reference goes to Not to work
         hoang_commercial_mask = (
@@ -10945,6 +11106,255 @@ def reset_dental_bv():
     except Exception as e:
         dental_bv_result_step1 = f"❌ Error resetting: {str(e)}"
         return redirect("/comparison?tab=dentalbv")
+
+
+# =============================
+# Agent Productivity Tracker
+# =============================
+
+
+@app.route("/upload_apt", methods=["POST"])
+def upload_apt():
+    """Upload file for Agent Productivity Tracker."""
+    global apt_data, apt_filename, apt_selected_sheet, apt_remark_values, apt_result, apt_output
+
+    try:
+        if "file" not in request.files:
+            apt_result = "❌ No file selected."
+            return redirect("/comparison?tab=agentproductivity")
+
+        f = request.files["file"]
+        if not f or f.filename == "":
+            apt_result = "❌ Empty file."
+            return redirect("/comparison?tab=agentproductivity")
+
+        original_name = f.filename
+        f.seek(0)
+        engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+        all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
+
+        cleaned = {}
+        for sn, df in all_sheets.items():
+            df.columns = df.columns.astype(str)
+            df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
+            cleaned[sn] = df
+
+        apt_data = cleaned
+        apt_filename = original_name
+        apt_selected_sheet = None
+        apt_remark_values = []
+        apt_result = None
+        apt_output = None
+        return redirect("/comparison?tab=agentproductivity")
+    except Exception as e:
+        apt_result = f"❌ Error uploading file: {str(e)}"
+        return redirect("/comparison?tab=agentproductivity")
+
+
+@app.route("/apt_select_sheet", methods=["POST"])
+def apt_select_sheet():
+    """Select a sheet and extract unique Remark values."""
+    global apt_selected_sheet, apt_remark_values, apt_result, apt_output
+
+    try:
+        sheet_name = request.form.get("sheet", "")
+        if not sheet_name or not apt_data or sheet_name not in apt_data:
+            apt_result = "❌ Invalid sheet selection."
+            return redirect("/comparison?tab=agentproductivity")
+
+        df = apt_data[sheet_name]
+        apt_selected_sheet = sheet_name
+
+        remark_col = None
+        for c in df.columns:
+            if c.strip().lower() == "remark":
+                remark_col = c
+                break
+
+        if remark_col is None:
+            apt_result = f"❌ Sheet '{sheet_name}' does not have a 'Remark' column. Available columns: {', '.join(df.columns.tolist()[:20])}"
+            apt_remark_values = []
+            return redirect("/comparison?tab=agentproductivity")
+
+        unique_remarks = df[remark_col].dropna().astype(str).str.strip().unique().tolist()
+        unique_remarks = sorted([r for r in unique_remarks if r and r.lower() != "nan"])
+        apt_remark_values = unique_remarks
+        apt_result = None
+        apt_output = None
+        return redirect("/comparison?tab=agentproductivity")
+    except Exception as e:
+        apt_result = f"❌ Error loading sheet: {str(e)}"
+        return redirect("/comparison?tab=agentproductivity")
+
+
+@app.route("/process_apt", methods=["POST"])
+def process_apt():
+    """Process agent productivity based on selected remarks."""
+    global apt_result, apt_output, apt_selected_remarks
+
+    try:
+        selected_remarks = request.form.getlist("remarks")
+        if not selected_remarks:
+            apt_result = "❌ No remark values selected."
+            return redirect("/comparison?tab=agentproductivity")
+
+        if not apt_data or not apt_selected_sheet or apt_selected_sheet not in apt_data:
+            apt_result = "❌ No sheet selected. Please upload a file and select a sheet first."
+            return redirect("/comparison?tab=agentproductivity")
+
+        df = apt_data[apt_selected_sheet]
+        apt_selected_remarks = selected_remarks
+
+        # Find column names (case-insensitive)
+        remark_col = None
+        agent_col = None
+        workdate_col = None
+        for c in df.columns:
+            cl = c.strip().lower()
+            if cl == "remark":
+                remark_col = c
+            elif cl == "agent name":
+                agent_col = c
+            elif cl == "work date":
+                workdate_col = c
+
+        missing = []
+        if remark_col is None:
+            missing.append("Remark")
+        if agent_col is None:
+            missing.append("Agent Name")
+        if workdate_col is None:
+            missing.append("Work Date")
+        if missing:
+            apt_result = f"❌ Missing required columns: {', '.join(missing)}"
+            return redirect("/comparison?tab=agentproductivity")
+
+        # Filter by selected remark values
+        selected_lower = {r.strip().lower() for r in selected_remarks}
+        mask = df[remark_col].fillna("").astype(str).str.strip().str.lower().isin(selected_lower)
+        filtered_df = df[mask].copy()
+
+        if filtered_df.empty:
+            apt_result = "⚠️ No rows matched the selected remark values."
+            apt_output = None
+            return redirect("/comparison?tab=agentproductivity")
+
+        # Normalize agent names and work dates
+        filtered_df["_agent"] = filtered_df[agent_col].fillna("").astype(str).str.strip()
+        filtered_df["_workdate"] = pd.to_datetime(filtered_df[workdate_col], errors="coerce")
+
+        # Remove rows with empty agent or invalid date
+        filtered_df = filtered_df[
+            (filtered_df["_agent"] != "") & (filtered_df["_workdate"].notna())
+        ]
+
+        if filtered_df.empty:
+            apt_result = "⚠️ No valid rows after filtering (empty agent names or invalid dates)."
+            apt_output = None
+            return redirect("/comparison?tab=agentproductivity")
+
+        # Detail: count per agent per date
+        detail_grouped = (
+            filtered_df.groupby(["_agent", "_workdate"])
+            .size()
+            .reset_index(name="Count")
+        )
+        detail_grouped.columns = ["Agent Name", "Work Date", "Count"]
+        detail_grouped = detail_grouped.sort_values(["Agent Name", "Work Date"])
+
+        # Summary: per agent
+        summary_rows = []
+        agents_data = {}
+        for agent, grp in detail_grouped.groupby("Agent Name"):
+            total_working_days = len(grp)
+            total_count = int(grp["Count"].sum())
+            productivity = round(total_count / total_working_days, 2) if total_working_days > 0 else 0
+            summary_rows.append({
+                "Agent Name": agent,
+                "Total Working Days": total_working_days,
+                "Total Count": total_count,
+                "Avg Per Day": productivity,
+            })
+            agents_data[agent] = {
+                "total_days": total_working_days,
+                "total_count": total_count,
+                "productivity": productivity,
+                "dates": grp[["Work Date", "Count"]].values.tolist(),
+            }
+
+        summary_df = pd.DataFrame(summary_rows)
+        summary_df = summary_df.sort_values("Agent Name")
+
+        # Build Detail sheet: Agent header row with totals, then date rows below
+        detail_rows = []
+        for agent in sorted(agents_data.keys()):
+            info = agents_data[agent]
+            detail_rows.append({
+                "Agent Name": agent,
+                "Work Date": f"{info['total_days']} days",
+                "Count": info["total_count"],
+                "Avg Per Day": info["productivity"],
+            })
+            for work_date, count in info["dates"]:
+                detail_rows.append({
+                    "Agent Name": "",
+                    "Work Date": work_date.strftime("%m/%d/%Y") if hasattr(work_date, "strftime") else str(work_date),
+                    "Count": int(count),
+                    "Avg Per Day": "",
+                })
+            detail_rows.append({"Agent Name": "", "Work Date": "", "Count": "", "Avg Per Day": ""})
+
+        detail_df = pd.DataFrame(detail_rows, columns=["Agent Name", "Work Date", "Count", "Avg Per Day"])
+
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            summary_df.to_excel(writer, index=False, sheet_name="Summary")
+            detail_df.to_excel(writer, index=False, sheet_name="Detail")
+        buf.seek(0)
+        apt_output = buf.getvalue()
+
+        apt_result = (
+            f"✅ Processed <strong>{len(filtered_df)}</strong> rows for "
+            f"<strong>{len(summary_rows)}</strong> agent(s) across "
+            f"<strong>{len(selected_remarks)}</strong> remark value(s)."
+        )
+        return redirect("/comparison?tab=agentproductivity")
+    except Exception as e:
+        apt_result = f"❌ Error processing: {str(e)}"
+        apt_output = None
+        return redirect("/comparison?tab=agentproductivity")
+
+
+@app.route("/download_apt", methods=["POST"])
+def download_apt():
+    """Download the agent productivity report."""
+    if apt_output is None:
+        return redirect("/comparison?tab=agentproductivity")
+    return send_file(
+        io.BytesIO(apt_output),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="agent_productivity_report.xlsx",
+    )
+
+
+@app.route("/reset_apt", methods=["POST"])
+def reset_apt():
+    """Clear all Agent Productivity Tracker data."""
+    global apt_data, apt_filename, apt_selected_sheet, apt_remark_values, apt_result, apt_output, apt_selected_remarks
+
+    try:
+        apt_data = None
+        apt_filename = None
+        apt_selected_sheet = None
+        apt_remark_values = []
+        apt_selected_remarks = []
+        apt_result = None
+        apt_output = None
+        return redirect("/comparison?tab=agentproductivity")
+    except Exception as e:
+        apt_result = f"❌ Error resetting: {str(e)}"
+        return redirect("/comparison?tab=agentproductivity")
 
 
 # =============================
