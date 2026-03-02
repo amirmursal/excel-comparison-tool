@@ -272,8 +272,6 @@ EV_ALLOCATION_MCD_INSURANCE_LIST = frozenset(
         "Caresource medicaid",
         "Humana Healthy",
         "Humana healthy horizons-medicaid",
-        "united health care",
-        "United Healthcare",
         "#Caresource",
         "*Ameri-Health Caritas",
         "*Anthem BCBS Medicaid",
@@ -385,6 +383,8 @@ EV_ALLOCATION_MCD_INSURANCE_LIST = frozenset(
         "zzDentaQuest/Medicaid",
         "DentaQuest",
         "sooner care",
+        "Paramount Advantage",
+        "*Paramount Advantage",
     ]
 )
 
@@ -9987,8 +9987,6 @@ def process_ev_allocation():
                             mapped["Reference"] = "MCD"
                         elif carrier_class == "Commercial":
                             mapped["Reference"] = "Commercial"
-                        elif carrier_lower == "united healthcare":
-                            mapped["Reference"] = "MCD"
                         elif bc_class == "Commercial":
                             mapped["Reference"] = "Commercial"
                         elif carrier_class == "MCD":
