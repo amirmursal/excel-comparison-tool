@@ -128,6 +128,9 @@ dental_bv_final_output = None  # bytes for final combined download
 apt_data = None  # {sheet_name: df}
 apt_filename = None
 apt_selected_sheet = None
+apt_sheet_columns = []  # column names from selected sheet
+apt_agent_col = None  # user-selected agent/auditor column
+apt_date_col = None  # user-selected date column
 apt_remark_values = []  # unique remark values from selected sheet
 apt_selected_remarks = []
 apt_result = None
@@ -3253,9 +3256,9 @@ HTML_TEMPLATE = """
                 </div>
 
                 {% if apt_data %}
-                <!-- Step 2: Select sheet -->
+                <!-- Step 2: Select sheet and columns -->
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
-                    <h3>📄 Step 2: Select sheet</h3>
+                    <h3>📄 Step 2: Select sheet & configure columns</h3>
                     <form action="/apt_select_sheet" method="post" id="apt-sheet-form">
                         <div class="form-group">
                             <label for="apt_sheet">Choose a sheet:</label>
@@ -3266,7 +3269,29 @@ HTML_TEMPLATE = """
                                 {% endfor %}
                             </select>
                         </div>
-                        <button type="submit" id="apt-sheet-btn">📋 Load sheet</button>
+                        {% if apt_sheet_columns %}
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px;">
+                            <div class="form-group">
+                                <label for="apt_agent_col"><strong>Agent/Auditor column:</strong></label>
+                                <select id="apt_agent_col" name="agent_col" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="">-- Select column --</option>
+                                    {% for col in apt_sheet_columns %}
+                                    <option value="{{ col }}" {% if apt_agent_col == col %}selected{% endif %}>{{ col }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="apt_date_col"><strong>Date column:</strong></label>
+                                <select id="apt_date_col" name="date_col" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="">-- Select column --</option>
+                                    {% for col in apt_sheet_columns %}
+                                    <option value="{{ col }}" {% if apt_date_col == col %}selected{% endif %}>{{ col }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <button type="submit" id="apt-sheet-btn" style="margin-top: 10px;">📋 Load columns & remark values</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3274,7 +3299,8 @@ HTML_TEMPLATE = """
                 {% if apt_remark_values %}
                 <!-- Step 3: Select remark values -->
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
-                    <h3>🏷️ Step 3: Select remark values</h3>
+                    <h3>🏷️ Step 3: Select remark values & calculate</h3>
+                    <p style="margin-bottom: 5px;">Using: <strong>Agent/Auditor</strong> = {{ apt_agent_col }}, <strong>Date</strong> = {{ apt_date_col }}</p>
                     <p style="margin-bottom: 10px;">Select one or more remark values to calculate productivity for:</p>
                     <form action="/process_apt" method="post" id="apt-process-form">
                         <div class="form-group" style="max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: white;">
@@ -4745,6 +4771,9 @@ def comparison_index():
         apt_data=apt_data,
         apt_filename=apt_filename,
         apt_selected_sheet=apt_selected_sheet,
+        apt_sheet_columns=apt_sheet_columns,
+        apt_agent_col=apt_agent_col,
+        apt_date_col=apt_date_col,
         apt_remark_values=apt_remark_values,
         apt_result=apt_result,
         apt_has_output=(apt_output is not None),
@@ -11116,7 +11145,9 @@ def reset_dental_bv():
 @app.route("/upload_apt", methods=["POST"])
 def upload_apt():
     """Upload file for Agent Productivity Tracker."""
-    global apt_data, apt_filename, apt_selected_sheet, apt_remark_values, apt_result, apt_output
+    global apt_data, apt_filename, apt_selected_sheet, apt_sheet_columns
+    global apt_agent_col, apt_date_col
+    global apt_remark_values, apt_result, apt_output
 
     try:
         if "file" not in request.files:
@@ -11142,6 +11173,9 @@ def upload_apt():
         apt_data = cleaned
         apt_filename = original_name
         apt_selected_sheet = None
+        apt_sheet_columns = []
+        apt_agent_col = None
+        apt_date_col = None
         apt_remark_values = []
         apt_result = None
         apt_output = None
@@ -11153,8 +11187,9 @@ def upload_apt():
 
 @app.route("/apt_select_sheet", methods=["POST"])
 def apt_select_sheet():
-    """Select a sheet and extract unique Remark values."""
-    global apt_selected_sheet, apt_remark_values, apt_result, apt_output
+    """Select a sheet, populate columns, accept column selections, extract unique Remark values."""
+    global apt_selected_sheet, apt_sheet_columns, apt_agent_col, apt_date_col
+    global apt_remark_values, apt_result, apt_output
 
     try:
         sheet_name = request.form.get("sheet", "")
@@ -11164,6 +11199,21 @@ def apt_select_sheet():
 
         df = apt_data[sheet_name]
         apt_selected_sheet = sheet_name
+        apt_sheet_columns = [c for c in df.columns if not str(c).startswith("Unnamed:")]
+
+        agent_col = request.form.get("agent_col", "")
+        date_col = request.form.get("date_col", "")
+
+        if not agent_col or not date_col:
+            apt_agent_col = None
+            apt_date_col = None
+            apt_remark_values = []
+            apt_result = None
+            apt_output = None
+            return redirect("/comparison?tab=agentproductivity")
+
+        apt_agent_col = agent_col
+        apt_date_col = date_col
 
         remark_col = None
         for c in df.columns:
@@ -11187,6 +11237,68 @@ def apt_select_sheet():
         return redirect("/comparison?tab=agentproductivity")
 
 
+def _apt_build_productivity(df, agent_col_name, date_col_name, remark_col, selected_lower):
+    """Compute summary & detail productivity for a given agent/date column pair."""
+    mask = df[remark_col].fillna("").astype(str).str.strip().str.lower().isin(selected_lower)
+    filtered = df[mask].copy()
+    if filtered.empty:
+        return None, None, 0, 0
+
+    filtered["_agent"] = filtered[agent_col_name].fillna("").astype(str).str.strip()
+    filtered["_workdate"] = pd.to_datetime(filtered[date_col_name], errors="coerce")
+    filtered = filtered[(filtered["_agent"] != "") & (filtered["_workdate"].notna())]
+    if filtered.empty:
+        return None, None, 0, 0
+
+    detail_grouped = (
+        filtered.groupby(["_agent", "_workdate"]).size().reset_index(name="Count")
+    )
+    detail_grouped.columns = ["Agent Name", "Work Date", "Count"]
+    detail_grouped = detail_grouped.sort_values(["Agent Name", "Work Date"])
+
+    summary_rows = []
+    agents_data = {}
+    for agent, grp in detail_grouped.groupby("Agent Name"):
+        total_working_days = len(grp)
+        total_count = int(grp["Count"].sum())
+        productivity = round(total_count / total_working_days, 2) if total_working_days > 0 else 0
+        summary_rows.append({
+            "Agent Name": agent,
+            "Total Working Days": total_working_days,
+            "Total Count": total_count,
+            "Avg Per Day": productivity,
+        })
+        agents_data[agent] = {
+            "total_days": total_working_days,
+            "total_count": total_count,
+            "productivity": productivity,
+            "dates": grp[["Work Date", "Count"]].values.tolist(),
+        }
+
+    summary_df = pd.DataFrame(summary_rows).sort_values("Agent Name")
+
+    detail_rows = []
+    for agent in sorted(agents_data.keys()):
+        info = agents_data[agent]
+        detail_rows.append({
+            "Agent Name": agent,
+            "Work Date": f"{info['total_days']} days",
+            "Count": info["total_count"],
+            "Avg Per Day": info["productivity"],
+        })
+        for work_date, count in info["dates"]:
+            detail_rows.append({
+                "Agent Name": "",
+                "Work Date": work_date.strftime("%m/%d/%Y") if hasattr(work_date, "strftime") else str(work_date),
+                "Count": int(count),
+                "Avg Per Day": "",
+            })
+        detail_rows.append({"Agent Name": "", "Work Date": "", "Count": "", "Avg Per Day": ""})
+
+    detail_df = pd.DataFrame(detail_rows, columns=["Agent Name", "Work Date", "Count", "Avg Per Day"])
+    return summary_df, detail_df, len(filtered), len(summary_rows)
+
+
 @app.route("/process_apt", methods=["POST"])
 def process_apt():
     """Process agent productivity based on selected remarks."""
@@ -11202,120 +11314,50 @@ def process_apt():
             apt_result = "❌ No sheet selected. Please upload a file and select a sheet first."
             return redirect("/comparison?tab=agentproductivity")
 
+        if not apt_agent_col or not apt_date_col:
+            apt_result = "❌ Agent/Auditor column or Date column not selected."
+            return redirect("/comparison?tab=agentproductivity")
+
         df = apt_data[apt_selected_sheet]
         apt_selected_remarks = selected_remarks
 
-        # Find column names (case-insensitive)
         remark_col = None
-        agent_col = None
-        workdate_col = None
         for c in df.columns:
-            cl = c.strip().lower()
-            if cl == "remark":
+            if c.strip().lower() == "remark":
                 remark_col = c
-            elif cl == "agent name":
-                agent_col = c
-            elif cl == "work date":
-                workdate_col = c
-
-        missing = []
+                break
         if remark_col is None:
-            missing.append("Remark")
-        if agent_col is None:
-            missing.append("Agent Name")
-        if workdate_col is None:
-            missing.append("Work Date")
-        if missing:
-            apt_result = f"❌ Missing required columns: {', '.join(missing)}"
+            apt_result = "❌ 'Remark' column not found in the sheet."
             return redirect("/comparison?tab=agentproductivity")
 
-        # Filter by selected remark values
+        if apt_agent_col not in df.columns:
+            apt_result = f"❌ Selected Agent/Auditor column '{apt_agent_col}' not found."
+            return redirect("/comparison?tab=agentproductivity")
+        if apt_date_col not in df.columns:
+            apt_result = f"❌ Selected Date column '{apt_date_col}' not found."
+            return redirect("/comparison?tab=agentproductivity")
+
         selected_lower = {r.strip().lower() for r in selected_remarks}
-        mask = df[remark_col].fillna("").astype(str).str.strip().str.lower().isin(selected_lower)
-        filtered_df = df[mask].copy()
 
-        if filtered_df.empty:
-            apt_result = "⚠️ No rows matched the selected remark values."
-            apt_output = None
-            return redirect("/comparison?tab=agentproductivity")
-
-        # Normalize agent names and work dates
-        filtered_df["_agent"] = filtered_df[agent_col].fillna("").astype(str).str.strip()
-        filtered_df["_workdate"] = pd.to_datetime(filtered_df[workdate_col], errors="coerce")
-
-        # Remove rows with empty agent or invalid date
-        filtered_df = filtered_df[
-            (filtered_df["_agent"] != "") & (filtered_df["_workdate"].notna())
-        ]
-
-        if filtered_df.empty:
-            apt_result = "⚠️ No valid rows after filtering (empty agent names or invalid dates)."
-            apt_output = None
-            return redirect("/comparison?tab=agentproductivity")
-
-        # Detail: count per agent per date
-        detail_grouped = (
-            filtered_df.groupby(["_agent", "_workdate"])
-            .size()
-            .reset_index(name="Count")
+        agent_summary, agent_detail, agent_rows, agent_count = _apt_build_productivity(
+            df, apt_agent_col, apt_date_col, remark_col, selected_lower
         )
-        detail_grouped.columns = ["Agent Name", "Work Date", "Count"]
-        detail_grouped = detail_grouped.sort_values(["Agent Name", "Work Date"])
 
-        # Summary: per agent
-        summary_rows = []
-        agents_data = {}
-        for agent, grp in detail_grouped.groupby("Agent Name"):
-            total_working_days = len(grp)
-            total_count = int(grp["Count"].sum())
-            productivity = round(total_count / total_working_days, 2) if total_working_days > 0 else 0
-            summary_rows.append({
-                "Agent Name": agent,
-                "Total Working Days": total_working_days,
-                "Total Count": total_count,
-                "Avg Per Day": productivity,
-            })
-            agents_data[agent] = {
-                "total_days": total_working_days,
-                "total_count": total_count,
-                "productivity": productivity,
-                "dates": grp[["Work Date", "Count"]].values.tolist(),
-            }
-
-        summary_df = pd.DataFrame(summary_rows)
-        summary_df = summary_df.sort_values("Agent Name")
-
-        # Build Detail sheet: Agent header row with totals, then date rows below
-        detail_rows = []
-        for agent in sorted(agents_data.keys()):
-            info = agents_data[agent]
-            detail_rows.append({
-                "Agent Name": agent,
-                "Work Date": f"{info['total_days']} days",
-                "Count": info["total_count"],
-                "Avg Per Day": info["productivity"],
-            })
-            for work_date, count in info["dates"]:
-                detail_rows.append({
-                    "Agent Name": "",
-                    "Work Date": work_date.strftime("%m/%d/%Y") if hasattr(work_date, "strftime") else str(work_date),
-                    "Count": int(count),
-                    "Avg Per Day": "",
-                })
-            detail_rows.append({"Agent Name": "", "Work Date": "", "Count": "", "Avg Per Day": ""})
-
-        detail_df = pd.DataFrame(detail_rows, columns=["Agent Name", "Work Date", "Count", "Avg Per Day"])
+        if agent_summary is None:
+            apt_result = "⚠️ No valid rows after filtering (empty names or invalid dates)."
+            apt_output = None
+            return redirect("/comparison?tab=agentproductivity")
 
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-            summary_df.to_excel(writer, index=False, sheet_name="Summary")
-            detail_df.to_excel(writer, index=False, sheet_name="Detail")
+            agent_summary.to_excel(writer, index=False, sheet_name="Summary")
+            agent_detail.to_excel(writer, index=False, sheet_name="Detail")
         buf.seek(0)
         apt_output = buf.getvalue()
 
         apt_result = (
-            f"✅ Processed <strong>{len(filtered_df)}</strong> rows for "
-            f"<strong>{len(summary_rows)}</strong> agent(s) across "
+            f"✅ Processed <strong>{agent_rows}</strong> rows for "
+            f"<strong>{agent_count}</strong> agent(s) across "
             f"<strong>{len(selected_remarks)}</strong> remark value(s)."
         )
         return redirect("/comparison?tab=agentproductivity")
@@ -11341,12 +11383,17 @@ def download_apt():
 @app.route("/reset_apt", methods=["POST"])
 def reset_apt():
     """Clear all Agent Productivity Tracker data."""
-    global apt_data, apt_filename, apt_selected_sheet, apt_remark_values, apt_result, apt_output, apt_selected_remarks
+    global apt_data, apt_filename, apt_selected_sheet, apt_sheet_columns
+    global apt_agent_col, apt_date_col
+    global apt_remark_values, apt_result, apt_output, apt_selected_remarks
 
     try:
         apt_data = None
         apt_filename = None
         apt_selected_sheet = None
+        apt_sheet_columns = []
+        apt_agent_col = None
+        apt_date_col = None
         apt_remark_values = []
         apt_selected_remarks = []
         apt_result = None
