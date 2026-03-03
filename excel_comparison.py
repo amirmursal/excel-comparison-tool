@@ -8183,6 +8183,7 @@ def upload_smart_assist():
                 "Status Code",
                 "Comment",
                 "Plan Name",
+                "Plan Number",
                 "Group Number",
                 "Category",
                 "Agent Name",
@@ -8241,6 +8242,7 @@ def upload_smart_assist():
 
             # Find new columns
             plan_name_col = find_col(["plan", "name"])
+            plan_number_col = find_col(["plan", "number"])
             supervisor_col = find_col(["supervisor"])
             auditor_col = find_col(["auditor"])
             agent1_col = find_col(["agent", "1"]) or find_col(["agent1"])
@@ -8317,6 +8319,7 @@ def upload_smart_assist():
                 standardized["Comment"] = ""
 
             standardized["Plan Name"] = df[plan_name_col] if plan_name_col else ""
+            standardized["Plan Number"] = df[plan_number_col] if plan_number_col else ""
             standardized["Group Number"] = (
                 df[group_number_col] if group_number_col else ""
             )
