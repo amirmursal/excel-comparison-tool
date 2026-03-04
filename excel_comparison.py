@@ -136,6 +136,18 @@ apt_selected_remarks = []
 apt_result = None
 apt_output = None  # bytes for download
 
+# NH Allocation Report globals
+nh_data = None  # {sheet_name: df} from first file
+nh_filename = None
+nh_selected_sheet = None
+nh_remark_values = []
+nh_selected_remarks = []
+nh_filtered_df = None  # DataFrame after excluding selected remarks
+nh_file2_data = None  # DataFrame from second file ("Today" sheet)
+nh_file2_filename = None
+nh_result = None
+nh_output = None  # bytes for download
+
 DENTAL_BV_OUTPUT_COLUMNS = [
     "Software",
     "Office Name",
@@ -1464,6 +1476,11 @@ HTML_TEMPLATE = """
                 <div class="menu-item {% if active_tab == 'dentalbv' %}active{% endif %}" onclick="switchTab('dentalbv')">
                     <span>Dental BV Report</span>
                 </div>
+
+                <div class="menu-group-header">NH Allocation Automation</div>
+                <div class="menu-item {% if active_tab == 'nhallocation' %}active{% endif %}" onclick="switchTab('nhallocation')">
+                    <span>NH Allocation Report</span>
+                </div>
             </nav>
         </div>
 
@@ -1485,6 +1502,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'agentproductivity' %}📊 Agent Productivity Tracker
                     {% elif active_tab == 'evallocation' %}📋 EV Allocation report
                     {% elif active_tab == 'dentalbv' %}🦷 Dental BV Report
+                    {% elif active_tab == 'nhallocation' %}🏥 NH Allocation Report
                     {% else %}🔄 Comparison Tool
                     {% endif %}
                 </h2>
@@ -1503,6 +1521,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'agentproductivity' %}Calculate agent productivity based on remark values and working days
                     {% elif active_tab == 'evallocation' %}Upload multiple files (identified by name), then generate output file
                     {% elif active_tab == 'dentalbv' %}3-step process to generate Dental BV report
+                    {% elif active_tab == 'nhallocation' %}Upload two files, filter remarks, and merge into NH allocation report
                     {% else %}Compare Patient IDs and add insurance columns
                     {% endif %}
                 </p>
@@ -3351,6 +3370,107 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
+            <!-- Tab: NH Allocation Report -->
+            <div id="nhallocation-tab" class="tab-content {% if active_tab == 'nhallocation' %}active{% endif %}">
+                <div class="section">
+                    <h3>🏥 NH Allocation Report</h3>
+                    <p>Step 1: Upload file, select sheet, and choose remark values to exclude. Step 2: Upload second file to merge.</p>
+                </div>
+
+                <!-- Step 1: Upload first file -->
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>📁 Step 1: Upload first file</h3>
+                    <form action="/upload_nh" method="post" enctype="multipart/form-data" id="nh-upload-form">
+                        <div class="form-group">
+                            <label for="nh_file">Select Excel file (.xlsx, .xls):</label>
+                            <input type="file" id="nh_file" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit">📤 Upload File</button>
+                    </form>
+                </div>
+
+                {% if nh_data %}
+                <!-- Step 1b: Select sheet and remark values -->
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>📄 Step 1b: Select sheet & remark values to exclude</h3>
+                    <form action="/nh_select_sheet" method="post" id="nh-sheet-form">
+                        <div class="form-group">
+                            <label for="nh_sheet">Choose a sheet:</label>
+                            <select id="nh_sheet" name="sheet" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="">-- Select sheet --</option>
+                                {% for sheet_name in nh_data.keys() %}
+                                <option value="{{ sheet_name }}" {% if nh_selected_sheet == sheet_name %}selected{% endif %}>{{ sheet_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit">📋 Load sheet</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if nh_remark_values %}
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>🏷️ Select remark values to EXCLUDE</h3>
+                    <p style="margin-bottom: 10px;">Rows matching these remark values will be <strong>removed</strong> from the first file before merging.</p>
+                    <form action="/nh_filter_remarks" method="post" id="nh-remark-form">
+                        <div class="form-group" style="max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: white;">
+                            <label style="display: block; margin-bottom: 8px; cursor: pointer;">
+                                <input type="checkbox" id="nh-select-all" onclick="toggleAllNhRemarks(this)"> <strong>Select All</strong>
+                            </label>
+                            <hr style="margin: 5px 0;">
+                            {% for remark in nh_remark_values %}
+                            <label style="display: block; margin-bottom: 5px; cursor: pointer;">
+                                <input type="checkbox" name="remarks" value="{{ remark }}" class="nh-remark-cb"> {{ remark }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <button type="submit" style="margin-top: 10px;">🚫 Exclude selected & proceed</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if nh_filtered_df is not none %}
+                <!-- Step 2: Upload second file -->
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>📁 Step 2: Upload second file (will read "Today" sheet)</h3>
+                    <p style="margin-bottom: 10px;">First file filtered: <strong>{{ nh_filtered_df|length }}</strong> rows remaining after exclusion.</p>
+                    <form action="/nh_upload_file2" method="post" enctype="multipart/form-data" id="nh-upload2-form">
+                        <div class="form-group">
+                            <label for="nh_file2">Select second Excel file (.xlsx, .xls):</label>
+                            <input type="file" id="nh_file2" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit">📤 Upload & Merge</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if nh_result %}
+                <div class="section">
+                    <div class="result-card {% if '❌' in nh_result %}error{% endif %}">
+                        {{ nh_result | safe }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if nh_output %}
+                <div class="section">
+                    <h3>📥 Download NH Allocation Report</h3>
+                    <form action="/download_nh" method="post">
+                        <button type="submit">📥 Download nh_allocation_report.xlsx</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Reset Section -->
+                <div class="section">
+                    <h3>🔄 Reset NH Allocation Report</h3>
+                    <p>Clear all data and start fresh.</p>
+                    <form action="/reset_nh" method="post" onsubmit="return confirm('Are you sure you want to reset?')">
+                        <button type="submit" class="reset-btn">🗑️ Reset</button>
+                    </form>
+                </div>
+            </div>
+
             </div> <!-- End content -->
 
             <!-- Footer -->
@@ -3440,7 +3560,8 @@ HTML_TEMPLATE = """
                     (tabName === 'agentremarktransfer' && itemText.includes('agent') && itemText.includes('remark')) ||
                     (tabName === 'evallocation' && itemText.includes('ev allocation')) ||
                     (tabName === 'dentalbv' && itemText.includes('dental bv')) ||
-                    (tabName === 'agentproductivity' && itemText.includes('agent productivity'))) {
+                    (tabName === 'agentproductivity' && itemText.includes('agent productivity')) ||
+                    (tabName === 'nhallocation' && itemText.includes('nh allocation'))) {
                     item.classList.add('active');
                 }
             });
@@ -3460,7 +3581,8 @@ HTML_TEMPLATE = """
                 'agentremarktransfer': '🔄 Agent & Remark Transfer',
                 'evallocation': '📋 EV Allocation report',
                 'dentalbv': '🦷 Dental BV Report',
-                'agentproductivity': '📊 Agent Productivity Tracker'
+                'agentproductivity': '📊 Agent Productivity Tracker',
+                'nhallocation': '🏥 NH Allocation Report'
             };
             
             const pageDescriptions = {
@@ -3477,7 +3599,8 @@ HTML_TEMPLATE = """
                 'agentremarktransfer': 'Transfer Agent Name to Agent 1 and Remark to Remark 1',
                 'evallocation': 'Upload multiple files (identified by name), then generate output file',
                 'dentalbv': '3-step process to generate Dental BV report',
-                'agentproductivity': 'Calculate agent productivity based on remark values and working days'
+                'agentproductivity': 'Calculate agent productivity based on remark values and working days',
+                'nhallocation': 'Upload two files, filter remarks, and merge into NH allocation report'
             };
             
             document.getElementById('page-title').textContent = pageTitles[tabName] || pageTitles['comparison'];
@@ -3734,6 +3857,11 @@ HTML_TEMPLATE = """
 
         function toggleAllAptRemarks(source) {
             var checkboxes = document.querySelectorAll('.apt-remark-cb');
+            checkboxes.forEach(function(cb) { cb.checked = source.checked; });
+        }
+
+        function toggleAllNhRemarks(source) {
+            var checkboxes = document.querySelectorAll('.nh-remark-cb');
             checkboxes.forEach(function(cb) { cb.checked = source.checked; });
         }
 
@@ -4777,6 +4905,14 @@ def comparison_index():
         apt_remark_values=apt_remark_values,
         apt_result=apt_result,
         apt_has_output=(apt_output is not None),
+        nh_data=nh_data,
+        nh_filename=nh_filename,
+        nh_selected_sheet=nh_selected_sheet,
+        nh_remark_values=nh_remark_values,
+        nh_filtered_df=nh_filtered_df,
+        nh_file2_filename=nh_file2_filename,
+        nh_result=nh_result,
+        nh_output=nh_output,
         active_tab=active_tab,
     )
 
@@ -11405,6 +11541,245 @@ def reset_apt():
     except Exception as e:
         apt_result = f"❌ Error resetting: {str(e)}"
         return redirect("/comparison?tab=agentproductivity")
+
+
+# =============================
+# NH Allocation Report
+# =============================
+
+
+@app.route("/upload_nh", methods=["POST"])
+def upload_nh():
+    """Upload first file for NH Allocation Report."""
+    global nh_data, nh_filename, nh_selected_sheet, nh_remark_values
+    global nh_selected_remarks, nh_filtered_df, nh_file2_data, nh_file2_filename
+    global nh_result, nh_output
+
+    try:
+        if "file" not in request.files:
+            nh_result = "❌ No file selected."
+            return redirect("/comparison?tab=nhallocation")
+
+        f = request.files["file"]
+        if not f or f.filename == "":
+            nh_result = "❌ Empty file."
+            return redirect("/comparison?tab=nhallocation")
+
+        original_name = f.filename
+        f.seek(0)
+        engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+        all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
+
+        cleaned = {}
+        for sn, df in all_sheets.items():
+            df.columns = df.columns.astype(str)
+            df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
+            cleaned[sn] = df
+
+        nh_data = cleaned
+        nh_filename = original_name
+        nh_selected_sheet = None
+        nh_remark_values = []
+        nh_selected_remarks = []
+        nh_filtered_df = None
+        nh_file2_data = None
+        nh_file2_filename = None
+        nh_result = f"✅ File uploaded: {original_name} ({len(cleaned)} sheet(s))"
+        nh_output = None
+        return redirect("/comparison?tab=nhallocation")
+    except Exception as e:
+        nh_result = f"❌ Error uploading file: {str(e)}"
+        return redirect("/comparison?tab=nhallocation")
+
+
+@app.route("/nh_select_sheet", methods=["POST"])
+def nh_select_sheet():
+    """Select a sheet and extract unique Remark values."""
+    global nh_selected_sheet, nh_remark_values, nh_result, nh_filtered_df, nh_output
+
+    try:
+        sheet_name = request.form.get("sheet", "")
+        if not sheet_name or not nh_data or sheet_name not in nh_data:
+            nh_result = "❌ Invalid sheet selection."
+            return redirect("/comparison?tab=nhallocation")
+
+        df = nh_data[sheet_name]
+        nh_selected_sheet = sheet_name
+        nh_filtered_df = None
+        nh_output = None
+
+        remark_col = None
+        for c in df.columns:
+            if c.strip().lower() == "remark":
+                remark_col = c
+                break
+
+        if remark_col is None:
+            nh_result = f"❌ Sheet '{sheet_name}' does not have a 'Remark' column. Available columns: {', '.join(df.columns.tolist()[:20])}"
+            nh_remark_values = []
+            return redirect("/comparison?tab=nhallocation")
+
+        unique_remarks = df[remark_col].dropna().astype(str).str.strip().unique().tolist()
+        unique_remarks = sorted([r for r in unique_remarks if r and r.lower() != "nan"])
+        nh_remark_values = unique_remarks
+        nh_result = f"✅ Sheet '{sheet_name}' loaded. {len(unique_remarks)} unique remark value(s) found. Select values to exclude."
+        return redirect("/comparison?tab=nhallocation")
+    except Exception as e:
+        nh_result = f"❌ Error loading sheet: {str(e)}"
+        return redirect("/comparison?tab=nhallocation")
+
+
+@app.route("/nh_filter_remarks", methods=["POST"])
+def nh_filter_remarks():
+    """Filter first file by excluding rows matching selected remark values."""
+    global nh_selected_remarks, nh_filtered_df, nh_result, nh_output
+
+    try:
+        selected_remarks = request.form.getlist("remarks")
+        if not selected_remarks:
+            nh_result = "❌ No remark values selected to exclude."
+            return redirect("/comparison?tab=nhallocation")
+
+        if not nh_data or not nh_selected_sheet or nh_selected_sheet not in nh_data:
+            nh_result = "❌ No sheet selected."
+            return redirect("/comparison?tab=nhallocation")
+
+        df = nh_data[nh_selected_sheet].copy()
+        nh_selected_remarks = selected_remarks
+
+        remark_col = None
+        for c in df.columns:
+            if c.strip().lower() == "remark":
+                remark_col = c
+                break
+
+        if remark_col is None:
+            nh_result = "❌ 'Remark' column not found."
+            return redirect("/comparison?tab=nhallocation")
+
+        original_count = len(df)
+        selected_lower = {r.strip().lower() for r in selected_remarks}
+        exclude_mask = df[remark_col].fillna("").astype(str).str.strip().str.lower().isin(selected_lower)
+        nh_filtered_df = df[~exclude_mask].copy()
+        excluded_count = int(exclude_mask.sum())
+
+        nh_result = (
+            f"✅ Excluded <strong>{excluded_count}</strong> row(s) matching selected remarks. "
+            f"<strong>{len(nh_filtered_df)}</strong> row(s) remaining out of {original_count}. "
+            f"Now upload the second file."
+        )
+        nh_output = None
+        return redirect("/comparison?tab=nhallocation")
+    except Exception as e:
+        nh_result = f"❌ Error filtering: {str(e)}"
+        return redirect("/comparison?tab=nhallocation")
+
+
+@app.route("/nh_upload_file2", methods=["POST"])
+def nh_upload_file2():
+    """Upload second file, read 'Today' sheet, merge with filtered first file."""
+    global nh_file2_data, nh_file2_filename, nh_result, nh_output
+
+    try:
+        if "file" not in request.files:
+            nh_result = "❌ No file selected for Step 2."
+            return redirect("/comparison?tab=nhallocation")
+
+        f = request.files["file"]
+        if not f or f.filename == "":
+            nh_result = "❌ Empty file."
+            return redirect("/comparison?tab=nhallocation")
+
+        if nh_filtered_df is None:
+            nh_result = "❌ Please complete Step 1 first."
+            return redirect("/comparison?tab=nhallocation")
+
+        original_name = f.filename
+        f.seek(0)
+        engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+
+        try:
+            df2 = pd.read_excel(f, sheet_name="Today", engine=engine)
+        except ValueError:
+            f.seek(0)
+            all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
+            available = list(all_sheets.keys())
+            nh_result = f"❌ 'Today' sheet not found in '{original_name}'. Available sheets: {', '.join(available)}"
+            return redirect("/comparison?tab=nhallocation")
+
+        df2.columns = df2.columns.astype(str)
+        df2 = df2.loc[:, ~df2.columns.str.startswith("Unnamed:")]
+
+        nh_file2_data = df2
+        nh_file2_filename = original_name
+
+        all_columns = list(dict.fromkeys(
+            list(nh_filtered_df.columns) + list(df2.columns)
+        ))
+
+        df1_aligned = nh_filtered_df.reindex(columns=all_columns)
+        df2_aligned = df2.reindex(columns=all_columns)
+
+        merged_df = pd.concat([df1_aligned, df2_aligned], ignore_index=True)
+        merged_df = merged_df.fillna("")
+
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            merged_df.to_excel(writer, index=False, sheet_name="NH Allocation")
+        buf.seek(0)
+        nh_output = buf.getvalue()
+
+        file1_cols = len(nh_filtered_df.columns)
+        file2_cols = len(df2.columns)
+        total_cols = len(all_columns)
+
+        nh_result = (
+            f"✅ Merge complete!<br>"
+            f"File 1 (filtered): <strong>{len(nh_filtered_df)}</strong> rows, {file1_cols} columns<br>"
+            f"File 2 ('{original_name}' → Today sheet): <strong>{len(df2)}</strong> rows, {file2_cols} columns<br>"
+            f"Merged output: <strong>{len(merged_df)}</strong> total rows, {total_cols} columns."
+        )
+        return redirect("/comparison?tab=nhallocation")
+    except Exception as e:
+        nh_result = f"❌ Error uploading/merging: {str(e)}"
+        return redirect("/comparison?tab=nhallocation")
+
+
+@app.route("/download_nh", methods=["POST"])
+def download_nh():
+    """Download the NH Allocation Report."""
+    if nh_output is None:
+        return redirect("/comparison?tab=nhallocation")
+    return send_file(
+        io.BytesIO(nh_output),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="nh_allocation_report.xlsx",
+    )
+
+
+@app.route("/reset_nh", methods=["POST"])
+def reset_nh():
+    """Clear all NH Allocation Report data."""
+    global nh_data, nh_filename, nh_selected_sheet, nh_remark_values
+    global nh_selected_remarks, nh_filtered_df, nh_file2_data, nh_file2_filename
+    global nh_result, nh_output
+
+    try:
+        nh_data = None
+        nh_filename = None
+        nh_selected_sheet = None
+        nh_remark_values = []
+        nh_selected_remarks = []
+        nh_filtered_df = None
+        nh_file2_data = None
+        nh_file2_filename = None
+        nh_result = None
+        nh_output = None
+        return redirect("/comparison?tab=nhallocation")
+    except Exception as e:
+        nh_result = f"❌ Error resetting: {str(e)}"
+        return redirect("/comparison?tab=nhallocation")
 
 
 # =============================
