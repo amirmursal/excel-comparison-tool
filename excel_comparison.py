@@ -10501,6 +10501,10 @@ def _dental_bv_build_final_output():
         return
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.fillna("")
+    if "Remark" in combined.columns:
+        combined = combined[
+            combined["Remark"].fillna("").astype(str).str.strip().str.lower() != "updated"
+        ].copy()
     if "Insurance" in combined.columns:
         combined["Insurance"] = combined["Insurance"].apply(format_insurance_name)
     buf = io.BytesIO()
@@ -10631,6 +10635,18 @@ def upload_dental_bv_step1():
                 format_insurance_name
             )
 
+        remark_col_s1 = None
+        for c in combined_df.columns:
+            if c.strip().lower() == "remark":
+                remark_col_s1 = c
+                break
+        pre_filter_count = len(combined_df)
+        if remark_col_s1:
+            combined_df = combined_df[
+                combined_df[remark_col_s1].fillna("").astype(str).str.strip().str.lower() != "updated"
+            ].copy()
+        updated_excluded_s1 = pre_filter_count - len(combined_df)
+
         dental_bv_step1_data = combined_df
 
         buf = io.BytesIO()
@@ -10646,6 +10662,8 @@ def upload_dental_bv_step1():
             + ", ".join(files_processed)
             + "."
         )
+        if updated_excluded_s1 > 0:
+            msg += f"<br>🚫 Excluded <strong>{updated_excluded_s1}</strong> row(s) with 'updated' remark."
         if files_rejected:
             msg += "<br>⚠️ Rejected: " + ", ".join(files_rejected)
         dental_bv_result_step1 = msg
@@ -10860,6 +10878,13 @@ def upload_dental_bv_step2():
         result_df = result_df.fillna("")
         result_df["Insurance"] = result_df["Insurance"].apply(format_insurance_name)
 
+        pre_filter_s2 = len(result_df)
+        if "Remark" in result_df.columns:
+            result_df = result_df[
+                result_df["Remark"].fillna("").astype(str).str.strip().str.lower() != "updated"
+            ].copy()
+        updated_excluded_s2 = pre_filter_s2 - len(result_df)
+
         dental_bv_step2_data = result_df
 
         buf = io.BytesIO()
@@ -10881,7 +10906,9 @@ def upload_dental_bv_step2():
                 f"<strong>{yesterday_excluded}</strong> with 'updated' remark (excluded), "
                 f"<strong>{len(yesterday_mapped_rows)}</strong> rows added."
             )
-        msg += f"<br>Total Step 2 output: <strong>{len(all_step2_rows)}</strong> rows."
+        if updated_excluded_s2 > 0:
+            msg += f"<br>🚫 Excluded <strong>{updated_excluded_s2}</strong> additional row(s) with 'updated' remark."
+        msg += f"<br>Total Step 2 output: <strong>{len(result_df)}</strong> rows."
         if files_rejected:
             msg += "<br>⚠️ Rejected: " + ", ".join(files_rejected)
         dental_bv_result_step2 = msg
@@ -11191,6 +11218,13 @@ def upload_dental_bv_step3():
         result_df = result_df.fillna("")
         result_df["Insurance"] = result_df["Insurance"].apply(format_insurance_name)
 
+        pre_filter_s3 = len(result_df)
+        if "Remark" in result_df.columns:
+            result_df = result_df[
+                result_df["Remark"].fillna("").astype(str).str.strip().str.lower() != "updated"
+            ].copy()
+        updated_excluded_s3 = pre_filter_s3 - len(result_df)
+
         dental_bv_step3_data = result_df
 
         buf = io.BytesIO()
@@ -11204,8 +11238,11 @@ def upload_dental_bv_step3():
         msg = (
             f"✅ Step 3: Raw Smilelink had <strong>{total_raw}</strong> rows, "
             f"<strong>{match_count}</strong> matched Consolidated, "
-            f"<strong>{old_enough_count}</strong> had Date > 350 days → included in output."
+            f"<strong>{old_enough_count}</strong> had Date > 350 days."
         )
+        if updated_excluded_s3 > 0:
+            msg += f"<br>🚫 Excluded <strong>{updated_excluded_s3}</strong> row(s) with 'updated' remark."
+        msg += f"<br>Final Step 3 output: <strong>{len(result_df)}</strong> rows."
         if files_rejected:
             msg += "<br>⚠️ Rejected: " + ", ".join(files_rejected)
         dental_bv_result_step3 = msg
