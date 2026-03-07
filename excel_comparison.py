@@ -148,6 +148,53 @@ nh_file2_filename = None
 nh_result = None
 nh_output = None  # bytes for download
 
+NH_OUTPUT_COLUMNS = [
+    "Software",
+    "Office Name",
+    "PracticeId",
+    "Location",
+    "Source",
+    "Received Date",
+    "Appointment",
+    "Patient Name",
+    "DOS/DOB",
+    "Patient ID",
+    "Insurance",
+    "Policy ID",
+    "Tel",
+    "Status Code",
+    "Comment",
+    "Rep",
+    "Agent",
+    "Remark",
+    "Work Date",
+    "Subscriber Name",
+    "Subscriber DOB",
+    "State",
+    "Time Zone",
+    "Contract Start",
+    "Next Appointment Date",
+    "Status",
+    "QC Agent",
+    "QC Comments",
+    "Date work",
+]
+
+NH_COLUMN_ALIASES = {
+    "Appointment": ["Appointmen", "Appointment Date"],
+    "Software": ["System"],
+    "Office Name": ["Office"],
+    "PracticeId": ["Practice ID"],
+}
+
+NH_STEP1_COLUMN_MAPPING = {
+    "System": "Software",
+    "Office": "Office Name",
+    "Appointment Date": "Appointment",
+    "Appointmen": "Appointment",
+    "Practice ID": "PracticeId",
+}
+
 DENTAL_BV_OUTPUT_COLUMNS = [
     "Software",
     "Office Name",
@@ -11697,8 +11744,36 @@ def nh_filter_remarks():
         original_count = len(df)
         selected_lower = {r.strip().lower() for r in selected_remarks}
         exclude_mask = df[remark_col].fillna("").astype(str).str.strip().str.lower().isin(selected_lower)
-        nh_filtered_df = df[~exclude_mask].copy()
+        filtered = df[~exclude_mask].copy()
         excluded_count = int(exclude_mask.sum())
+
+        mapped_df = pd.DataFrame(columns=NH_OUTPUT_COLUMNS)
+        input_cols_lower = {c.strip().lower(): c for c in filtered.columns}
+        step1_map_lower = {k.strip().lower(): v for k, v in NH_STEP1_COLUMN_MAPPING.items()}
+
+        for out_col in NH_OUTPUT_COLUMNS:
+            out_lower = out_col.strip().lower()
+            matched_input = None
+            for inp_lower, inp_orig in input_cols_lower.items():
+                if inp_lower in step1_map_lower and step1_map_lower[inp_lower] == out_col:
+                    matched_input = inp_orig
+                    break
+            if matched_input is None:
+                if out_lower in input_cols_lower:
+                    matched_input = input_cols_lower[out_lower]
+            if matched_input is None:
+                for alias in NH_COLUMN_ALIASES.get(out_col, []):
+                    alias_lower = alias.strip().lower()
+                    if alias_lower in input_cols_lower:
+                        matched_input = input_cols_lower[alias_lower]
+                        break
+            if matched_input is not None:
+                mapped_df[out_col] = filtered[matched_input].values
+            else:
+                mapped_df[out_col] = ""
+
+        mapped_df = mapped_df.fillna("")
+        nh_filtered_df = mapped_df
 
         nh_result = (
             f"✅ Excluded <strong>{excluded_count}</strong> row(s) matching selected remarks. "
@@ -11750,14 +11825,28 @@ def nh_upload_file2():
         nh_file2_data = df2
         nh_file2_filename = original_name
 
-        all_columns = list(dict.fromkeys(
-            list(nh_filtered_df.columns) + list(df2.columns)
-        ))
+        mapped_df2 = pd.DataFrame(columns=NH_OUTPUT_COLUMNS)
+        input_cols_lower = {c.strip().lower(): c for c in df2.columns}
 
-        df1_aligned = nh_filtered_df.reindex(columns=all_columns)
-        df2_aligned = df2.reindex(columns=all_columns)
+        for out_col in NH_OUTPUT_COLUMNS:
+            out_lower = out_col.strip().lower()
+            matched_input = None
+            if out_lower in input_cols_lower:
+                matched_input = input_cols_lower[out_lower]
+            else:
+                for alias in NH_COLUMN_ALIASES.get(out_col, []):
+                    alias_lower = alias.strip().lower()
+                    if alias_lower in input_cols_lower:
+                        matched_input = input_cols_lower[alias_lower]
+                        break
+            if matched_input is not None:
+                mapped_df2[out_col] = df2[matched_input].values
+            else:
+                mapped_df2[out_col] = ""
 
-        merged_df = pd.concat([df1_aligned, df2_aligned], ignore_index=True)
+        mapped_df2 = mapped_df2.fillna("")
+
+        merged_df = pd.concat([nh_filtered_df, mapped_df2], ignore_index=True)
         merged_df = merged_df.fillna("")
 
         buf = io.BytesIO()
@@ -11766,15 +11855,11 @@ def nh_upload_file2():
         buf.seek(0)
         nh_output = buf.getvalue()
 
-        file1_cols = len(nh_filtered_df.columns)
-        file2_cols = len(df2.columns)
-        total_cols = len(all_columns)
-
         nh_result = (
             f"✅ Merge complete!<br>"
-            f"File 1 (filtered): <strong>{len(nh_filtered_df)}</strong> rows, {file1_cols} columns<br>"
-            f"File 2 ('{original_name}' → Today sheet): <strong>{len(df2)}</strong> rows, {file2_cols} columns<br>"
-            f"Merged output: <strong>{len(merged_df)}</strong> total rows, {total_cols} columns."
+            f"File 1 (filtered): <strong>{len(nh_filtered_df)}</strong> rows<br>"
+            f"File 2 ('{original_name}' → Today sheet): <strong>{len(mapped_df2)}</strong> rows<br>"
+            f"Merged output: <strong>{len(merged_df)}</strong> total rows, {len(NH_OUTPUT_COLUMNS)} columns."
         )
         return redirect("/comparison?tab=nhallocation")
     except Exception as e:
