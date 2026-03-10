@@ -12077,6 +12077,23 @@ def run_general_comparison():
         primary_df.columns = [str(col).strip() for col in primary_df.columns]
         main_df.columns = [str(col).strip() for col in main_df.columns]
 
+        # Deduplicate column names to avoid Series ambiguity with .at[] access
+        def _dedup_columns(df):
+            seen = {}
+            new_cols = []
+            for c in df.columns:
+                if c in seen:
+                    seen[c] += 1
+                    new_cols.append(f"{c}__dup{seen[c]}")
+                else:
+                    seen[c] = 0
+                    new_cols.append(c)
+            df.columns = new_cols
+            return df
+
+        primary_df = _dedup_columns(primary_df)
+        main_df = _dedup_columns(main_df)
+
         # Validate columns exist (with helpful error messages showing available columns)
         for col in key_columns:
             if col not in primary_df.columns:
@@ -12101,24 +12118,25 @@ def run_general_comparison():
 
         def normalize_val(v, is_patient_id=False):
             """Normalize a value for key matching. Use patient ID normalization for Patient ID columns."""
-            if pd.isna(v):
-                return ""
+            if isinstance(v, pd.Series):
+                v = v.iloc[0] if len(v) > 0 else ""
+            try:
+                if pd.isna(v):
+                    return ""
+            except (ValueError, TypeError):
+                pass
 
-            # For Patient ID columns, use the specialized normalization function
-            # This handles numeric IDs properly (removes .0, leading zeros, etc.)
             if is_patient_id:
                 normalized = normalize_patient_id(v)
                 if normalized is None:
                     return ""
                 return str(normalized).strip()
 
-            # For other columns, use standard normalization
             s = str(v).strip()
-            s = " ".join(s.split())  # collapse internal whitespace
+            s = " ".join(s.split())
             return s.lower()
 
-        def build_key(df):
-            # Check if any key column is a Patient ID column (case-insensitive)
+        def build_key(df_input):
             is_pid_col = {}
             for col in key_columns:
                 col_lower = str(col).lower().strip()
@@ -12126,7 +12144,7 @@ def run_general_comparison():
                     "patient" in col_lower and "id" in col_lower
                 ) or col_lower in ["pid", "pat id", "patientid"]
 
-            return df[key_columns].apply(
+            return df_input[key_columns].apply(
                 lambda row: "|".join(
                     normalize_val(row[col], is_patient_id=is_pid_col.get(col, False))
                     for col in key_columns
