@@ -143,7 +143,8 @@ nh_selected_sheet = None
 nh_remark_values = []
 nh_selected_remarks = []
 nh_filtered_df = None  # DataFrame after excluding selected remarks
-nh_file2_data = None  # DataFrame from second file ("Today" sheet)
+nh_step2_files = None  # list of {"filename": str, "sheets": {sheet_name: df}} after Step 2 upload, before sheet selection
+nh_file2_data = None  # DataFrame from second file(s) after merge
 nh_file2_filename = None
 nh_result = None
 nh_output = None  # bytes for download
@@ -165,7 +166,7 @@ NH_OUTPUT_COLUMNS = [
     "Status Code",
     "Comment",
     "Rep",
-    "Agent",
+    "Agent Name",
     "Remark",
     "Work Date",
     "Subscriber Name",
@@ -185,6 +186,7 @@ NH_COLUMN_ALIASES = {
     "Software": ["System"],
     "Office Name": ["Office"],
     "PracticeId": ["Practice ID"],
+    "Agent Name": ["Agent"],
 }
 
 NH_STEP1_COLUMN_MAPPING = {
@@ -193,6 +195,23 @@ NH_STEP1_COLUMN_MAPPING = {
     "Appointment Date": "Appointment",
     "Appointmen": "Appointment",
     "Practice ID": "PracticeId",
+}
+
+# Insurance values that should set Remark to "Not to Work" in NH final output (matched case-insensitively)
+NH_INSURANCE_NOT_TO_WORK = {
+    "anthem medicaid",
+    "caresource",
+    "delta dental ins company mc",
+    "dentaquest",
+    "molina",
+    "molina healthcare",
+    "nh medicaid",
+    "scion",
+    "husky",
+    "buckeye medicaid",
+    "dentical",
+    "masshealth",
+    "mcna",
 }
 
 DENTAL_BV_OUTPUT_COLUMNS = [
@@ -3477,16 +3496,37 @@ HTML_TEMPLATE = """
                 {% endif %}
 
                 {% if nh_filtered_df is not none %}
-                <!-- Step 2: Upload second file -->
+                <!-- Step 2a: Upload one or more files -->
                 <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
-                    <h3>📁 Step 2: Upload second file (will read "Today" sheet)</h3>
-                    <p style="margin-bottom: 10px;">First file filtered: <strong>{{ nh_filtered_df|length }}</strong> rows remaining after exclusion.</p>
+                    <h3>📁 Step 2: Upload file(s)</h3>
+                    <p style="margin-bottom: 10px;">First file filtered: <strong>{{ nh_filtered_df|length }}</strong> rows remaining. Upload one or more Excel files; then choose which sheet to merge from each file.</p>
                     <form action="/nh_upload_file2" method="post" enctype="multipart/form-data" id="nh-upload2-form">
                         <div class="form-group">
-                            <label for="nh_file2">Select second Excel file (.xlsx, .xls):</label>
-                            <input type="file" id="nh_file2" name="file" accept=".xlsx,.xls" required>
+                            <label for="nh_file2">Select one or more Excel files (.xlsx, .xls):</label>
+                            <input type="file" id="nh_file2" name="file" accept=".xlsx,.xls" multiple required>
                         </div>
-                        <button type="submit">📤 Upload & Merge</button>
+                        <button type="submit">📤 Upload files</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if nh_filtered_df is not none and nh_step2_files %}
+                <!-- Step 2b: Select sheet to merge for each file -->
+                <div class="section" style="border: 2px solid #17a2b8; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #e8f7fa;">
+                    <h3>📋 Select sheet to merge for each file</h3>
+                    <p style="margin-bottom: 15px;">Choose which sheet from each file should be included in the merge.</p>
+                    <form action="/nh_merge_step2_sheets" method="post" id="nh-sheet-select-form">
+                        {% for item in nh_step2_files %}
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label for="nh_sheet_{{ loop.index0 }}"><strong>{{ item.filename }}</strong></label>
+                            <select id="nh_sheet_{{ loop.index0 }}" name="sheet_{{ loop.index0 }}" required style="width: 100%; max-width: 300px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-left: 8px;">
+                                {% for sheet_name in item.sheet_names %}
+                                <option value="{{ sheet_name }}" {% if sheet_name == item.default_sheet %}selected{% endif %}>{{ sheet_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% endfor %}
+                        <button type="submit">🔄 Merge with Step 1</button>
                     </form>
                 </div>
                 {% endif %}
@@ -4957,6 +4997,7 @@ def comparison_index():
         nh_selected_sheet=nh_selected_sheet,
         nh_remark_values=nh_remark_values,
         nh_filtered_df=nh_filtered_df,
+        nh_step2_files=nh_step2_files,
         nh_file2_filename=nh_file2_filename,
         nh_result=nh_result,
         nh_output=nh_output,
@@ -11636,7 +11677,7 @@ def reset_apt():
 def upload_nh():
     """Upload first file for NH Allocation Report."""
     global nh_data, nh_filename, nh_selected_sheet, nh_remark_values
-    global nh_selected_remarks, nh_filtered_df, nh_file2_data, nh_file2_filename
+    global nh_selected_remarks, nh_filtered_df, nh_step2_files, nh_file2_data, nh_file2_filename
     global nh_result, nh_output
 
     try:
@@ -11666,6 +11707,7 @@ def upload_nh():
         nh_remark_values = []
         nh_selected_remarks = []
         nh_filtered_df = None
+        nh_step2_files = None
         nh_file2_data = None
         nh_file2_filename = None
         nh_result = f"✅ File uploaded: {original_name} ({len(cleaned)} sheet(s))"
@@ -11787,67 +11829,129 @@ def nh_filter_remarks():
         return redirect("/comparison?tab=nhallocation")
 
 
+def _nh_map_file2_to_output_columns(df2):
+    """Map a Step 2 dataframe to NH_OUTPUT_COLUMNS; returns a DataFrame with same columns."""
+    mapped = pd.DataFrame(columns=NH_OUTPUT_COLUMNS)
+    input_cols_lower = {c.strip().lower(): c for c in df2.columns}
+    for out_col in NH_OUTPUT_COLUMNS:
+        out_lower = out_col.strip().lower()
+        matched_input = None
+        if out_lower in input_cols_lower:
+            matched_input = input_cols_lower[out_lower]
+        else:
+            for alias in NH_COLUMN_ALIASES.get(out_col, []):
+                alias_lower = alias.strip().lower()
+                if alias_lower in input_cols_lower:
+                    matched_input = input_cols_lower[alias_lower]
+                    break
+        if matched_input is not None:
+            mapped[out_col] = df2[matched_input].values
+        else:
+            mapped[out_col] = ""
+    return mapped.fillna("")
+
+
 @app.route("/nh_upload_file2", methods=["POST"])
 def nh_upload_file2():
-    """Upload second file, read 'Today' sheet, merge with filtered first file."""
-    global nh_file2_data, nh_file2_filename, nh_result, nh_output
+    """Upload one or more Step 2 files; read all sheets from each and store for sheet selection."""
+    global nh_step2_files, nh_file2_data, nh_file2_filename, nh_result, nh_output
 
     try:
-        if "file" not in request.files:
-            nh_result = "❌ No file selected for Step 2."
-            return redirect("/comparison?tab=nhallocation")
-
-        f = request.files["file"]
-        if not f or f.filename == "":
-            nh_result = "❌ Empty file."
+        files = request.files.getlist("file")
+        if not files or all(not f or f.filename == "" for f in files):
+            nh_result = "❌ No file(s) selected for Step 2."
             return redirect("/comparison?tab=nhallocation")
 
         if nh_filtered_df is None:
             nh_result = "❌ Please complete Step 1 first."
             return redirect("/comparison?tab=nhallocation")
 
-        original_name = f.filename
-        f.seek(0)
-        engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
-
-        try:
-            df2 = pd.read_excel(f, sheet_name="Today", engine=engine)
-        except ValueError:
+        step2_list = []
+        for f in files:
+            if not f or f.filename == "":
+                continue
+            original_name = f.filename
             f.seek(0)
+            engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
             all_sheets = pd.read_excel(f, sheet_name=None, engine=engine)
-            available = list(all_sheets.keys())
-            nh_result = f"❌ 'Today' sheet not found in '{original_name}'. Available sheets: {', '.join(available)}"
+            cleaned = {}
+            for sn, df in all_sheets.items():
+                df = df.copy()
+                df.columns = df.columns.astype(str)
+                df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
+                cleaned[sn] = df
+            sheet_names = list(cleaned.keys())
+            default_sheet = "Today" if "Today" in cleaned else (sheet_names[0] if sheet_names else None)
+            if not sheet_names:
+                nh_result = f"❌ No sheets found in '{original_name}'."
+                return redirect("/comparison?tab=nhallocation")
+            step2_list.append({
+                "filename": original_name,
+                "sheet_names": sheet_names,
+                "sheets": cleaned,
+                "default_sheet": default_sheet,
+            })
+
+        if not step2_list:
+            nh_result = "❌ No valid file(s) to process."
             return redirect("/comparison?tab=nhallocation")
 
-        df2.columns = df2.columns.astype(str)
-        df2 = df2.loc[:, ~df2.columns.str.startswith("Unnamed:")]
+        nh_step2_files = step2_list
+        nh_file2_data = None
+        nh_file2_filename = None
+        nh_output = None
+        nh_result = f"✅ Uploaded {len(step2_list)} file(s). Select which sheet to merge for each file below, then click Merge."
+        return redirect("/comparison?tab=nhallocation")
+    except Exception as e:
+        nh_result = f"❌ Error uploading: {str(e)}"
+        return redirect("/comparison?tab=nhallocation")
 
-        nh_file2_data = df2
-        nh_file2_filename = original_name
 
-        mapped_df2 = pd.DataFrame(columns=NH_OUTPUT_COLUMNS)
-        input_cols_lower = {c.strip().lower(): c for c in df2.columns}
+@app.route("/nh_merge_step2_sheets", methods=["POST"])
+def nh_merge_step2_sheets():
+    """Merge Step 1 filtered data with selected sheet from each Step 2 file."""
+    global nh_step2_files, nh_file2_data, nh_file2_filename, nh_result, nh_output
 
-        for out_col in NH_OUTPUT_COLUMNS:
-            out_lower = out_col.strip().lower()
-            matched_input = None
-            if out_lower in input_cols_lower:
-                matched_input = input_cols_lower[out_lower]
-            else:
-                for alias in NH_COLUMN_ALIASES.get(out_col, []):
-                    alias_lower = alias.strip().lower()
-                    if alias_lower in input_cols_lower:
-                        matched_input = input_cols_lower[alias_lower]
-                        break
-            if matched_input is not None:
-                mapped_df2[out_col] = df2[matched_input].values
-            else:
-                mapped_df2[out_col] = ""
+    try:
+        if not nh_step2_files or nh_filtered_df is None:
+            nh_result = "❌ No Step 2 files or Step 1 data. Upload files in Step 2 first."
+            return redirect("/comparison?tab=nhallocation")
 
-        mapped_df2 = mapped_df2.fillna("")
+        mapped_list = []
+        file_names = []
+        total_step2_rows = 0
 
-        merged_df = pd.concat([nh_filtered_df, mapped_df2], ignore_index=True)
+        for i, item in enumerate(nh_step2_files):
+            key = f"sheet_{i}"
+            selected_sheet = request.form.get(key)
+            if not selected_sheet or selected_sheet not in item["sheets"]:
+                selected_sheet = item["default_sheet"]
+            df2 = item["sheets"][selected_sheet]
+            mapped_df2 = _nh_map_file2_to_output_columns(df2)
+            mapped_list.append(mapped_df2)
+            file_names.append(item["filename"])
+            total_step2_rows += len(mapped_df2)
+
+        combined_df2 = pd.concat(mapped_list, ignore_index=True)
+        combined_df2 = combined_df2.fillna("")
+
+        nh_file2_data = combined_df2
+        nh_file2_filename = ", ".join(file_names) if len(file_names) <= 3 else f"{len(file_names)} files"
+
+        merged_df = pd.concat([nh_filtered_df, combined_df2], ignore_index=True)
         merged_df = merged_df.fillna("")
+
+        # Apply Remark rules from Insurance: "NO INFO" -> "No Info"; MCD list -> "Not to Work" (except Office Name "Dr. Startaloo")
+        if "Insurance" in merged_df.columns and "Remark" in merged_df.columns:
+            ins = merged_df["Insurance"].astype(str).str.strip()
+            ins_lower = ins.str.lower()
+            no_info_mask = ins.str.upper() == "NO INFO"
+            merged_df.loc[no_info_mask, "Remark"] = "No Info"
+            mcd_mask = ins_lower.isin(NH_INSURANCE_NOT_TO_WORK)
+            if "Office Name" in merged_df.columns:
+                office_name = merged_df["Office Name"].astype(str).str.strip().str.lower()
+                mcd_mask = mcd_mask & (office_name != "dr. startaloo") & (~office_name.str.startswith("nadg"))
+            merged_df.loc[mcd_mask, "Remark"] = "Not to Work"
 
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
@@ -11855,15 +11959,18 @@ def nh_upload_file2():
         buf.seek(0)
         nh_output = buf.getvalue()
 
+        nh_step2_files = None
+
+        files_summary = ", ".join(f"'{n}'" for n in file_names) if len(file_names) <= 3 else f"{len(file_names)} files"
         nh_result = (
             f"✅ Merge complete!<br>"
             f"File 1 (filtered): <strong>{len(nh_filtered_df)}</strong> rows<br>"
-            f"File 2 ('{original_name}' → Today sheet): <strong>{len(mapped_df2)}</strong> rows<br>"
+            f"Step 2 ({files_summary}): <strong>{total_step2_rows}</strong> rows combined (from selected sheets)<br>"
             f"Merged output: <strong>{len(merged_df)}</strong> total rows, {len(NH_OUTPUT_COLUMNS)} columns."
         )
         return redirect("/comparison?tab=nhallocation")
     except Exception as e:
-        nh_result = f"❌ Error uploading/merging: {str(e)}"
+        nh_result = f"❌ Error merging: {str(e)}"
         return redirect("/comparison?tab=nhallocation")
 
 
@@ -11884,7 +11991,7 @@ def download_nh():
 def reset_nh():
     """Clear all NH Allocation Report data."""
     global nh_data, nh_filename, nh_selected_sheet, nh_remark_values
-    global nh_selected_remarks, nh_filtered_df, nh_file2_data, nh_file2_filename
+    global nh_selected_remarks, nh_filtered_df, nh_step2_files, nh_file2_data, nh_file2_filename
     global nh_result, nh_output
 
     try:
@@ -11894,6 +12001,7 @@ def reset_nh():
         nh_remark_values = []
         nh_selected_remarks = []
         nh_filtered_df = None
+        nh_step2_files = None
         nh_file2_data = None
         nh_file2_filename = None
         nh_result = None
@@ -12554,7 +12662,8 @@ if __name__ == "__main__":
         or os.environ.get("FLASK_DEBUG", "True").lower() == "true"
     )
 
+    use_reloader = os.environ.get("FLASK_USE_RELOADER", "false").lower() == "true"
     print("🚀 Starting Excel Comparison Tool...")
     print(f"📱 Open your browser and go to: http://localhost:{port}")
-    print(f"🔄 Debug mode: {debug} (auto-reload enabled)")
-    app.run(debug=debug, host="0.0.0.0", port=port, use_reloader=True)
+    print(f"🔄 Debug: {debug}, Reloader: {use_reloader}")
+    app.run(debug=debug, host="0.0.0.0", port=port, use_reloader=use_reloader)
