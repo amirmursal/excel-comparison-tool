@@ -11952,6 +11952,9 @@ def nh_merge_step2_sheets():
                 office_name = merged_df["Office Name"].astype(str).str.strip().str.lower()
                 mcd_mask = mcd_mask & (office_name != "dr. startaloo") & (~office_name.str.startswith("nadg"))
             merged_df.loc[mcd_mask, "Remark"] = "Not to Work"
+            # Blank Remark -> "Workable"
+            remark_blank = merged_df["Remark"].astype(str).str.strip() == ""
+            merged_df.loc[remark_blank, "Remark"] = "Workable"
 
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
