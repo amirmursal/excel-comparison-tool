@@ -12292,11 +12292,39 @@ def run_general_comparison():
                 f"  Row {idx}: Key='{key_display}' | Raw values: {row_data}"
             )
 
-        # Map from key to first occurrence index in main_df
-        main_key_map = {}
+        # Map from key to main_df row index. When main has multiple rows per key,
+        # prefer the row with Remark in ["UPDATED","QCP","ASST"] (so we pick new remark
+        # not old); otherwise use last occurrence so later rows in file (newer data) win.
+        main_key_to_indices = {}
         for idx, key in main_keys.items():
-            if key and key not in main_key_map:  # Only add non-empty keys
-                main_key_map[key] = idx
+            if not key:
+                continue
+            if key not in main_key_to_indices:
+                main_key_to_indices[key] = []
+            main_key_to_indices[key].append(idx)
+
+        remark_col_main = None
+        if "Remark" in update_columns and "Remark" in main_df.columns:
+            remark_col_main = "Remark"
+        PREFERRED_REMARKS = {"UPDATED", "QCP", "ASST"}
+
+        def choose_main_idx(indices):
+            if not indices:
+                return None
+            if remark_col_main is not None:
+                for idx in indices:
+                    rv = (
+                        str(main_df.at[idx, remark_col_main]).strip().upper()
+                        if pd.notna(main_df.at[idx, remark_col_main])
+                        else ""
+                    )
+                    if rv in PREFERRED_REMARKS:
+                        return idx
+            return indices[-1]  # last occurrence wins
+
+        main_key_map = {
+            k: choose_main_idx(idxs) for k, idxs in main_key_to_indices.items()
+        }
 
         output_lines.append(
             f"\nUnique keys in PRIMARY: {primary_keys.nunique()} (total rows: {len(primary_keys)})"
