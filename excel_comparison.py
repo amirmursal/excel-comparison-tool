@@ -8,7 +8,7 @@ from flask import Flask, render_template_string, request, jsonify, send_file, re
 import pandas as pd
 import os
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 import re
 
@@ -193,7 +193,9 @@ NH_STEP1_COLUMN_MAPPING = {
     "System": "Software",
     "Office": "Office Name",
     "Appointment Date": "Appointment",
+    "Appoinment Date": "Appointment",
     "Appointmen": "Appointment",
+    "Appointment": "Appointment",
     "Practice ID": "PracticeId",
 }
 
@@ -11814,6 +11816,10 @@ def nh_filter_remarks():
             else:
                 mapped_df[out_col] = ""
 
+        # Step 1: Appointment Date / Appointment / variants → single output column "Appointment"
+        raw_appt = _nh_coalesce_into_appointment_column(filtered)
+        mapped_df["Appointment"] = raw_appt.values
+
         mapped_df = mapped_df.fillna("")
         nh_filtered_df = mapped_df
 
@@ -11829,11 +11835,132 @@ def nh_filter_remarks():
         return redirect("/comparison?tab=nhallocation")
 
 
+def _nh_get_column_series(df_src, col_name):
+    """Return a single Series when Excel duplicate headers make df[col] a DataFrame."""
+    x = df_src[col_name]
+    if isinstance(x, pd.DataFrame):
+        return x.iloc[:, 0]
+    return x
+
+
+def _nh_coalesce_into_appointment_column(df_src):
+    """Merge source columns into one Series for final output column 'Appointment'.
+
+    Priority (first non-empty wins): Appointment Date, typo Appoinment Date, Appointment, Appointmen.
+    """
+    input_cols_lower = {c.strip().lower(): c for c in df_src.columns}
+    ordered_keys = (
+        "appointment date",
+        "appoinment date",
+        "appointment",
+        "appointmen",
+    )
+    parts = []
+    seen = set()
+    for key in ordered_keys:
+        if key not in input_cols_lower:
+            continue
+        c = input_cols_lower[key]
+        if c in seen:
+            continue
+        seen.add(c)
+        parts.append(_nh_get_column_series(df_src, c))
+    if not parts:
+        return pd.Series([""] * len(df_src), index=df_src.index, dtype=object)
+    out = pd.Series([""] * len(df_src), index=df_src.index, dtype=object)
+    _excel_err = {
+        "#n/a",
+        "#ref!",
+        "#value!",
+        "#null!",
+        "#num!",
+        "#div/0!",
+        "#name?",
+    }
+    for ser in parts:
+        strv = ser.astype(str)
+        stripped = strv.str.strip()
+        upper = stripped.str.upper()
+        nonempty = (
+            ser.notna()
+            & (stripped != "")
+            & (stripped.str.lower() != "nan")
+            & (~upper.isin(_excel_err))
+        )
+        empty_out = out.astype(str).str.strip() == ""
+        take = nonempty & empty_out
+        out.loc[take] = ser.loc[take].astype(object)
+    return out
+
+
+def _nh_format_appointment_cell_mmddyyyy_or_keep(v):
+    """NH Allocation 'Appointment': format as MM/DD/YYYY when parseable; else keep original."""
+    if v is None:
+        return ""
+    try:
+        if pd.isna(v) and not isinstance(v, str):
+            return ""
+    except (ValueError, TypeError):
+        pass
+    if isinstance(v, float) and pd.isna(v):
+        return ""
+    if isinstance(v, (pd.Timestamp, datetime)):
+        ts = pd.Timestamp(v)
+        return "" if pd.isna(ts) else ts.strftime("%m/%d/%Y")
+    if hasattr(v, "dtype") and str(getattr(v, "dtype", "")).startswith("datetime64"):
+        try:
+            ts = pd.Timestamp(v)
+            return "" if pd.isna(ts) else ts.strftime("%m/%d/%Y")
+        except (ValueError, TypeError, OSError):
+            pass
+
+    if isinstance(v, (int, float)):
+        fv = float(v)
+        if 200 <= fv <= 100000:
+            try:
+                d = datetime(1899, 12, 30) + timedelta(days=fv)
+                if 1900 <= d.year <= 2100:
+                    return d.strftime("%m/%d/%Y")
+            except (ValueError, OverflowError, OSError):
+                pass
+        parsed = pd.to_datetime(v, errors="coerce")
+        if pd.notna(parsed):
+            return parsed.strftime("%m/%d/%Y")
+        return str(int(fv)) if fv == int(fv) else str(fv)
+
+    s = str(v).strip()
+    if not s or s.lower() == "nan":
+        return ""
+    if re.fullmatch(r"-?\d+\.?\d*", s):
+        try:
+            fv = float(s)
+            if 200 <= fv <= 100000:
+                d = datetime(1899, 12, 30) + timedelta(days=fv)
+                if 1900 <= d.year <= 2100:
+                    return d.strftime("%m/%d/%Y")
+        except (ValueError, OverflowError, OSError):
+            pass
+    parsed = pd.to_datetime(s, errors="coerce", dayfirst=False)
+    if pd.notna(parsed):
+        return parsed.strftime("%m/%d/%Y")
+    return s
+
+
+def _nh_series_format_appointment_mmddyyyy_or_keep(series):
+    if series is None:
+        return pd.Series(dtype=object)
+    return pd.Series(series).apply(_nh_format_appointment_cell_mmddyyyy_or_keep)
+
+
 def _nh_map_file2_to_output_columns(df2):
     """Map a Step 2 dataframe to NH_OUTPUT_COLUMNS; returns a DataFrame with same columns."""
     mapped = pd.DataFrame(columns=NH_OUTPUT_COLUMNS)
     input_cols_lower = {c.strip().lower(): c for c in df2.columns}
     for out_col in NH_OUTPUT_COLUMNS:
+        if out_col == "Appointment":
+            raw = _nh_coalesce_into_appointment_column(df2)
+            mapped[out_col] = raw.values
+            continue
         out_lower = out_col.strip().lower()
         matched_input = None
         if out_lower in input_cols_lower:
@@ -11940,6 +12067,10 @@ def nh_merge_step2_sheets():
 
         merged_df = pd.concat([nh_filtered_df, combined_df2], ignore_index=True)
         merged_df = merged_df.fillna("")
+        if "Appointment" in merged_df.columns:
+            merged_df["Appointment"] = _nh_series_format_appointment_mmddyyyy_or_keep(
+                merged_df["Appointment"]
+            )
 
         # Apply Remark rules from Insurance: "NO INFO" -> "No Info"; MCD list -> "Not to Work" (except Office Name "Dr. Startaloo")
         if "Insurance" in merged_df.columns and "Remark" in merged_df.columns:
