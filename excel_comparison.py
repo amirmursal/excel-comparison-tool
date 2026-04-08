@@ -348,8 +348,13 @@ EV_ALLOCATION_FILENAME_RULES = [
     {"contains": "Kates", "format_key": "kates"},
     {"contains": "Montefiore", "format_key": "montefiore"},
     {"contains": "ortho", "format_key": "ortho"},
+    {"contains": "Raw SL Two Days", "format_key": "sl_evening"},
+    {"contains": "SL Two Days", "format_key": "sl_evening"},
     {"contains": "SL Evening", "format_key": "sl_evening"},
     {"contains": "SL_Evening", "format_key": "sl_evening"},
+    {"contains": "Raw SL Same Day", "format_key": "sl_medicaid"},
+    {"contains": "SL Same Day", "format_key": "sl_medicaid"},
+    {"contains": "Raw SL medicaid EV Morning", "format_key": "sl_medicaid"},
     {"contains": "SL medicaid", "format_key": "sl_medicaid"},
     {"contains": "SL_medicaid", "format_key": "sl_medicaid"},
 ]
