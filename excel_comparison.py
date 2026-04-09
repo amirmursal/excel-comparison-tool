@@ -181,6 +181,16 @@ NH_OUTPUT_COLUMNS = [
     "Date work",
 ]
 
+# Final NH Allocation output: format these as MM/DD/YYYY when parseable; else keep value as-is.
+NH_DATE_COLUMNS_MM_DD_YYYY = [
+    "Received Date",
+    "DOS/DOB",
+    "Work Date",
+    "Subscriber DOB",
+    "Date work",
+    "Appointment",
+]
+
 NH_COLUMN_ALIASES = {
     "Appointment": ["Appointmen", "Appointment Date"],
     "Software": ["System"],
@@ -11898,8 +11908,8 @@ def _nh_coalesce_into_appointment_column(df_src):
     return out
 
 
-def _nh_format_appointment_cell_mmddyyyy_or_keep(v):
-    """NH Allocation 'Appointment': format as MM/DD/YYYY when parseable; else keep original."""
+def _nh_format_date_cell_mmddyyyy_or_keep(v):
+    """NH Allocation date columns: MM/DD/YYYY when parseable; else keep original string/value."""
     if v is None:
         return ""
     try:
@@ -11951,10 +11961,10 @@ def _nh_format_appointment_cell_mmddyyyy_or_keep(v):
     return s
 
 
-def _nh_series_format_appointment_mmddyyyy_or_keep(series):
+def _nh_series_format_date_mmddyyyy_or_keep(series):
     if series is None:
         return pd.Series(dtype=object)
-    return pd.Series(series).apply(_nh_format_appointment_cell_mmddyyyy_or_keep)
+    return pd.Series(series).apply(_nh_format_date_cell_mmddyyyy_or_keep)
 
 
 def _nh_map_file2_to_output_columns(df2):
@@ -12072,10 +12082,11 @@ def nh_merge_step2_sheets():
 
         merged_df = pd.concat([nh_filtered_df, combined_df2], ignore_index=True)
         merged_df = merged_df.fillna("")
-        if "Appointment" in merged_df.columns:
-            merged_df["Appointment"] = _nh_series_format_appointment_mmddyyyy_or_keep(
-                merged_df["Appointment"]
-            )
+        for _nh_col in NH_DATE_COLUMNS_MM_DD_YYYY:
+            if _nh_col in merged_df.columns:
+                merged_df[_nh_col] = _nh_series_format_date_mmddyyyy_or_keep(
+                    merged_df[_nh_col]
+                )
 
         # Apply Remark rules from Insurance: "NO INFO" -> "No Info"; MCD list -> "Not to Work" (except Office Name "Dr. Startaloo")
         if "Insurance" in merged_df.columns and "Remark" in merged_df.columns:
