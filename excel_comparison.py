@@ -11,6 +11,7 @@ import io
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 import re
+from numbers import Integral, Real
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max file size
@@ -877,7 +878,7 @@ EV_ALLOCATION_COLUMN_MAPPING = {
         "Patients Name": ["Pats Last Name", "Pats First Name"],
         "DOB": "Pats Birth Date",
         "Insurance": "Carrier Name",
-        "Policy ID": "Pol Employee SSN ID",
+        "Policy ID": ("Pol Employee SSN", "Pol Employee SSN ID"),
         "Carrier Phone": "Carrier Phone",
         "Subscriber Name": "Emp Name",
         "Subscriber DOB": "Employee Birth Date",
@@ -887,7 +888,7 @@ EV_ALLOCATION_COLUMN_MAPPING = {
         "Patients Name": ["Pats Last Name", "Pats First Name"],
         "DOB": "Pats Birth Date",
         "Insurance": "Carrier Name",
-        "Policy ID": "Pol Employee SSN ID",
+        "Policy ID": ("Pol Employee SSN", "Pol Employee SSN ID"),
         "Carrier Phone": "Carrier Phone",
         "Subscriber Name": "Emp name last, First Need to merge",
         "Subscriber DOB": "Employee Birth Date",
@@ -9970,10 +9971,24 @@ _EV_ALLOCATION_ILLEGAL_CHARS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\03
 
 
 def _ev_allocation_sanitize_cell(value):
-    """Remove control characters that cause openpyxl IllegalCharacterError (value cannot be used in worksheets)."""
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    """Remove control characters that cause openpyxl IllegalCharacterError (value cannot be used in worksheets).
+    Whole numbers read as float (common for Excel Policy ID / member id columns) are stringified without a trailing '.0'."""
+    if value is None:
         return ""
-    s = str(value).strip()
+    if isinstance(value, bool):
+        s = str(value)
+    elif isinstance(value, Integral):
+        s = str(int(value))
+    elif isinstance(value, Real):
+        fv = float(value)
+        if pd.isna(fv):
+            return ""
+        s = str(int(fv)) if fv.is_integer() else str(fv).strip()
+    else:
+        s = str(value).strip()
+        # Already string but looks like a whole float, e.g. "12345.0" from a prior conversion
+        if re.fullmatch(r"-?\d+\.0+", s):
+            s = s.split(".", 1)[0]
     return _EV_ALLOCATION_ILLEGAL_CHARS_RE.sub("", s)
 
 
@@ -10070,8 +10085,27 @@ def _ev_allocation_get_cell(row_series, input_col_name):
     return None
 
 
+def _ev_allocation_patients_name_ensure_comma(value):
+    """EV output 'Patients Name': use 'Last, First' when there is no comma; single token unchanged."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    s = str(value).strip()
+    if not s or s.lower() == "nan":
+        return ""
+    if "," in s:
+        return _ev_allocation_sanitize_cell(s)
+    parts = s.split()
+    if len(parts) < 2:
+        return _ev_allocation_sanitize_cell(s)
+    last_first = " ".join(parts[:-1]) + ", " + parts[-1]
+    return _ev_allocation_sanitize_cell(last_first)
+
+
 def _ev_allocation_map_row(row_series, mapping, output_columns):
-    """Map one row (Series) to output columns using mapping. mapping: output_col -> input_col or [cols]. Sanitizes values for Excel."""
+    """Map one row (Series) to output columns using mapping.
+    spec may be: str (one column), tuple[str,...] (coalesce: first non-empty column),
+    or list[str,...] (combine columns: comma-join Patients Name, else space-join).
+    """
     out = {}
     for out_col in output_columns:
         spec = mapping.get(out_col)
@@ -10083,13 +10117,27 @@ def _ev_allocation_map_row(row_series, mapping, output_columns):
             raw = "" if (val is None or pd.isna(val)) else str(val).strip()
             out[out_col] = _ev_allocation_sanitize_cell(raw)
             continue
-        if isinstance(spec, (list, tuple)):
+        # Tuple of column names = either/or: use first column with a non-empty value
+        if isinstance(spec, tuple) and spec and all(isinstance(x, str) for x in spec):
+            chosen = ""
+            for c in spec:
+                v = _ev_allocation_get_cell(row_series, c)
+                if v is not None and not pd.isna(v) and str(v).strip():
+                    chosen = str(v).strip()
+                    break
+            out[out_col] = _ev_allocation_sanitize_cell(chosen)
+            continue
+        if isinstance(spec, list):
             parts = []
             for c in spec:
                 v = _ev_allocation_get_cell(row_series, c)
                 if v is not None and not pd.isna(v) and str(v).strip():
                     parts.append(_ev_allocation_sanitize_cell(str(v).strip()))
-            out[out_col] = " ".join(parts)
+            # Patients Name: Last, First from separate columns; other multi-col fields stay space-joined
+            if out_col == "Patients Name":
+                out[out_col] = ", ".join(parts)
+            else:
+                out[out_col] = " ".join(parts)
             continue
         out[out_col] = ""
     return out
@@ -10197,7 +10245,7 @@ def process_ev_allocation():
                 "File identification and column mapping are not configured yet. "
                 "In the code, add:<br>"
                 '• <strong>EV_ALLOCATION_FILENAME_RULES</strong>: list of {contains: "substring", format_key: "key"} so files are identified by filename.<br>'
-                "• <strong>EV_ALLOCATION_COLUMN_MAPPING</strong>: dict of format_key → {output column: input column or [cols]} to map each file to the output columns.<br><br>"
+                "• <strong>EV_ALLOCATION_COLUMN_MAPPING</strong>: dict of format_key → {output column: input column, [cols] to combine, or (cols) for first non-empty} to map each file to the output columns.<br><br>"
                 "Output columns are fixed (System, Office/Doctor Name, Practice ID, …). "
                 f"You have <strong>{len(ev_allocation_files)}</strong> file(s) uploaded: "
                 + ", ".join(ev_allocation_files.keys())
@@ -10436,6 +10484,9 @@ def process_ev_allocation():
                             mapped["Department"] = dept
                             mapped["Practice ID"] = pid
                             break
+                    mapped["Patients Name"] = _ev_allocation_patients_name_ensure_comma(
+                        mapped.get("Patients Name")
+                    )
                     mapped["Appointment"] = _ev_allocation_format_date_mmddyyyy(
                         mapped.get("Appointment")
                     )
