@@ -890,7 +890,7 @@ EV_ALLOCATION_COLUMN_MAPPING = {
         "Insurance": "Carrier Name",
         "Policy ID": ("Pol Employee SSN", "Pol Employee SSN ID"),
         "Carrier Phone": "Carrier Phone",
-        "Subscriber Name": "Emp name last, First Need to merge",
+        "Subscriber Name": ["Emp Last Name", "Emp First Name"],
         "Subscriber DOB": "Employee Birth Date",
         # Office/Doctor Name: not used for sl_medicaid (left blank). Location/EntityCode: extract office_name from "Office Name: <office_name>" in Pats First Name, carry until next.
     },
@@ -10104,7 +10104,7 @@ def _ev_allocation_patients_name_ensure_comma(value):
 def _ev_allocation_map_row(row_series, mapping, output_columns):
     """Map one row (Series) to output columns using mapping.
     spec may be: str (one column), tuple[str,...] (coalesce: first non-empty column),
-    or list[str,...] (combine columns: comma-join Patients Name, else space-join).
+    or list[str,...] (combine columns: comma-join Patients Name and Subscriber Name, else space-join).
     """
     out = {}
     for out_col in output_columns:
@@ -10133,8 +10133,8 @@ def _ev_allocation_map_row(row_series, mapping, output_columns):
                 v = _ev_allocation_get_cell(row_series, c)
                 if v is not None and not pd.isna(v) and str(v).strip():
                     parts.append(_ev_allocation_sanitize_cell(str(v).strip()))
-            # Patients Name: Last, First from separate columns; other multi-col fields stay space-joined
-            if out_col == "Patients Name":
+            # Last, First from separate columns (comma between parts)
+            if out_col in ("Patients Name", "Subscriber Name"):
                 out[out_col] = ", ".join(parts)
             else:
                 out[out_col] = " ".join(parts)
