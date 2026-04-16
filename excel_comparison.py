@@ -227,6 +227,14 @@ NH_INSURANCE_NOT_TO_WORK = {
     "mcna",
 }
 
+# NH: Office name starts with "NADG" + these exact insurances (case-insensitive) -> Remark "Not to Work"
+NH_NADG_SPECIAL_NOT_TO_WORK_INSURANCE = frozenset(
+    {
+        "envolve dental oh claims",
+        "mcna dental (fl medicaid)",
+    }
+)
+
 DENTAL_BV_OUTPUT_COLUMNS = [
     "Software",
     "Office Name",
@@ -12146,10 +12154,21 @@ def nh_merge_step2_sheets():
             no_info_mask = ins.str.upper() == "NO INFO"
             merged_df.loc[no_info_mask, "Remark"] = "No Info"
             mcd_mask = ins_lower.isin(NH_INSURANCE_NOT_TO_WORK)
+            office_name_lower = None
             if "Office Name" in merged_df.columns:
-                office_name = merged_df["Office Name"].astype(str).str.strip().str.lower()
-                mcd_mask = mcd_mask & (office_name != "dr. startaloo") & (~office_name.str.startswith("nadg"))
+                office_name_lower = (
+                    merged_df["Office Name"].astype(str).str.strip().str.lower()
+                )
+                mcd_mask = mcd_mask & (office_name_lower != "dr. startaloo") & (
+                    ~office_name_lower.str.startswith("nadg")
+                )
             merged_df.loc[mcd_mask, "Remark"] = "Not to Work"
+            # NADG* offices + specific insurances -> Not to Work (even though NADG is excluded from MCD list rule above)
+            if office_name_lower is not None:
+                nadg_special_mask = office_name_lower.str.startswith(
+                    "nadg"
+                ) & ins_lower.isin(NH_NADG_SPECIAL_NOT_TO_WORK_INSURANCE)
+                merged_df.loc[nadg_special_mask, "Remark"] = "Not to Work"
             # Blank Remark -> "Workable"
             remark_blank = merged_df["Remark"].astype(str).str.strip() == ""
             merged_df.loc[remark_blank, "Remark"] = "Workable"
