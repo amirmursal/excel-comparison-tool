@@ -326,9 +326,10 @@ DENTAL_BV_STEP3_COLUMN_MAPPING = {
     "Emp name last, First Need to merge": "Subscriber Name",
 }
 
-# EV Allocation: fixed output column order (you will map each input file's columns to these)
+# EV Allocation: fixed output column order (you will map each input file's columns to these).
+# "Reference" is still set per row for Department/Practice ID lookup and "Not to work" routing but is not exported.
 EV_ALLOCATION_OUTPUT_COLUMNS = [
-    "System",
+    "Software",
     "Office/Doctor Name",
     "Practice ID",
     "Location/EntityCode",
@@ -336,27 +337,23 @@ EV_ALLOCATION_OUTPUT_COLUMNS = [
     "Source",
     "Received Date",
     "Appointment",
-    "Reference",
     "Patients Name",
     "DOB",
     "Patient ID/Chart#",
-    "Group/Employer",
     "Insurance",
     "Policy ID",
     "Carrier Phone",
     "Status",
     "Comments",
-    "Pre Auth Status",
     "Subscriber Name",
     "Subscriber DOB",
-    "Zip Code",
     "Rep",
-    "Agent",
     "Remark",
     "Work Date",
     "QC Agent",
     "QC Comments",
     "QC Date Work",
+    "Agent 1",
 ]
 
 # File identification: if filename contains this string -> use this format_key for column mapping.
@@ -10254,7 +10251,7 @@ def process_ev_allocation():
                 "In the code, add:<br>"
                 '• <strong>EV_ALLOCATION_FILENAME_RULES</strong>: list of {contains: "substring", format_key: "key"} so files are identified by filename.<br>'
                 "• <strong>EV_ALLOCATION_COLUMN_MAPPING</strong>: dict of format_key → {output column: input column, [cols] to combine, or (cols) for first non-empty} to map each file to the output columns.<br><br>"
-                "Output columns are fixed (System, Office/Doctor Name, Practice ID, …). "
+                "Output columns are fixed (Software, Office/Doctor Name, Practice ID, …). "
                 f"You have <strong>{len(ev_allocation_files)}</strong> file(s) uploaded: "
                 + ", ".join(ev_allocation_files.keys())
             )
@@ -10323,7 +10320,7 @@ def process_ev_allocation():
                         mapped["Office/Doctor Name"] = mapped["Location/EntityCode"]
                     if format_key == "erickson":
                         mapped["Office/Doctor Name"] = "Dr. Erickson"
-                        mapped["System"] = "Edge"
+                        mapped["Software"] = "Edge"
                         mapped["Source"] = "Evening"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
                         ins_val = _ev_allocation_get_cell(
@@ -10338,7 +10335,7 @@ def process_ev_allocation():
                         mapped["Reference"] = ins_class if ins_class else "Commercial"
                     if format_key == "hoang_viva_smiles":
                         mapped["Office/Doctor Name"] = "Dr. Hoang Viva Smiles"
-                        mapped["System"] = "Dolphin"
+                        mapped["Software"] = "Dolphin"
                         mapped["Source"] = "Evening"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
                         ins_val = _ev_allocation_get_cell(
@@ -10355,7 +10352,7 @@ def process_ev_allocation():
                             mapped["Reference"] = "Commercial"
                     if format_key == "hoang_ismiles":
                         mapped["Office/Doctor Name"] = "Dr. Hoang Ismiles"
-                        mapped["System"] = "Dolphin"
+                        mapped["Software"] = "Dolphin"
                         mapped["Source"] = "Evening"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
                         ins_val = _ev_allocation_get_cell(
@@ -10372,7 +10369,7 @@ def process_ev_allocation():
                             mapped["Reference"] = "Commercial"
                     if format_key == "kates":
                         mapped["Office/Doctor Name"] = "Dr. Kates"
-                        mapped["System"] = "Greyfinch"
+                        mapped["Software"] = "Greyfinch"
                         mapped["Source"] = "Evening"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
                         ins_val = _ev_allocation_get_cell(row_series, "Payor")
@@ -10385,7 +10382,7 @@ def process_ev_allocation():
                         mapped["Reference"] = ins_class if ins_class else "Commercial"
                     if format_key == "montefiore":
                         mapped["Office/Doctor Name"] = "Montefiore"
-                        mapped["System"] = "Dolphin"
+                        mapped["Software"] = "Dolphin"
                         mapped["Source"] = "Evening"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
                         billing_center = _ev_allocation_get_cell(
@@ -10402,7 +10399,7 @@ def process_ev_allocation():
                         else:
                             mapped["Reference"] = "Commercial"
                     if format_key == "sl_medicaid":
-                        mapped["System"] = "Smilelink"
+                        mapped["Software"] = "Smilelink"
                         mapped["Source"] = "Morning"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
                         ins_val = _ev_allocation_get_cell(row_series, "Carrier Name")
@@ -10428,7 +10425,7 @@ def process_ev_allocation():
                             mapped["Office/Doctor Name"] = "Dr. Susan Park"
                         else:
                             mapped["Office/Doctor Name"] = ""
-                        mapped["System"] = "OrthoTrack"
+                        mapped["Software"] = "OrthoTrack"
                         mapped["Source"] = "Morning"
                         mapped["Received Date"] = datetime.now().strftime("%m/%d/%Y")
                         ins_val = _ev_allocation_get_cell(row_series, "Carrier")
@@ -10440,7 +10437,7 @@ def process_ev_allocation():
                         ins_class = _ev_allocation_classify_insurance(ins_lower)
                         mapped["Reference"] = ins_class if ins_class else "Commercial"
                     if format_key == "sl_evening":
-                        mapped["System"] = "Smilelink"
+                        mapped["Software"] = "Smilelink"
                         mapped["Source"] = "Evening"
                         office_name_val = _ev_allocation_get_cell(
                             row_series, "Office Name"
@@ -10524,11 +10521,25 @@ def process_ev_allocation():
             ev_allocation_output = None
             return redirect("/comparison?tab=evallocation")
 
-        result_df = pd.DataFrame(all_rows, columns=EV_ALLOCATION_OUTPUT_COLUMNS)
-        # Fill NaN/NaT and strip illegal control chars so openpyxl doesn't raise "value cannot be used in worksheets"
-        result_df = result_df.fillna("")
+        result_full = pd.DataFrame(all_rows).fillna("")
+        result_df = result_full.reindex(
+            columns=EV_ALLOCATION_OUTPUT_COLUMNS, fill_value=""
+        )
         for c in result_df.columns:
             result_df[c] = result_df[c].astype(str).apply(_ev_allocation_sanitize_cell)
+
+        # Internal Reference (MCD/Commercial) drives Department lookup and routing; not in EV_ALLOCATION_OUTPUT_COLUMNS
+        if "Reference" in result_full.columns:
+            ref_for_mask = (
+                result_full["Reference"]
+                .astype(str)
+                .apply(_ev_allocation_sanitize_cell)
+                .str.strip()
+                .str.upper()
+            )
+        else:
+            ref_for_mask = pd.Series([""] * len(result_df), index=result_df.index)
+
         # "Not to work" sheet: SHAWNEE in Location/EntityCode, or Montefiore with blank Insurance, or Dr. Kates with Commercial Reference,
         # or Smilelink system with Office/Doctor Name not in allowed list
         shawnee_mask = (
@@ -10539,7 +10550,7 @@ def process_ev_allocation():
         ) & (result_df["Insurance"].str.strip() == "")
         kates_commercial_mask = (
             result_df["Office/Doctor Name"].str.strip().str.upper() == "DR. KATES"
-        ) & (result_df["Reference"].str.strip().str.upper() == "COMMERCIAL")
+        ) & (ref_for_mask == "COMMERCIAL")
         kates_excluded_insurance_mask = (
             result_df["Office/Doctor Name"].str.strip().str.upper() == "DR. KATES"
         ) & (
@@ -10552,7 +10563,7 @@ def process_ev_allocation():
         # Smilelink: only allow FREDPEDO, MUSGROVE, REISTERS in Office/Doctor Name (except SL Evening which keeps all)
         smilelink_allowed_offices = {"FREDPEDO", "MUSGROVE", "REISTERS"}
         smilelink_invalid_office_mask = (
-            (result_df["System"].str.strip().str.upper() == "SMILELINK")
+            (result_df["Software"].str.strip().str.upper() == "SMILELINK")
             & (result_df["Source"].str.strip().str.upper() != "EVENING")
             & (
                 ~result_df["Office/Doctor Name"]
@@ -10567,7 +10578,7 @@ def process_ev_allocation():
             .str.strip()
             .str.upper()
             .isin({"DR. HOANG VIVA SMILES", "DR. HOANG ISMILES"})
-        ) & (result_df["Reference"].str.strip().str.upper() == "COMMERCIAL")
+        ) & (ref_for_mask == "COMMERCIAL")
         # Dr. Hoang Ismiles: Humana or Anthem insurance goes to Not to work
         hoang_ismiles_excluded_insurance = (
             result_df["Office/Doctor Name"].str.strip().str.upper()
@@ -10582,8 +10593,9 @@ def process_ev_allocation():
             | hoang_commercial_mask
             | hoang_ismiles_excluded_insurance
         )
-        # Mark Dr. Kates Humana/Anthem rows as Commercial before moving to Not to work
-        result_df.loc[kates_excluded_insurance_mask, "Reference"] = "Commercial"
+        # Mark Dr. Kates Humana/Anthem rows as Commercial before moving to Not to work (internal Reference only)
+        if "Reference" in result_full.columns:
+            result_full.loc[kates_excluded_insurance_mask, "Reference"] = "Commercial"
         not_to_work_df = result_df[not_to_work_mask]
         ev_allocation_df = result_df[~not_to_work_mask]
         buf = io.BytesIO()
