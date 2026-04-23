@@ -1795,13 +1795,13 @@ HTML_TEMPLATE = """
             {% if comparison_result and 'Comparison completed successfully' in comparison_result %}
             <div class="section">
                 <h3>💾 Download Results</h3>
-                <form action="/download_result" method="post">
+                <form action="/download_result" method="post" id="comparison-download-form">
                     <div class="form-group">
                         <label for="output_filename">Output filename (optional):</label>
                         <input type="text" id="output_filename" name="filename" 
                                placeholder="comparison_result.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
-                    <button type="submit">💾 Download Result File</button>
+                    <button type="submit" id="comparison-download-btn">💾 Download Result File</button>
                 </form>
             </div>
             {% endif %}
@@ -1866,13 +1866,13 @@ HTML_TEMPLATE = """
                 {% if conversion_data and conversion_result and 'processing completed successfully' in conversion_result.lower() %}
                 <div class="section">
                     <h3>💾 Download Processed File</h3>
-                    <form action="/download_conversion" method="post">
+                    <form action="/download_conversion" method="post" id="conversion-download-form">
                         <div class="form-group">
                             <label for="conversion_output_filename">Output filename (optional):</label>
                             <input type="text" id="conversion_output_filename" name="filename" 
                                    placeholder="conversion_report_formatted.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download Processed File</button>
+                        <button type="submit" id="conversion-download-btn">💾 Download Processed File</button>
                     </form>
                 </div>
                 {% endif %}
@@ -1947,13 +1947,13 @@ HTML_TEMPLATE = """
                 {% if insurance_formatting_data and insurance_formatting_result and 'processing complete' in insurance_formatting_result.lower() %}
                 <div class="section">
                     <h3>💾 Download Formatted File</h3>
-                    <form action="/download_insurance_formatting" method="post">
+                    <form action="/download_insurance_formatting" method="post" id="insurance-download-form">
                         <div class="form-group">
                             <label for="insurance_output_filename">Output filename (optional):</label>
                             <input type="text" id="insurance_output_filename" name="filename" 
                                    placeholder="formatted_insurance_names.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download Formatted File</button>
+                        <button type="submit" id="insurance-download-btn">💾 Download Formatted File</button>
                     </form>
                 </div>
                 {% endif %}
@@ -2051,13 +2051,13 @@ HTML_TEMPLATE = """
                 {% if remarks_appointments_data and remarks_result and 'successfully' in remarks_result.lower() %}
                 <div class="section">
                     <h3>💾 Download Updated File</h3>
-                    <form action="/download_remarks" method="post">
+                    <form action="/download_remarks" method="post" id="remarks-download-form">
                         <div class="form-group">
                             <label for="remarks_output_filename">Output filename (optional):</label>
                             <input type="text" id="remarks_output_filename" name="filename" 
                                    placeholder="appointments_with_remarks.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download Updated File</button>
+                        <button type="submit" id="remarks-download-btn">💾 Download Updated File</button>
                     </form>
                 </div>
                 {% endif %}
@@ -2132,13 +2132,13 @@ HTML_TEMPLATE = """
                 {% if appointment_report_data and appointment_report_result and 'error' not in appointment_report_result.lower() %}
                 <div class="section">
                     <h3>💾 Download Formatted File</h3>
-                    <form action="/download_appointment_report" method="post">
+                    <form action="/download_appointment_report" method="post" id="appointment-download-form">
                         <div class="form-group">
                             <label for="appointment_output_filename">Output filename (optional):</label>
                             <input type="text" id="appointment_output_filename" name="filename" 
                                    placeholder="formatted_appointment_report.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download Formatted File</button>
+                        <button type="submit" id="appointment-download-btn">💾 Download Formatted File</button>
                     </form>
                 </div>
                 {% endif %}
@@ -2213,13 +2213,13 @@ HTML_TEMPLATE = """
                 {% if smart_assist_data and smart_assist_result and 'processing complete' in smart_assist_result.lower() %}
                 <div class="section">
                     <h3>💾 Download Formatted File</h3>
-                    <form action="/download_smart_assist" method="post">
+                    <form action="/download_smart_assist" method="post" id="smartassist-download-form">
                         <div class="form-group">
                             <label for="smartassist_output_filename">Output filename (optional):</label>
                             <input type="text" id="smartassist_output_filename" name="filename" 
                                    placeholder="formatted_smart_assist_report.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download Formatted File</button>
+                        <button type="submit" id="smartassist-download-btn">💾 Download Formatted File</button>
                     </form>
                 </div>
                 {% endif %}
@@ -2474,6 +2474,9 @@ HTML_TEMPLATE = """
                                 agentsSel.disabled = true;
                                 agentsSel.innerHTML = '<option disabled>(Loading agents...)</option>';
                             }
+                            if (typeof showProcessingModal === 'function') {
+                                showProcessingModal('Loading consolidate file', 'Reading remarks and agent lists from your file…');
+                            }
                             try {
                                 const resp = await fetch('/load_reallocation_consolidate', { method: 'POST', body: fd });
                                 const data = await resp.json();
@@ -2510,6 +2513,10 @@ HTML_TEMPLATE = """
                                     agentsSel.disabled = true;
                                 }
                                 alert('Error loading consolidate file: ' + e.message);
+                            } finally {
+                                if (typeof hideProcessingModal === 'function') {
+                                    hideProcessingModal();
+                                }
                             }
                         }
                         if (consInput) consInput.addEventListener('change', handleConsolidateChange);
@@ -2564,13 +2571,13 @@ HTML_TEMPLATE = """
                 {% if reallocation_merged_data and reallocation_result and 'generation complete' in reallocation_result.lower() %}
                 <div class="section">
                     <h3>💾 Download Reallocation File</h3>
-                    <form action="/download_reallocation" method="post">
+                    <form action="/download_reallocation" method="post" id="reallocation-download-form">
                         <div class="form-group">
                             <label for="reallocation_output_filename">Output filename (optional):</label>
                             <input type="text" id="reallocation_output_filename" name="filename" 
                                    value="reallocation_output.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download Reallocation File</button>
+                        <button type="submit" id="reallocation-download-btn">💾 Download Reallocation File</button>
                     </form>
                 </div>
                 {% endif %}
@@ -2696,6 +2703,9 @@ HTML_TEMPLATE = """
                         if (!primaryInput || !primaryInput.files || primaryInput.files.length === 0) return;
                         const fd = new FormData();
                         fd.append('primary_file', primaryInput.files[0]);
+                        if (typeof showProcessingModal === 'function') {
+                            showProcessingModal('Loading primary file', 'Reading sheets and columns from your Excel file…');
+                        }
                         try {
                             const resp = await fetch('/load_general_primary', { method: 'POST', body: fd });
                             const data = await resp.json();
@@ -2715,6 +2725,10 @@ HTML_TEMPLATE = """
                             populateSelect(primarySheetSel, []);
                             populateSelect(keyColsSel, []);
                             updateButton();
+                        } finally {
+                            if (typeof hideProcessingModal === 'function') {
+                                hideProcessingModal();
+                            }
                         }
                     }
 
@@ -2722,6 +2736,9 @@ HTML_TEMPLATE = """
                         if (!mainInput || !mainInput.files || mainInput.files.length === 0) return;
                         const fd = new FormData();
                         fd.append('main_file', mainInput.files[0]);
+                        if (typeof showProcessingModal === 'function') {
+                            showProcessingModal('Loading main dataset', 'Reading sheets and columns from your Excel file…');
+                        }
                         try {
                             const resp = await fetch('/load_general_main', { method: 'POST', body: fd });
                             const data = await resp.json();
@@ -2741,6 +2758,10 @@ HTML_TEMPLATE = """
                             populateSelect(mainSheetSel, []);
                             populateSelect(updateColsSel, []);
                             updateButton();
+                        } finally {
+                            if (typeof hideProcessingModal === 'function') {
+                                hideProcessingModal();
+                            }
                         }
                     }
 
@@ -2779,13 +2800,13 @@ HTML_TEMPLATE = """
                 {% if general_comparison_updated_data and general_comparison_result %}
                 <div class="section">
                     <h3>💾 Download Updated Primary File</h3>
-                    <form action="/download_general_comparison" method="post">
+                    <form action="/download_general_comparison" method="post" id="general-download-form">
                         <div class="form-group">
                             <label for="gc_output_filename">Output filename (optional):</label>
                             <input type="text" id="gc_output_filename" name="filename"
                                    value="general_comparison_output.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download Updated File</button>
+                        <button type="submit" id="general-download-btn">💾 Download Updated File</button>
                     </form>
                 </div>
                 {% endif %}
@@ -2902,13 +2923,13 @@ HTML_TEMPLATE = """
                 {% if data_cleanser_processed_data and data_cleanser_result and 'successfully' in data_cleanser_result.lower() %}
                 <div class="section">
                     <h3>💾 Download Cleaned File</h3>
-                    <form action="/download_data_cleanser" method="post">
+                    <form action="/download_data_cleanser" method="post" id="datacleanser-download-form">
                         <div class="form-group">
                             <label for="datacleanser_output_filename">Output filename (optional):</label>
                             <input type="text" id="datacleanser_output_filename" name="filename" 
                                    placeholder="cleaned_data.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download Cleaned File</button>
+                        <button type="submit" id="datacleanser-download-btn">💾 Download Cleaned File</button>
                     </form>
                 </div>
                 {% endif %}
@@ -2945,6 +2966,9 @@ HTML_TEMPLATE = """
                             return;
                         }
                         
+                        if (typeof showProcessingModal === 'function') {
+                            showProcessingModal('Loading columns', 'Reading column list for the selected sheet…');
+                        }
                         try {
                             const resp = await fetch('/load_data_cleanser_columns', {
                                 method: 'POST',
@@ -2968,6 +2992,10 @@ HTML_TEMPLATE = """
                         } catch (e) {
                             alert('Error loading columns: ' + e.message);
                             if (columnSel) columnSel.disabled = true;
+                        } finally {
+                            if (typeof hideProcessingModal === 'function') {
+                                hideProcessingModal();
+                            }
                         }
                     }
                     
@@ -2979,6 +3007,9 @@ HTML_TEMPLATE = """
                             return;
                         }
                         
+                        if (typeof showProcessingModal === 'function') {
+                            showProcessingModal('Loading values', 'Gathering unique values from the selected column…');
+                        }
                         try {
                             const resp = await fetch('/load_data_cleanser_values', {
                                 method: 'POST',
@@ -3005,6 +3036,10 @@ HTML_TEMPLATE = """
                         } catch (e) {
                             alert('Error loading values: ' + e.message);
                             if (valuesSection) valuesSection.style.display = 'none';
+                        } finally {
+                            if (typeof hideProcessingModal === 'function') {
+                                hideProcessingModal();
+                            }
                         }
                     }
                     
@@ -3102,13 +3137,13 @@ HTML_TEMPLATE = """
                 {% if agent_remark_transfer_processed_data and agent_remark_transfer_result and 'successfully' in agent_remark_transfer_result.lower() %}
                 <div class="section">
                     <h3>💾 Download Processed File</h3>
-                    <form action="/download_agent_remark_transfer" method="post">
+                    <form action="/download_agent_remark_transfer" method="post" id="agentremarktransfer-download-form">
                         <div class="form-group">
                             <label for="agentremarktransfer_output_filename">Output filename (optional):</label>
                             <input type="text" id="agentremarktransfer_output_filename" name="filename" 
                                    placeholder="agent_remark_transferred.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download Processed File</button>
+                        <button type="submit" id="agentremarktransfer-download-btn">💾 Download Processed File</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3198,13 +3233,13 @@ HTML_TEMPLATE = """
                 {% if ev_allocation_has_output %}
                 <div class="section">
                     <h3>💾 Download output file</h3>
-                    <form action="/download_ev_allocation" method="post">
+                    <form action="/download_ev_allocation" method="post" id="evallocation-download-form">
                         <div class="form-group">
                             <label for="ev_allocation_output_filename">Output filename (optional):</label>
                             <input type="text" id="ev_allocation_output_filename" name="filename" 
                                    placeholder="ev_allocation_report.xlsx" value="{{ ev_allocation_output_filename or 'ev_allocation_report.xlsx' }}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit">💾 Download output file</button>
+                        <button type="submit" id="evallocation-download-btn">💾 Download output file</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3255,9 +3290,13 @@ HTML_TEMPLATE = """
                     <div class="status-message" style="margin-top: 15px;">{{ dental_bv_result_step1 | safe }}</div>
                     {% endif %}
                     {% if dental_bv_has_step1_output %}
-                    <form action="/download_dental_bv_step" method="post" style="margin-top: 10px;">
+                    <form action="/download_dental_bv_step" method="post" id="dentalbv-download-step1-form" style="margin-top: 10px;">
                         <input type="hidden" name="step" value="1">
-                        <button type="submit">💾 Download Step 1 output</button>
+                        <div class="form-group">
+                            <label for="dental_bv_step1_dl_filename">Output filename (optional):</label>
+                            <input type="text" id="dental_bv_step1_dl_filename" name="filename" placeholder="dental_bv_step1_output.xlsx" style="width: 100%; max-width: 420px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="dentalbv-download-step1-btn">💾 Download Step 1 output</button>
                     </form>
                     {% endif %}
                 </div>
@@ -3281,9 +3320,13 @@ HTML_TEMPLATE = """
                     <div class="status-message" style="margin-top: 15px;">{{ dental_bv_result_step2 | safe }}</div>
                     {% endif %}
                     {% if dental_bv_has_step2_output %}
-                    <form action="/download_dental_bv_step" method="post" style="margin-top: 10px;">
+                    <form action="/download_dental_bv_step" method="post" id="dentalbv-download-step2-form" style="margin-top: 10px;">
                         <input type="hidden" name="step" value="2">
-                        <button type="submit">💾 Download Step 2 output</button>
+                        <div class="form-group">
+                            <label for="dental_bv_step2_dl_filename">Output filename (optional):</label>
+                            <input type="text" id="dental_bv_step2_dl_filename" name="filename" placeholder="dental_bv_step2_output.xlsx" style="width: 100%; max-width: 420px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="dentalbv-download-step2-btn">💾 Download Step 2 output</button>
                     </form>
                     {% endif %}
                 </div>
@@ -3307,9 +3350,13 @@ HTML_TEMPLATE = """
                     <div class="status-message" style="margin-top: 15px;">{{ dental_bv_result_step3 | safe }}</div>
                     {% endif %}
                     {% if dental_bv_has_step3_output %}
-                    <form action="/download_dental_bv_step" method="post" style="margin-top: 10px;">
+                    <form action="/download_dental_bv_step" method="post" id="dentalbv-download-step3-form" style="margin-top: 10px;">
                         <input type="hidden" name="step" value="3">
-                        <button type="submit">💾 Download Step 3 output</button>
+                        <div class="form-group">
+                            <label for="dental_bv_step3_dl_filename">Output filename (optional):</label>
+                            <input type="text" id="dental_bv_step3_dl_filename" name="filename" placeholder="dental_bv_step3_output.xlsx" style="width: 100%; max-width: 420px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="dentalbv-download-step3-btn">💾 Download Step 3 output</button>
                     </form>
                     {% endif %}
                 </div>
@@ -3319,8 +3366,12 @@ HTML_TEMPLATE = """
                 <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
                     <h3>💾 Download final Dental BV Report</h3>
                     <p>Combined output from all completed steps.</p>
-                    <form action="/download_dental_bv_final" method="post">
-                        <button type="submit">💾 Download dental_bv_report.xlsx</button>
+                    <form action="/download_dental_bv_final" method="post" id="dentalbv-download-final-form">
+                        <div class="form-group">
+                            <label for="dental_bv_final_dl_filename">Output filename (optional):</label>
+                            <input type="text" id="dental_bv_final_dl_filename" name="filename" placeholder="dental_bv_report.xlsx" style="width: 100%; max-width: 420px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="dentalbv-download-final-btn">💾 Download final report</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3443,8 +3494,13 @@ HTML_TEMPLATE = """
                 {% if apt_has_output %}
                 <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
                     <h3>💾 Download Productivity Report</h3>
-                    <form action="/download_apt" method="post">
-                        <button type="submit">💾 Download agent_productivity_report.xlsx</button>
+                    <form action="/download_apt" method="post" id="apt-download-form">
+                        <div class="form-group">
+                            <label for="apt_output_filename">Output filename (optional):</label>
+                            <input type="text" id="apt_output_filename" name="filename"
+                                   placeholder="agent_productivity_report.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="apt-download-btn">💾 Download Productivity Report</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3474,7 +3530,7 @@ HTML_TEMPLATE = """
                             <label for="nh_file">Select Excel file (.xlsx, .xls):</label>
                             <input type="file" id="nh_file" name="file" accept=".xlsx,.xls" required>
                         </div>
-                        <button type="submit">📤 Upload File</button>
+                        <button type="submit" id="nh-upload-btn">📤 Upload File</button>
                     </form>
                 </div>
 
@@ -3492,7 +3548,7 @@ HTML_TEMPLATE = """
                                 {% endfor %}
                             </select>
                         </div>
-                        <button type="submit">📋 Load sheet</button>
+                        <button type="submit" id="nh-sheet-btn">📋 Load sheet</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3513,7 +3569,7 @@ HTML_TEMPLATE = """
                             </label>
                             {% endfor %}
                         </div>
-                        <button type="submit" style="margin-top: 10px;">🚫 Exclude selected & proceed</button>
+                        <button type="submit" id="nh-remark-exclude-btn" style="margin-top: 10px;">🚫 Exclude selected & proceed</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3528,7 +3584,7 @@ HTML_TEMPLATE = """
                             <label for="nh_file2">Select one or more Excel files (.xlsx, .xls):</label>
                             <input type="file" id="nh_file2" name="file" accept=".xlsx,.xls" multiple required>
                         </div>
-                        <button type="submit">📤 Upload files</button>
+                        <button type="submit" id="nh-upload2-btn">📤 Upload files</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3549,7 +3605,7 @@ HTML_TEMPLATE = """
                             </select>
                         </div>
                         {% endfor %}
-                        <button type="submit">🔄 Merge with Step 1</button>
+                        <button type="submit" id="nh-merge-btn">🔄 Merge with Step 1</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3565,8 +3621,12 @@ HTML_TEMPLATE = """
                 {% if nh_output %}
                 <div class="section">
                     <h3>📥 Download NH Allocation Report</h3>
-                    <form action="/download_nh" method="post">
-                        <button type="submit">📥 Download nh_allocation_report.xlsx</button>
+                    <form action="/download_nh" method="post" id="nh-download-form">
+                        <div class="form-group">
+                            <label for="nh_dl_filename">Output filename (optional):</label>
+                            <input type="text" id="nh_dl_filename" name="filename" placeholder="nh_allocation_report.xlsx" style="width: 100%; max-width: 420px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="nh-download-btn">📥 Download NH Allocation report</button>
                     </form>
                 </div>
                 {% endif %}
@@ -3625,6 +3685,75 @@ HTML_TEMPLATE = """
             
             // Restore body scroll
             document.body.style.overflow = '';
+        }
+
+        /** POST form as fetch, show processing modal, trigger file download, then go to tab (server clears session). */
+        async function submitDownloadFormAsBlob(form, opts) {
+            const o = opts || {};
+            const btn = o.buttonId ? document.getElementById(o.buttonId) : null;
+            showProcessingModal(
+                o.title || 'Preparing download',
+                o.message || 'Building your file. Please wait…'
+            );
+            if (btn) btn.disabled = true;
+            try {
+                const fd = new FormData(form);
+                const resp = await fetch(form.action, { method: 'POST', body: fd });
+                const ct = (resp.headers.get('Content-Type') || '').toLowerCase();
+                if (!resp.ok) {
+                    let msg = 'Download could not start (' + resp.status + ').';
+                    if (ct.includes('application/json')) {
+                        try {
+                            const j = await resp.json();
+                            if (j.error) msg = j.error;
+                        } catch (e0) { /* ignore */ }
+                    } else {
+                        try {
+                            const t = await resp.text();
+                            if (t) msg = t.slice(0, 300);
+                        } catch (e1) { /* ignore */ }
+                    }
+                    alert(msg);
+                    return;
+                }
+                const blob = await resp.blob();
+                let fname = o.defaultFilename || 'download.xlsx';
+                const disp = resp.headers.get('Content-Disposition');
+                if (disp) {
+                    const dlow = disp.toLowerCase();
+                    let raw = '';
+                    let ix = dlow.indexOf("filename*=");
+                    if (ix >= 0) {
+                        raw = disp.slice(ix + 10).trim();
+                        const u8 = raw.toLowerCase().indexOf("utf-8''");
+                        if (u8 >= 0) raw = raw.slice(u8 + 7);
+                    } else {
+                        ix = dlow.indexOf('filename=');
+                        if (ix >= 0) raw = disp.slice(ix + 9).trim();
+                    }
+                    if (raw) {
+                        fname = raw.split(';')[0].trim().replace(/^["']|["']$/g, '');
+                        try { fname = decodeURIComponent(fname); } catch (e2) { /* keep */ }
+                    }
+                }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fname;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                hideProcessingModal();
+                if (o.redirectTab) {
+                    window.location.assign('/comparison?tab=' + o.redirectTab);
+                }
+            } catch (err) {
+                alert('Download failed: ' + (err && err.message ? err.message : String(err)));
+            } finally {
+                hideProcessingModal();
+                if (btn) btn.disabled = false;
+            }
         }
         
         // Toggle sidebar on mobile
@@ -3818,6 +3947,147 @@ HTML_TEMPLATE = """
             });
         }
 
+        // Appointment report download (fetch + modal; same pattern as conversion / smart assist)
+        const appointmentDownloadForm = document.getElementById('appointment-download-form');
+        if (appointmentDownloadForm) {
+            appointmentDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(appointmentDownloadForm, {
+                    buttonId: 'appointment-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your formatted Excel file. Please wait…',
+                    redirectTab: 'appointment',
+                    defaultFilename: 'formatted_appointment_report.xlsx',
+                });
+            });
+        }
+
+        const conversionDownloadForm = document.getElementById('conversion-download-form');
+        if (conversionDownloadForm) {
+            conversionDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(conversionDownloadForm, {
+                    buttonId: 'conversion-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your processed conversion report. Please wait…',
+                    redirectTab: 'conversion',
+                    defaultFilename: 'conversion_report_formatted.xlsx',
+                });
+            });
+        }
+
+        const smartassistDownloadForm = document.getElementById('smartassist-download-form');
+        if (smartassistDownloadForm) {
+            smartassistDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(smartassistDownloadForm, {
+                    buttonId: 'smartassist-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your formatted Smart Assist file. Please wait…',
+                    redirectTab: 'smartassist',
+                    defaultFilename: 'formatted_smart_assist_report.xlsx',
+                });
+            });
+        }
+
+        const comparisonDownloadForm = document.getElementById('comparison-download-form');
+        if (comparisonDownloadForm) {
+            comparisonDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(comparisonDownloadForm, {
+                    buttonId: 'comparison-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your comparison result Excel file. Please wait…',
+                    redirectTab: 'comparison',
+                    defaultFilename: 'comparison_result.xlsx',
+                });
+            });
+        }
+
+        const reallocationDownloadForm = document.getElementById('reallocation-download-form');
+        if (reallocationDownloadForm) {
+            reallocationDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(reallocationDownloadForm, {
+                    buttonId: 'reallocation-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your reallocation Excel file. Please wait…',
+                    redirectTab: 'reallocation',
+                    defaultFilename: 'reallocation_output.xlsx',
+                });
+            });
+        }
+
+        const generalDownloadForm = document.getElementById('general-download-form');
+        if (generalDownloadForm) {
+            generalDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(generalDownloadForm, {
+                    buttonId: 'general-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your updated primary workbook. Please wait…',
+                    redirectTab: 'general',
+                    defaultFilename: 'general_comparison_output.xlsx',
+                });
+            });
+        }
+
+        const datacleanserDownloadForm = document.getElementById('datacleanser-download-form');
+        if (datacleanserDownloadForm) {
+            datacleanserDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(datacleanserDownloadForm, {
+                    buttonId: 'datacleanser-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your cleaned Excel file. Please wait…',
+                    redirectTab: 'datacleanser',
+                    defaultFilename: 'cleaned_data.xlsx',
+                });
+            });
+        }
+
+        const agentremarktransferDownloadForm = document.getElementById('agentremarktransfer-download-form');
+        if (agentremarktransferDownloadForm) {
+            agentremarktransferDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(agentremarktransferDownloadForm, {
+                    buttonId: 'agentremarktransfer-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your Agent & Remark transfer workbook. Please wait…',
+                    redirectTab: 'agentremarktransfer',
+                    defaultFilename: 'agent_remark_transferred.xlsx',
+                });
+            });
+        }
+
+        const remarksDownloadForm = document.getElementById('remarks-download-form');
+        if (remarksDownloadForm) {
+            remarksDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(remarksDownloadForm, {
+                    buttonId: 'remarks-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your appointments file with remarks. Please wait…',
+                    redirectTab: 'remarks',
+                    defaultFilename: 'appointments_with_remarks.xlsx',
+                });
+            });
+        }
+
+        const insuranceDownloadForm = document.getElementById('insurance-download-form');
+        if (insuranceDownloadForm) {
+            insuranceDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(insuranceDownloadForm, {
+                    buttonId: 'insurance-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your formatted insurance workbook. Please wait…',
+                    redirectTab: 'insurance',
+                    defaultFilename: 'formatted_insurance_names.xlsx',
+                });
+            });
+        }
+
         // Smart assist form submission
         const smartAssistForm = document.getElementById('smartassist-form');
         if (smartAssistForm) {
@@ -3911,6 +4181,20 @@ HTML_TEMPLATE = """
             });
         }
 
+        const evallocationDownloadForm = document.getElementById('evallocation-download-form');
+        if (evallocationDownloadForm) {
+            evallocationDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(evallocationDownloadForm, {
+                    buttonId: 'evallocation-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your EV Allocation workbook. Please wait…',
+                    redirectTab: 'evallocation',
+                    defaultFilename: 'ev_allocation_report.xlsx',
+                });
+            });
+        }
+
         const dentalBvStep1Form = document.getElementById('dentalbv-step1-upload-form');
         if (dentalBvStep1Form) {
             dentalBvStep1Form.addEventListener('submit', function() {
@@ -3938,11 +4222,127 @@ HTML_TEMPLATE = """
             });
         }
 
+        const dentalBvDownloadStep1Form = document.getElementById('dentalbv-download-step1-form');
+        if (dentalBvDownloadStep1Form) {
+            dentalBvDownloadStep1Form.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(dentalBvDownloadStep1Form, {
+                    buttonId: 'dentalbv-download-step1-btn',
+                    title: 'Preparing download',
+                    message: 'Building your Dental BV Step 1 file. Please wait…',
+                    redirectTab: 'dentalbv',
+                    defaultFilename: 'dental_bv_step1_output.xlsx',
+                });
+            });
+        }
+        const dentalBvDownloadStep2Form = document.getElementById('dentalbv-download-step2-form');
+        if (dentalBvDownloadStep2Form) {
+            dentalBvDownloadStep2Form.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(dentalBvDownloadStep2Form, {
+                    buttonId: 'dentalbv-download-step2-btn',
+                    title: 'Preparing download',
+                    message: 'Building your Dental BV Step 2 file. Please wait…',
+                    redirectTab: 'dentalbv',
+                    defaultFilename: 'dental_bv_step2_output.xlsx',
+                });
+            });
+        }
+        const dentalBvDownloadStep3Form = document.getElementById('dentalbv-download-step3-form');
+        if (dentalBvDownloadStep3Form) {
+            dentalBvDownloadStep3Form.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(dentalBvDownloadStep3Form, {
+                    buttonId: 'dentalbv-download-step3-btn',
+                    title: 'Preparing download',
+                    message: 'Building your Dental BV Step 3 file. Please wait…',
+                    redirectTab: 'dentalbv',
+                    defaultFilename: 'dental_bv_step3_output.xlsx',
+                });
+            });
+        }
+        const dentalBvDownloadFinalForm = document.getElementById('dentalbv-download-final-form');
+        if (dentalBvDownloadFinalForm) {
+            dentalBvDownloadFinalForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(dentalBvDownloadFinalForm, {
+                    buttonId: 'dentalbv-download-final-btn',
+                    title: 'Preparing download',
+                    message: 'Building your combined Dental BV report. Please wait…',
+                    redirectTab: 'dentalbv',
+                    defaultFilename: 'dental_bv_report.xlsx',
+                });
+            });
+        }
+
+        const nhUploadForm = document.getElementById('nh-upload-form');
+        if (nhUploadForm) {
+            nhUploadForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading', 'Reading NH Allocation file…');
+                const btn = document.getElementById('nh-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+        const nhSheetForm = document.getElementById('nh-sheet-form');
+        if (nhSheetForm) {
+            nhSheetForm.addEventListener('submit', function() {
+                showProcessingModal('Loading sheet', 'Reading remark values from the selected sheet…');
+                const btn = document.getElementById('nh-sheet-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+        const nhRemarkForm = document.getElementById('nh-remark-form');
+        if (nhRemarkForm) {
+            nhRemarkForm.addEventListener('submit', function() {
+                showProcessingModal('Filtering', 'Excluding selected remarks from the first file…');
+                const btn = document.getElementById('nh-remark-exclude-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+        const nhUpload2Form = document.getElementById('nh-upload2-form');
+        if (nhUpload2Form) {
+            nhUpload2Form.addEventListener('submit', function() {
+                showProcessingModal('Uploading', 'Reading Step 2 file(s)…');
+                const btn = document.getElementById('nh-upload2-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+        const nhSheetSelectForm = document.getElementById('nh-sheet-select-form');
+        if (nhSheetSelectForm) {
+            nhSheetSelectForm.addEventListener('submit', function() {
+                showProcessingModal('Merging', 'Combining Step 1 and Step 2 data into NH Allocation report…');
+                const btn = document.getElementById('nh-merge-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+        const nhDownloadForm = document.getElementById('nh-download-form');
+        if (nhDownloadForm) {
+            nhDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(nhDownloadForm, {
+                    buttonId: 'nh-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your NH Allocation workbook. Please wait…',
+                    redirectTab: 'nhallocation',
+                    defaultFilename: 'nh_allocation_report.xlsx',
+                });
+            });
+        }
+
         const aptUploadForm = document.getElementById('apt-upload-form');
         if (aptUploadForm) {
             aptUploadForm.addEventListener('submit', function() {
                 showProcessingModal('Uploading', 'Reading file...');
                 const btn = document.getElementById('apt-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const aptSheetForm = document.getElementById('apt-sheet-form');
+        if (aptSheetForm) {
+            aptSheetForm.addEventListener('submit', function() {
+                showProcessingModal('Loading sheet', 'Reading columns and remark values from your selection…');
+                const btn = document.getElementById('apt-sheet-btn');
                 if (btn) btn.disabled = true;
             });
         }
@@ -3953,6 +4353,20 @@ HTML_TEMPLATE = """
                 showProcessingModal('Calculating', 'Computing agent productivity...');
                 const btn = document.getElementById('apt-process-btn');
                 if (btn) btn.disabled = true;
+            });
+        }
+
+        const aptDownloadForm = document.getElementById('apt-download-form');
+        if (aptDownloadForm) {
+            aptDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(aptDownloadForm, {
+                    buttonId: 'apt-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your agent productivity report. Please wait…',
+                    redirectTab: 'agentproductivity',
+                    defaultFilename: 'agent_productivity_report.xlsx',
+                });
             });
         }
 
@@ -4017,6 +4431,8 @@ HTML_TEMPLATE = """
                 switchTab('dentalbv', true);
             } else if (activeTab === 'agentproductivity') {
                 switchTab('agentproductivity', true);
+            } else if (activeTab === 'nhallocation') {
+                switchTab('nhallocation', true);
             }
             
             // Show toast notification for conversion validation and processing
@@ -5558,20 +5974,7 @@ def download_result():
                         today_df[appt_date_col] = today_df[appt_date_col].astype(str)
 
                     today_df.to_excel(writer, sheet_name="Today", index=False)
-
-                    # Set date column format to text in Excel
-                    if appt_date_col:
-                        ws = writer.sheets["Today"]
-                        col_idx = None
-                        for idx, col_name in enumerate(today_df.columns, 1):
-                            if col_name == appt_date_col:
-                                col_idx = idx
-                                break
-                        if col_idx:
-                            for row in range(2, ws.max_row + 1):
-                                cell = ws.cell(row=row, column=col_idx)
-                                if cell.value:
-                                    cell.number_format = "@"
+                    _apply_imagen_excel_sheet_styling(writer, "Today", today_df)
 
                 # Write special sheets (NO INS, Zero ID, etc.)
                 for sheet_name, df_clean in processed_data.items():
@@ -5616,24 +6019,7 @@ def download_result():
                         df_clean[appt_date_col] = df_clean[appt_date_col].astype(str)
 
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
-
-                    # Set date column format to text in Excel
-                    if appt_date_col:
-                        ws = writer.sheets[sheet_name]
-
-                        # Find the column index
-                        col_idx = None
-                        for idx, col_name in enumerate(df_clean.columns, 1):
-                            if col_name == appt_date_col:
-                                col_idx = idx
-                                break
-
-                        if col_idx:
-                            # Set all cells in this column to text format
-                            for row in range(2, ws.max_row + 1):
-                                cell = ws.cell(row=row, column=col_idx)
-                                if cell.value:
-                                    cell.number_format = "@"  # Text format
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df_clean)
 
             return send_file(temp_path, as_attachment=True, download_name=filename)
 
@@ -6376,6 +6762,7 @@ def download_conversion_result():
                         )
 
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df_clean)
 
             # Clear data after successful download
             global conversion_result
@@ -6584,6 +6971,8 @@ def download_insurance_formatting():
     if not filename:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"formatted_insurance_names_{timestamp}.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
 
     try:
         # Create a temporary file
@@ -6645,24 +7034,7 @@ def download_insurance_formatting():
                         df_clean[appt_date_col] = df_clean[appt_date_col].astype(str)
 
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
-
-                    # Set date column format to text in Excel to preserve MM/DD/YYYY format
-                    if appt_date_col:
-                        ws = writer.sheets[sheet_name]
-
-                        # Find the column index
-                        col_idx = None
-                        for idx, col_name in enumerate(df_clean.columns, 1):
-                            if col_name == appt_date_col:
-                                col_idx = idx
-                                break
-
-                        if col_idx:
-                            # Set all cells in this column to text format
-                            for row in range(2, ws.max_row + 1):
-                                cell = ws.cell(row=row, column=col_idx)
-                                if cell.value:
-                                    cell.number_format = "@"  # Text format
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df_clean)
 
             # Clear data after successful download
             insurance_formatting_data = None
@@ -7150,7 +7522,6 @@ def update_appointments_with_remarks(appointments, excel_data):
 def create_excel_from_appointments(appointments, filename):
     """Create Excel file from processed appointment data with all columns."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, Alignment
     import io
 
     wb = Workbook()
@@ -7158,32 +7529,32 @@ def create_excel_from_appointments(appointments, filename):
     ws.title = "Appointment Data"
 
     if not appointments:
-        return wb
+        excel_buffer = io.BytesIO()
+        wb.save(excel_buffer)
+        excel_buffer.seek(0)
+        return excel_buffer
 
-    # Get all unique headers from all appointments
-    all_headers = set()
+    # Union of all keys in stable order (first-seen across rows = matches source sheet order;
+    # set-based union shuffles columns).
+    headers = []
+    seen_keys = set()
     for appointment in appointments:
-        all_headers.update(appointment.keys())
+        for key in appointment.keys():
+            if key not in seen_keys:
+                seen_keys.add(key)
+                headers.append(key)
 
-    # Convert to list and ensure Pat ID, Insurance Name, Remark, and Agent Name are at the end for visibility
-    headers = list(all_headers)
-    if "Pat ID" in headers:
-        headers.remove("Pat ID")
-    if "Insurance Name" in headers:
-        headers.remove("Insurance Name")
-    if "Remark" in headers:
-        headers.remove("Remark")
-    if "Agent Name" in headers:
-        headers.remove("Agent Name")
+    # Put Pat ID, Insurance Name, Remark, and Agent Name at the end for visibility (same as other exports)
+    for name in ("Pat ID", "Insurance Name", "Remark", "Agent Name"):
+        if name in headers:
+            headers.remove(name)
     headers.extend(
         ["Pat ID", "Insurance Name", "Remark", "Agent Name"]
-    )  # Put these at the end
+    )
 
-    # Set headers
+    # Header labels (Imagen fill/font applied after data rows are written)
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)
-        cell.font = Font(bold=True)
-        cell.alignment = Alignment(horizontal="center")
+        ws.cell(row=1, column=col, value=header)
 
     # Find "Time" column index for formatting
     time_col_idx = None
@@ -7242,6 +7613,8 @@ def create_excel_from_appointments(appointments, filename):
             # Ensure Remark and Agent Name columns are written as text
             if header in ["Remark", "Agent Name"] and value:
                 cell.number_format = "@"  # Text format to preserve content
+
+    _apply_imagen_openpyxl_worksheet(ws, headers)
 
     # Auto-adjust column widths
     for column in ws.columns:
@@ -8122,27 +8495,7 @@ def download_appointment_report():
                             df_clean[col] = df_clean[col].astype(str)
 
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
-
-                    # Set date column format to text in Excel to preserve MM/DD/YYYY format
-                    ws = writer.sheets[sheet_name]
-                    for col in df_clean.columns:
-                        col_lower = (
-                            col.lower().strip().replace(" ", "").replace("_", "")
-                        )
-                        if "date" in col_lower or "time" in col_lower:
-                            # Find the column index
-                            col_idx = None
-                            for idx, col_name in enumerate(df_clean.columns, 1):
-                                if col_name == col:
-                                    col_idx = idx
-                                    break
-
-                            if col_idx:
-                                # Set all cells in this column to text format
-                                for row in range(2, ws.max_row + 1):
-                                    cell = ws.cell(row=row, column=col_idx)
-                                    if cell.value:
-                                        cell.number_format = "@"  # Text format
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df_clean)
 
             # Clear data after successful download
             appointment_report_data = None
@@ -8740,6 +9093,55 @@ def upload_smart_assist():
         return redirect("/comparison?tab=smartassist")
 
 
+def _apply_imagen_openpyxl_worksheet(ws, column_headers):
+    """Imagen-style sheet: green header #92d050 (bold, centered), thin borders on all cells, text format for date/time columns (rows 2+). Row 1 must already contain header values in column order."""
+    if not column_headers:
+        return
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    ncols = len(column_headers)
+    header_fill = PatternFill(
+        start_color="92d050", end_color="92d050", fill_type="solid"
+    )
+    header_font = Font(bold=True)
+    header_alignment = Alignment(
+        horizontal="center", vertical="center", wrap_text=True
+    )
+    for col_idx in range(1, ncols + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_alignment
+
+    thin_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+    max_row = ws.max_row or 1
+    for row in range(1, max_row + 1):
+        for col_idx in range(1, ncols + 1):
+            ws.cell(row=row, column=col_idx).border = thin_border
+
+    for idx, col in enumerate(column_headers, 1):
+        col_lower = str(col).lower().strip().replace(" ", "").replace("_", "")
+        if "date" not in col_lower and "time" not in col_lower:
+            continue
+        for row in range(2, max_row + 1):
+            cell = ws.cell(row=row, column=idx)
+            if cell.value:
+                cell.number_format = "@"
+
+
+def _apply_imagen_excel_sheet_styling(writer, sheet_name, df):
+    """Imagen-style Excel export (pandas ExcelWriter): delegates to openpyxl worksheet styling."""
+    if df is None or len(df.columns) == 0:
+        return
+    ws = writer.sheets[sheet_name]
+    _apply_imagen_openpyxl_worksheet(ws, list(df.columns))
+
+
 @app.route("/download_smart_assist", methods=["POST"])
 def download_smart_assist():
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
@@ -8796,48 +9198,7 @@ def download_smart_assist():
                             df_clean[col] = df_clean[col].astype(str)
 
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
-
-                    # Set date column format to text
-                    ws = writer.sheets[sheet_name]
-
-                    # Set header row background color to #92d050
-                    from openpyxl.styles import PatternFill, Border, Side
-
-                    header_fill = PatternFill(
-                        start_color="92d050", end_color="92d050", fill_type="solid"
-                    )
-                    for col_idx in range(1, len(df_clean.columns) + 1):
-                        header_cell = ws.cell(row=1, column=col_idx)
-                        header_cell.fill = header_fill
-
-                    # Add borders to all cells
-                    thin_border = Border(
-                        left=Side(style="thin"),
-                        right=Side(style="thin"),
-                        top=Side(style="thin"),
-                        bottom=Side(style="thin"),
-                    )
-                    for row in range(1, ws.max_row + 1):
-                        for col_idx in range(1, len(df_clean.columns) + 1):
-                            cell = ws.cell(row=row, column=col_idx)
-                            cell.border = thin_border
-
-                    for col in df_clean.columns:
-                        col_lower = (
-                            col.lower().strip().replace(" ", "").replace("_", "")
-                        )
-                        if "date" in col_lower or "time" in col_lower:
-                            col_idx = None
-                            for idx, col_name in enumerate(df_clean.columns, 1):
-                                if col_name == col:
-                                    col_idx = idx
-                                    break
-
-                            if col_idx:
-                                for row in range(2, ws.max_row + 1):
-                                    cell = ws.cell(row=row, column=col_idx)
-                                    if cell.value:
-                                        cell.number_format = "@"
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df_clean)
 
             smart_assist_data = None
             smart_assist_filename = None
@@ -9052,6 +9413,7 @@ def download_data_cleanser():
             with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 for sheet_name, df in data_cleanser_processed_data.items():
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
 
             return send_file(temp_path, as_attachment=True, download_name=filename)
 
@@ -9307,14 +9669,10 @@ def process_agent_remark_transfer():
 
 @app.route("/download_agent_remark_transfer", methods=["POST"])
 def download_agent_remark_transfer():
-    global agent_remark_transfer_processed_data
-
     if not agent_remark_transfer_processed_data:
         return jsonify({"error": "No processed data to download"}), 400
 
-    filename = request.form.get("filename", "").strip()
-    if not filename:
-        filename = "agent_remark_transferred.xlsx"
+    filename = request.form.get("filename", "").strip() or "agent_remark_transferred.xlsx"
 
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
@@ -9328,6 +9686,7 @@ def download_agent_remark_transfer():
             with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 for sheet_name, df in agent_remark_transfer_processed_data.items():
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
 
             return send_file(temp_path, as_attachment=True, download_name=filename)
 
@@ -9808,10 +10167,20 @@ def upload_reallocation():
             f"📄 Target: '{target_sheet_name}' from blank allocation ({len(blank_df)} rows)"
         )
 
-        # Align columns to the union of both
-        combined_cols = list({*map(str, blank_df.columns), *map(str, cons_df.columns)})
-        blank_aligned = blank_df.reindex(columns=combined_cols)
-        cons_aligned = cons_df.reindex(columns=combined_cols)
+        # Align columns to the union of both: blank sheet order first, then any
+        # consolidate-only columns in consolidate order (set union shuffles columns).
+        blank_df_named = blank_df.rename(columns=str)
+        cons_df_named = cons_df.rename(columns=str)
+        blank_cols = list(blank_df_named.columns)
+        cons_cols = list(cons_df_named.columns)
+        seen = set(blank_cols)
+        combined_cols = list(blank_cols)
+        for c in cons_cols:
+            if c not in seen:
+                combined_cols.append(c)
+                seen.add(c)
+        blank_aligned = blank_df_named.reindex(columns=combined_cols)
+        cons_aligned = cons_df_named.reindex(columns=combined_cols)
 
         # Merge: append consolidate data to blank allocation data
         merged_df = pd.concat([blank_aligned, cons_aligned], ignore_index=True)
@@ -9918,28 +10287,35 @@ def upload_reallocation():
 
 @app.route("/download_reallocation", methods=["POST"])
 def download_reallocation():
-    global reallocation_merged_data, reallocation_consolidate_data
+    # Prefer merged data; fallback to consolidate data
+    data_to_write = reallocation_merged_data or reallocation_consolidate_data
+    if not data_to_write:
+        return jsonify({"error": "No reallocation data available"}), 400
+
+    filename = request.form.get("filename", "").strip() or "reallocation_data.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
 
     try:
-        # Prefer merged data; fallback to consolidate data
-        data_to_write = reallocation_merged_data or reallocation_consolidate_data
-        if not data_to_write:
-            return "No reallocation data available", 400
+        import tempfile
 
-        filename = request.form.get("filename", "reallocation_data.xlsx")
-        if not filename.endswith(".xlsx"):
-            filename += ".xlsx"
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
 
-        # Create Excel file with consolidate sheets
-        output_path = os.path.join("/tmp", filename)
-        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-            for sheet_name, df in data_to_write.items():
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                for sheet_name, df in data_to_write.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
 
-        return send_file(output_path, as_attachment=True, download_name=filename)
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
 
     except Exception as e:
-        return f"Error downloading file: {str(e)}", 500
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/reset_reallocation", methods=["POST"])
@@ -10601,7 +10977,9 @@ def process_ev_allocation():
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             ev_allocation_df.to_excel(writer, index=False, sheet_name="EVAllocation")
+            _apply_imagen_excel_sheet_styling(writer, "EVAllocation", ev_allocation_df)
             not_to_work_df.to_excel(writer, index=False, sheet_name="Not to work")
+            _apply_imagen_excel_sheet_styling(writer, "Not to work", not_to_work_df)
         buf.seek(0)
         ev_allocation_output = buf.getvalue()
         ev_allocation_output_filename = "ev_allocation_report.xlsx"
@@ -10625,17 +11003,13 @@ def process_ev_allocation():
 @app.route("/download_ev_allocation", methods=["POST"])
 def download_ev_allocation():
     """Send the generated EV Allocation output file if available."""
-    global ev_allocation_output, ev_allocation_output_filename
-
     if ev_allocation_output is None:
-        return redirect("/comparison?tab=evallocation")
+        return jsonify({"error": "No output file to download. Generate the report first."}), 400
 
-    filename = (
-        request.form.get("filename", "ev_allocation_report.xlsx").strip()
-        or "ev_allocation_report.xlsx"
-    )
-    if not filename.lower().endswith((".xlsx", ".xls")):
-        filename = filename + ".xlsx"
+    filename = request.form.get("filename", "").strip() or "ev_allocation_report.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
     return send_file(
         io.BytesIO(ev_allocation_output),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -10686,6 +11060,7 @@ def _dental_bv_build_final_output():
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         combined.to_excel(writer, index=False, sheet_name="Dental BV Report")
+        _apply_imagen_excel_sheet_styling(writer, "Dental BV Report", combined)
     buf.seek(0)
     dental_bv_final_output = buf.getvalue()
 
@@ -10828,6 +11203,7 @@ def upload_dental_bv_step1():
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             combined_df.to_excel(writer, index=False, sheet_name="Step1")
+            _apply_imagen_excel_sheet_styling(writer, "Step1", combined_df)
         buf.seek(0)
         dental_bv_step1_output = buf.getvalue()
 
@@ -11066,6 +11442,7 @@ def upload_dental_bv_step2():
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             result_df.to_excel(writer, index=False, sheet_name="Step2")
+            _apply_imagen_excel_sheet_styling(writer, "Step2", result_df)
         buf.seek(0)
         dental_bv_step2_output = buf.getvalue()
 
@@ -11406,6 +11783,7 @@ def upload_dental_bv_step3():
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             result_df.to_excel(writer, index=False, sheet_name="Step3")
+            _apply_imagen_excel_sheet_styling(writer, "Step3", result_df)
         buf.seek(0)
         dental_bv_step3_output = buf.getvalue()
 
@@ -11441,26 +11819,35 @@ def download_dental_bv_step():
     }
     output = outputs.get(step)
     if output is None:
-        return redirect("/comparison?tab=dentalbv")
+        return jsonify({"error": "No output for this step. Run the step first."}), 400
+
+    filename = request.form.get("filename", "").strip() or f"dental_bv_step{step}_output.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
     return send_file(
         io.BytesIO(output),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
-        download_name=f"dental_bv_step{step}_output.xlsx",
+        download_name=filename,
     )
 
 
 @app.route("/download_dental_bv_final", methods=["POST"])
 def download_dental_bv_final():
     """Download the final combined Dental BV report."""
-    global dental_bv_final_output
     if dental_bv_final_output is None:
-        return redirect("/comparison?tab=dentalbv")
+        return jsonify({"error": "No final report to download. Complete steps and generate output first."}), 400
+
+    filename = request.form.get("filename", "").strip() or "dental_bv_report.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
     return send_file(
         io.BytesIO(dental_bv_final_output),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
-        download_name="dental_bv_report.xlsx",
+        download_name=filename,
     )
 
 
@@ -11703,7 +12090,9 @@ def process_apt():
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             agent_summary.to_excel(writer, index=False, sheet_name="Summary")
+            _apply_imagen_excel_sheet_styling(writer, "Summary", agent_summary)
             agent_detail.to_excel(writer, index=False, sheet_name="Detail")
+            _apply_imagen_excel_sheet_styling(writer, "Detail", agent_detail)
         buf.seek(0)
         apt_output = buf.getvalue()
 
@@ -11723,12 +12112,17 @@ def process_apt():
 def download_apt():
     """Download the agent productivity report."""
     if apt_output is None:
-        return redirect("/comparison?tab=agentproductivity")
+        return jsonify({"error": "No report to download. Run Calculate Productivity first."}), 400
+
+    filename = request.form.get("filename", "").strip() or "agent_productivity_report.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
     return send_file(
         io.BytesIO(apt_output),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
-        download_name="agent_productivity_report.xlsx",
+        download_name=filename,
     )
 
 
@@ -12188,6 +12582,7 @@ def nh_merge_step2_sheets():
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             merged_df.to_excel(writer, index=False, sheet_name="NH Allocation")
+            _apply_imagen_excel_sheet_styling(writer, "NH Allocation", merged_df)
         buf.seek(0)
         nh_output = buf.getvalue()
 
@@ -12210,12 +12605,17 @@ def nh_merge_step2_sheets():
 def download_nh():
     """Download the NH Allocation Report."""
     if nh_output is None:
-        return redirect("/comparison?tab=nhallocation")
+        return jsonify({"error": "No report to download. Complete the merge step first."}), 400
+
+    filename = request.form.get("filename", "").strip() or "nh_allocation_report.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
     return send_file(
         io.BytesIO(nh_output),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
-        download_name="nh_allocation_report.xlsx",
+        download_name=filename,
     )
 
 
@@ -12762,25 +13162,34 @@ def reset_general():
 
 @app.route("/download_general_comparison", methods=["POST"])
 def download_general_comparison():
-    global general_comparison_updated_data, general_primary_data
+    data_to_write = general_comparison_updated_data or general_primary_data
+    if not data_to_write:
+        return jsonify({"error": "No general comparison data available"}), 400
+
+    filename = request.form.get("filename", "").strip() or "general_comparison_output.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
 
     try:
-        data_to_write = general_comparison_updated_data or general_primary_data
-        if not data_to_write:
-            return "No general comparison data available", 400
+        import tempfile
 
-        filename = request.form.get("filename", "general_comparison_output.xlsx")
-        if not filename.endswith(".xlsx"):
-            filename += ".xlsx"
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
 
-        output_path = os.path.join("/tmp", filename)
-        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-            for sheet_name, df in data_to_write.items():
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                for sheet_name, df in data_to_write.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
 
-        return send_file(output_path, as_attachment=True, download_name=filename)
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
     except Exception as e:
-        return f"Error downloading general comparison file: {str(e)}", 500
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
