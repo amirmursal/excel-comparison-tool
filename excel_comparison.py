@@ -271,6 +271,7 @@ DENTAL_BV_OUTPUT_COLUMNS = [
 DENTAL_BV_STEP1_FILE_RULES = [
     {"contains": "Stovall", "sheet": "Today"},
     {"contains": "Suri", "sheet": "Sheet1"},
+    {"contains": "Orandi", "sheet": "Sheet1"},
 ]
 
 # Dental BV Step 2: allowed filename patterns (order matters — "Previous Day" checked before "Today")
@@ -3274,7 +3275,7 @@ HTML_TEMPLATE = """
                 <!-- Step 1 -->
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
                     <h3>📁 Step 1: Upload files</h3>
-                    <p style="margin-bottom: 10px;">Upload files with <strong>"Stovall"</strong> (reads <em>Today</em> sheet) and/or <strong>"Suri"</strong> (reads <em>Sheet1</em>) in the filename. Only these two file types are accepted.</p>
+                    <p style="margin-bottom: 10px;">Upload files with <strong>"Stovall"</strong> (reads <em>Today</em> sheet), <strong>"Suri"</strong> (reads <em>Sheet1</em>), and/or <strong>"Orandi"</strong> (reads <em>Sheet1</em>) in the filename. Only these file types are accepted.</p>
                     <form action="/upload_dental_bv_step1" method="post" enctype="multipart/form-data" id="dentalbv-step1-upload-form">
                         <div class="form-group">
                             <label for="dental_bv_step1_files">Select files (multiple allowed):</label>
@@ -11081,7 +11082,7 @@ def _dental_bv_format_date_mmddyyyy(val):
 
 @app.route("/upload_dental_bv_step1", methods=["POST"])
 def upload_dental_bv_step1():
-    """Upload and process Dental BV Step 1 files (Stovall + Suri)."""
+    """Upload and process Dental BV Step 1 files (Stovall + Suri + Orandi)."""
     global dental_bv_step1_data, dental_bv_step1_output, dental_bv_result_step1
 
     try:
@@ -11139,6 +11140,29 @@ def upload_dental_bv_step1():
                     files_rejected.append(f"{original_name} (empty sheet)")
                     continue
 
+                # Orandi Step 1 file: ensure Patient Name is in "Last, First" style.
+                if matched_rule["contains"].strip().lower() == "orandi":
+                    patient_name_col = None
+                    for c in df.columns:
+                        if c.strip().lower().replace(" ", "") == "patientname":
+                            patient_name_col = c
+                            break
+                    if patient_name_col is not None:
+                        def _orandi_name_with_comma(v):
+                            if pd.isna(v):
+                                return ""
+                            s = str(v).strip()
+                            if not s or "," in s:
+                                return s
+                            parts = [p for p in s.split() if p]
+                            if len(parts) < 2:
+                                return s
+                            return f"{parts[0]}, {' '.join(parts[1:])}"
+
+                        df[patient_name_col] = df[patient_name_col].apply(
+                            _orandi_name_with_comma
+                        )
+
                 all_frames.append(df)
                 files_processed.append(
                     f"{original_name} → sheet '{sheet_name}' ({len(df)} rows)"
@@ -11148,7 +11172,7 @@ def upload_dental_bv_step1():
 
         if files_rejected and not files_processed:
             dental_bv_result_step1 = (
-                "❌ No valid files processed. Only files with <strong>Stovall</strong> or <strong>Suri</strong> "
+                "❌ No valid files processed. Only files with <strong>Stovall</strong>, <strong>Suri</strong>, or <strong>Orandi</strong> "
                 "in the filename are allowed.<br>Rejected: " + ", ".join(files_rejected)
             )
             dental_bv_step1_data = None
@@ -11181,16 +11205,37 @@ def upload_dental_bv_step1():
         for dc in date_cols:
             combined_df[dc] = combined_df[dc].apply(_dental_bv_format_date_mmddyyyy)
 
+        # Step 1 rule: force Received date to today's date for all rows.
+        today_mmddyyyy = datetime.now().strftime("%m/%d/%Y")
+        received_date_col = None
+        for c in combined_df.columns:
+            c_norm = c.strip().lower().replace(" ", "")
+            if c_norm == "receiveddate":
+                received_date_col = c
+                break
+        if received_date_col is None:
+            combined_df["Received date"] = today_mmddyyyy
+        else:
+            combined_df[received_date_col] = today_mmddyyyy
+
+        # Step 1 rule: set Remark to workable for all rows.
+        remark_col = None
+        for c in combined_df.columns:
+            c_norm = c.strip().lower().replace(" ", "")
+            if c_norm == "remark":
+                remark_col = c
+                break
+        if remark_col is None:
+            combined_df["Remark"] = "Workable"
+        else:
+            combined_df[remark_col] = "Workable"
+
         if "Insurance" in combined_df.columns:
             combined_df["Insurance"] = combined_df["Insurance"].apply(
                 format_insurance_name
             )
 
-        remark_col_s1 = None
-        for c in combined_df.columns:
-            if c.strip().lower() == "remark":
-                remark_col_s1 = c
-                break
+        remark_col_s1 = remark_col if remark_col is not None else "Remark"
         pre_filter_count = len(combined_df)
         if remark_col_s1:
             combined_df = combined_df[
@@ -11349,6 +11394,7 @@ def upload_dental_bv_step2():
 
         total_today = len(today_df)
         matched_count = total_today - len(new_rows_df)
+        today_mmddyyyy = datetime.now().strftime("%m/%d/%Y")
 
         mapped_rows = []
         for _, row in new_rows_df.iterrows():
@@ -11358,10 +11404,19 @@ def upload_dental_bv_step2():
                 if pd.isna(val):
                     val = ""
                 mapped[output_col] = str(val).strip()
+            # For Today-vs-Previous merge rows, move Entity Code-derived value to Location and set Office Name to SL.
+            mapped["Location"] = mapped.get("Office Name", "")
+            mapped["Office Name"] = "SL"
+            mapped["Department"] = "BV"
+            mapped["Source"] = "ORS"
+            # Today-vs-Previous Day merged rows always use Smilelink software source.
+            mapped["Software"] = "Smilelink"
             mapped["DOB"] = _dental_bv_format_date_mmddyyyy(mapped.get("DOB"))
             mapped["Appointment"] = _dental_bv_format_date_mmddyyyy(
                 mapped.get("Appointment")
             )
+            # Today-vs-Previous merged rows should use today's received date.
+            mapped["Received date"] = today_mmddyyyy
             mapped_rows.append(mapped)
 
         # Process Yesterday file: include rows where Remark != "updated"
@@ -11428,6 +11483,14 @@ def upload_dental_bv_step2():
 
         result_df = pd.DataFrame(all_step2_rows, columns=DENTAL_BV_OUTPUT_COLUMNS)
         result_df = result_df.fillna("")
+        if "Received date" in result_df.columns:
+            result_df["Received date"] = result_df["Received date"].apply(
+                _dental_bv_format_date_mmddyyyy
+            )
+        if "Remark" in result_df.columns:
+            result_df["Remark"] = result_df["Remark"].fillna("").astype(str).str.strip()
+            blank_remark_mask = result_df["Remark"] == ""
+            result_df.loc[blank_remark_mask, "Remark"] = "Workable"
         result_df["Insurance"] = result_df["Insurance"].apply(format_insurance_name)
 
         pre_filter_s2 = len(result_df)
@@ -11471,6 +11534,54 @@ def upload_dental_bv_step2():
         dental_bv_step2_data = None
         dental_bv_step2_output = None
         return redirect("/comparison?tab=dentalbv")
+
+
+def _dental_bv_step3_norm_header(name):
+    """Normalize column header for flexible matching (case, spaces, underscores, hyphens)."""
+    return re.sub(r"[\s_\-]+", "", str(name).strip().lower())
+
+
+def _dental_bv_step3_find_raw_name_columns(df):
+    """Resolve PatsLastname / PatsFirstname columns despite spacing/casing variants."""
+    last_keys = {"patslastname"}
+    first_keys = {"patsfirstname"}
+    last_col = None
+    first_col = None
+    for c in df.columns:
+        nk = _dental_bv_step3_norm_header(c)
+        if nk in last_keys:
+            last_col = c
+        elif nk in first_keys:
+            first_col = c
+    return last_col, first_col
+
+
+def _dental_bv_step3_patient_name_last_comma_first(row, last_col, first_col):
+    """Build 'Last, First' from two raw columns (handles blanks / NaN)."""
+    ln_raw = row.get(last_col, "") if last_col is not None else ""
+    fn_raw = row.get(first_col, "") if first_col is not None else ""
+    if pd.isna(ln_raw):
+        ln_raw = ""
+    if pd.isna(fn_raw):
+        fn_raw = ""
+    ln = str(ln_raw).strip()
+    fn = str(fn_raw).strip()
+    if ln and fn:
+        return f"{ln}, {fn}"
+    if ln:
+        return ln
+    return fn
+
+
+def _dental_bv_step3_norm_patient_key(s):
+    """Normalize patient name for lookup keys (comma spacing, collapse whitespace)."""
+    try:
+        x = str(s).strip().lower()
+    except Exception:
+        return ""
+    x = re.sub(r"\s*,\s*", ", ", x)
+    x = re.sub(r"\s+", " ", x).strip()
+    return x
 
 
 @app.route("/upload_dental_bv_step3", methods=["POST"])
@@ -11573,15 +11684,8 @@ def upload_dental_bv_step3():
             _dental_bv_build_final_output()
             return redirect("/comparison?tab=dentalbv")
 
-        # Build Patient Name from PatsLastname + ", " + PatsFirstname in Raw Smilelink
-        lastname_col = None
-        firstname_col = None
-        for c in raw_df.columns:
-            cl = c.strip().lower()
-            if cl == "patslastname":
-                lastname_col = c
-            elif cl == "patsfirstname":
-                firstname_col = c
+        # Build Patient Name from PatsLastname + ", " + PatsFirstname (flexible header matching).
+        lastname_col, firstname_col = _dental_bv_step3_find_raw_name_columns(raw_df)
 
         if lastname_col is None or firstname_col is None:
             available_cols = ", ".join(raw_df.columns.tolist()[:30]) or "(none)"
@@ -11593,7 +11697,9 @@ def upload_dental_bv_step3():
             if row_count > 0:
                 preview = "<br>First row preview: " + str(dict(raw_df.iloc[0]))[:500]
             dental_bv_result_step3 = (
-                "❌ Raw Smilelink file is missing 'PatsLastname' and/or 'PatsFirstname' columns."
+                "❌ Raw Smilelink file is missing <strong>PatsLastname</strong> and/or "
+                "<strong>PatsFirstname</strong> columns (spacing/casing variants are accepted, e.g. "
+                "<em>Pats Last Name</em> / <em>Pats First Name</em>)."
                 f"<br>Sheets: {sheet_info}"
                 f"<br>Columns ({len(raw_df.columns)}): {available_cols}"
                 f"<br>Rows: {row_count}"
@@ -11604,10 +11710,11 @@ def upload_dental_bv_step3():
             _dental_bv_build_final_output()
             return redirect("/comparison?tab=dentalbv")
 
-        raw_df["_PatientName"] = (
-            raw_df[lastname_col].fillna("").astype(str).str.strip()
-            + ", "
-            + raw_df[firstname_col].fillna("").astype(str).str.strip()
+        raw_df["_PatientName"] = raw_df.apply(
+            lambda r: _dental_bv_step3_patient_name_last_comma_first(
+                r, lastname_col, firstname_col
+            ),
+            axis=1,
         )
 
         # Find Insurance and Policy ID columns in Raw Smilelink
@@ -11670,7 +11777,7 @@ def upload_dental_bv_step3():
         # Store full consolidated row + parsed date, keyed by (patient_name, insurance, policy_id)
         cons_lookup = {}
         for idx, crow in consolidated_df.iterrows():
-            pn = str(crow.get(cons_patient_col, "")).strip().lower()
+            pn = _dental_bv_step3_norm_patient_key(crow.get(cons_patient_col, ""))
             ins = str(crow.get(cons_insurance_col, "")).strip().lower()
             pid = str(crow.get(cons_policyid_col, "")).strip().lower()
             date_val = crow.get(cons_date_col)
@@ -11703,7 +11810,10 @@ def upload_dental_bv_step3():
         old_enough_count = 0
 
         for _, row in raw_df.iterrows():
-            pn = str(row.get("_PatientName", "")).strip().lower()
+            display_patient = _dental_bv_step3_patient_name_last_comma_first(
+                row, lastname_col, firstname_col
+            )
+            pn = _dental_bv_step3_norm_patient_key(display_patient)
             ins = str(row.get(raw_insurance_col, "")).strip().lower()
             pid = str(row.get(raw_policyid_col, "")).strip().lower()
             key = (pn, ins, pid)
@@ -11728,7 +11838,7 @@ def upload_dental_bv_step3():
                 mapped[out_col] = str(val).strip()
 
             # Patient Name, Insurance, Policy ID from Raw Smilelink (the matching keys)
-            mapped["Patient Name"] = row.get("_PatientName", "").strip()
+            mapped["Patient Name"] = display_patient.strip()
             raw_ins_val = row.get(raw_insurance_col, "")
             if pd.isna(raw_ins_val):
                 raw_ins_val = ""
