@@ -280,6 +280,27 @@ DENTAL_BV_OUTPUT_COL_ALIASES = {
     "groupno": "Group#",
 }
 
+# Final Dental BV Report: drop rows whose Insurance matches any of these (case-insensitive, trimmed).
+DENTAL_BV_EXCLUDE_INSURANCE_RAW = (
+    "DentaQuest - LA Medicaid Claims",
+    "DentaQuest NM",
+    "Indian Health Service (AHCCCS)",
+    "Liberty Dental Plan (Medicaid)",
+    "Maryland Healthy Smiles",
+    "Maryland Healthy Smiles (Scion)",
+    "Maryland Healthy Smiles/DDS Of MD",
+    "MCNA",
+    "MCNA ",
+    "Scion (WV) Unicare,Aenta BH, Health plan, Chip",
+    "Grand Total",
+    "ACS",
+    "Scion ",
+)
+
+DENTAL_BV_EXCLUDE_INSURANCE_NORMALIZED = frozenset(
+    s.strip().lower() for s in DENTAL_BV_EXCLUDE_INSURANCE_RAW if s and s.strip()
+)
+
 # Dental BV Step 1: allowed filename patterns
 DENTAL_BV_STEP1_FILE_RULES = [
     {"contains": "Stovall", "sheet": "Today"},
@@ -315,7 +336,8 @@ DENTAL_BV_STEP2_COLUMN_MAPPING = {
 
 # Dental BV Step 3: allowed filename patterns
 DENTAL_BV_STEP3_FILE_RULES = [
-    {"contains": "Raw Smilelink", "role": "raw", "sheet": "Sheet1"},
+    # Raw Smilelink: use first worksheet in the workbook (name does not matter).
+    {"contains": "Raw Smilelink", "role": "raw", "sheet": None},
     {"contains": "Consolidated", "role": "consolidated", "sheet": None},
 ]
 
@@ -3348,7 +3370,7 @@ HTML_TEMPLATE = """
                 <!-- Step 3 -->
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
                     <h3>📁 Step 3: Upload files (Raw Smilelink vs Smilelink Consolidated)</h3>
-                    <p style="margin-bottom: 10px;">Upload files with <strong>"Raw Smilelink"</strong> and <strong>"Smilelink Consolidated"</strong> in the filename. Matches on Patient Name, Insurance, Policy ID where the consolidated Date is older than 350 days are included.</p>
+                    <p style="margin-bottom: 10px;">Upload files with <strong>"Raw Smilelink"</strong> and <strong>"Smilelink Consolidated"</strong> in the filename. The <strong>Raw Smilelink</strong> Excel file uses the <em>first sheet</em> (any sheet name). Matches on Patient Name, Insurance, Policy ID where the consolidated Date is older than 350 days are included.</p>
                     <form action="/upload_dental_bv_step3" method="post" enctype="multipart/form-data" id="dentalbv-step3-upload-form">
                         <div class="form-group">
                             <label for="dental_bv_step3_files">Select files (Raw Smilelink + Smilelink Consolidated):</label>
@@ -11053,6 +11075,32 @@ def reset_ev_allocation():
 # =============================
 
 
+def _dental_bv_set_smilelink_when_office_sl(df):
+    """When Office Name is SL (trimmed, case-insensitive), set Software to Smilelink."""
+
+    def _col_ci(want_key):
+        for c in df.columns:
+            nk = re.sub(r"[\s_]+", "", str(c).strip().lower())
+            if nk == want_key:
+                return c
+        return None
+
+    if df is None or df.empty:
+        return df
+    office_col = _col_ci("officename")
+    software_col = _col_ci("software")
+    if office_col is None or software_col is None:
+        return df
+    mask = (
+        df[office_col].fillna("").astype(str).str.strip().str.upper() == "SL"
+    )
+    if not mask.any():
+        return df
+    out = df.copy()
+    out.loc[mask, software_col] = "Smilelink"
+    return out
+
+
 def _dental_bv_build_final_output():
     """Rebuild the final combined output from all step DataFrames."""
     global dental_bv_final_output
@@ -11070,7 +11118,13 @@ def _dental_bv_build_final_output():
             combined["Remark"].fillna("").astype(str).str.strip().str.lower() != "updated"
         ].copy()
     if "Insurance" in combined.columns:
+        _ins_key = (
+            combined["Insurance"].fillna("").astype(str).str.strip().str.lower()
+        )
+        combined = combined[~_ins_key.isin(DENTAL_BV_EXCLUDE_INSURANCE_NORMALIZED)].copy()
+    if "Insurance" in combined.columns:
         combined["Insurance"] = combined["Insurance"].apply(format_insurance_name)
+    combined = _dental_bv_set_smilelink_when_office_sl(combined)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         combined.to_excel(writer, index=False, sheet_name="Dental BV Report")
@@ -11175,6 +11229,8 @@ def upload_dental_bv_step1():
                         df[patient_name_col] = df[patient_name_col].apply(
                             _orandi_name_with_comma
                         )
+                    # Dr. Orandi uploads: force Department to BV for this file's rows.
+                    df["Department"] = "BV"
 
                 all_frames.append(df)
                 files_processed.append(
@@ -11256,6 +11312,7 @@ def upload_dental_bv_step1():
             ].copy()
         updated_excluded_s1 = pre_filter_count - len(combined_df)
 
+        combined_df = _dental_bv_set_smilelink_when_office_sl(combined_df)
         dental_bv_step1_data = combined_df
 
         buf = io.BytesIO()
@@ -11517,6 +11574,7 @@ def upload_dental_bv_step2():
             ].copy()
         updated_excluded_s2 = pre_filter_s2 - len(result_df)
 
+        result_df = _dental_bv_set_smilelink_when_office_sl(result_df)
         dental_bv_step2_data = result_df
 
         buf = io.BytesIO()
@@ -11909,6 +11967,7 @@ def upload_dental_bv_step3():
             ].copy()
         updated_excluded_s3 = pre_filter_s3 - len(result_df)
 
+        result_df = _dental_bv_set_smilelink_when_office_sl(result_df)
         dental_bv_step3_data = result_df
 
         buf = io.BytesIO()
