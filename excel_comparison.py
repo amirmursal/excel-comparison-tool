@@ -13291,6 +13291,47 @@ def reset_general():
         return redirect("/comparison?tab=general")
 
 
+# General Comparison export: these primary columns are written as MM/DD/YYYY when parseable.
+GENERAL_COMPARISON_DATE_COLUMNS_MM_DD_YYYY = (
+    "Pats Birth Date",
+    "Next Appt",
+    "Status",
+)
+
+
+def _general_comparison_df_format_date_cols_mmddyyyy(df):
+    """Return a copy of df with named date columns formatted as MM/DD/YYYY strings for Excel."""
+    out = df.copy()
+    targets_lower = {
+        t.strip().lower(): t for t in GENERAL_COMPARISON_DATE_COLUMNS_MM_DD_YYYY
+    }
+
+    def _gc_format_one_date(date_val):
+        if pd.isna(date_val) or date_val == "":
+            return ""
+        try:
+            if isinstance(date_val, pd.Timestamp):
+                date_obj = date_val
+            elif isinstance(date_val, str):
+                date_obj = pd.to_datetime(date_val, errors="coerce")
+                if pd.isna(date_obj):
+                    return str(date_val)
+            else:
+                date_obj = pd.to_datetime(date_val, errors="coerce")
+                if pd.isna(date_obj):
+                    return str(date_val)
+            return date_obj.strftime("%m/%d/%Y")
+        except (ValueError, TypeError, AttributeError):
+            return str(date_val)
+
+    for c in list(out.columns):
+        if str(c).strip().lower() not in targets_lower:
+            continue
+        out[c] = out[c].apply(_gc_format_one_date)
+        out[c] = out[c].astype(str)
+    return out
+
+
 @app.route("/download_general_comparison", methods=["POST"])
 def download_general_comparison():
     data_to_write = general_comparison_updated_data or general_primary_data
@@ -13309,8 +13350,13 @@ def download_general_comparison():
         try:
             with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 for sheet_name, df in data_to_write.items():
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
+                    df_export = _general_comparison_df_format_date_cols_mmddyyyy(df)
+                    df_export.to_excel(
+                        writer, sheet_name=sheet_name, index=False
+                    )
+                    _apply_imagen_excel_sheet_styling(
+                        writer, sheet_name, df_export
+                    )
 
             return send_file(temp_path, as_attachment=True, download_name=filename)
 
