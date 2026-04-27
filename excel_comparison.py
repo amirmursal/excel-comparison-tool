@@ -261,11 +261,24 @@ DENTAL_BV_OUTPUT_COLUMNS = [
     "Subscriber Name",
     "Subscriber DOB",
     "Zip Code",
-    "Group No",
+    "Group#",
     "QC Agent",
     "QC Comments",
     "Date work",
+    "Pop Up",
+    "Fa Note",
 ]
+
+
+def _dental_bv_norm_col_key(name):
+    """Normalize a column header for Dental BV alias matching (spaces/underscores/hyphens)."""
+    return re.sub(r"[\s_\-]+", "", str(name).strip().lower())
+
+
+# Incoming headers like "Group No" map to output column "Group#".
+DENTAL_BV_OUTPUT_COL_ALIASES = {
+    "groupno": "Group#",
+}
 
 # Dental BV Step 1: allowed filename patterns
 DENTAL_BV_STEP1_FILE_RULES = [
@@ -11435,6 +11448,10 @@ def upload_dental_bv_step2():
                 src_lower = src_col.strip().lower()
                 if src_lower in output_cols_lower:
                     yesterday_col_map[src_col] = output_cols_lower[src_lower]
+                elif _dental_bv_norm_col_key(src_col) in DENTAL_BV_OUTPUT_COL_ALIASES:
+                    yesterday_col_map[src_col] = DENTAL_BV_OUTPUT_COL_ALIASES[
+                        _dental_bv_norm_col_key(src_col)
+                    ]
                 elif src_lower in input_map_lower:
                     yesterday_col_map[src_col] = input_map_lower[src_lower]
 
@@ -11800,6 +11817,10 @@ def upload_dental_bv_step3():
             sl = src_col.strip().lower()
             if sl in output_cols_lower:
                 cons_col_map[src_col] = output_cols_lower[sl]
+            elif _dental_bv_norm_col_key(src_col) in DENTAL_BV_OUTPUT_COL_ALIASES:
+                cons_col_map[src_col] = DENTAL_BV_OUTPUT_COL_ALIASES[
+                    _dental_bv_norm_col_key(src_col)
+                ]
             elif sl in step3_input_map:
                 cons_col_map[src_col] = step3_input_map[sl]
 
