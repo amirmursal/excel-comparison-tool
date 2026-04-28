@@ -11631,6 +11631,24 @@ def _dental_bv_step3_find_raw_name_columns(df):
     return last_col, first_col
 
 
+def _dental_bv_step3_find_raw_insurance_col(df):
+    """Raw Smilelink insurance column: 'Insurance' or 'Carrier Name' (normalized match)."""
+    by_nk = {_dental_bv_step3_norm_header(c): c for c in df.columns}
+    for nk in ("insurance", "carriername"):
+        if nk in by_nk:
+            return by_nk[nk]
+    return None
+
+
+def _dental_bv_step3_find_raw_policy_id_col(df):
+    """Raw Smilelink policy column: Policy ID / Insurer ID / Pol Employee SSN variants."""
+    by_nk = {_dental_bv_step3_norm_header(c): c for c in df.columns}
+    for nk in ("policyid", "insurerid", "polemployeessnid", "polemployeessn"):
+        if nk in by_nk:
+            return by_nk[nk]
+    return None
+
+
 def _dental_bv_step3_patient_name_last_comma_first(row, last_col, first_col):
     """Build 'Last, First' from two raw columns (handles blanks / NaN)."""
     ln_raw = row.get(last_col, "") if last_col is not None else ""
@@ -11792,26 +11810,9 @@ def upload_dental_bv_step3():
             axis=1,
         )
 
-        # Find Insurance and Policy ID columns in Raw Smilelink
-        raw_insurance_col = None
-        raw_policyid_col = None
-        for c in raw_df.columns:
-            cl = c.strip().lower()
-            if cl == "insurance":
-                raw_insurance_col = c
-            elif cl == "policy id":
-                raw_policyid_col = c
-
-        if raw_insurance_col is None or raw_policyid_col is None:
-            available_cols = ", ".join(raw_df.columns.tolist()[:30])
-            dental_bv_result_step3 = (
-                "❌ Raw Smilelink file is missing 'Insurance' and/or 'Policy ID' columns."
-                f"<br>Available columns: {available_cols}"
-            )
-            dental_bv_step3_data = None
-            dental_bv_step3_output = None
-            _dental_bv_build_final_output()
-            return redirect("/comparison?tab=dentalbv")
+        # Insurance / Policy ID on Raw (flexible headers; optional — missing uses "" for match key).
+        raw_insurance_col = _dental_bv_step3_find_raw_insurance_col(raw_df)
+        raw_policyid_col = _dental_bv_step3_find_raw_policy_id_col(raw_df)
 
         # Find matching columns in Consolidated file
         cons_patient_col = None
@@ -11893,8 +11894,16 @@ def upload_dental_bv_step3():
                 row, lastname_col, firstname_col
             )
             pn = _dental_bv_step3_norm_patient_key(display_patient)
-            ins = str(row.get(raw_insurance_col, "")).strip().lower()
-            pid = str(row.get(raw_policyid_col, "")).strip().lower()
+            ins = (
+                str(row.get(raw_insurance_col, "")).strip().lower()
+                if raw_insurance_col is not None
+                else ""
+            )
+            pid = (
+                str(row.get(raw_policyid_col, "")).strip().lower()
+                if raw_policyid_col is not None
+                else ""
+            )
             key = (pn, ins, pid)
 
             if key not in cons_lookup:
@@ -11918,14 +11927,20 @@ def upload_dental_bv_step3():
 
             # Patient Name, Insurance, Policy ID from Raw Smilelink (the matching keys)
             mapped["Patient Name"] = display_patient.strip()
-            raw_ins_val = row.get(raw_insurance_col, "")
-            if pd.isna(raw_ins_val):
-                raw_ins_val = ""
-            mapped["Insurance"] = str(raw_ins_val).strip()
-            raw_pid_val = row.get(raw_policyid_col, "")
-            if pd.isna(raw_pid_val):
-                raw_pid_val = ""
-            mapped["Policy ID"] = str(raw_pid_val).strip()
+            if raw_insurance_col is not None:
+                raw_ins_val = row.get(raw_insurance_col, "")
+                if pd.isna(raw_ins_val):
+                    raw_ins_val = ""
+                mapped["Insurance"] = str(raw_ins_val).strip()
+            else:
+                mapped["Insurance"] = ""
+            if raw_policyid_col is not None:
+                raw_pid_val = row.get(raw_policyid_col, "")
+                if pd.isna(raw_pid_val):
+                    raw_pid_val = ""
+                mapped["Policy ID"] = str(raw_pid_val).strip()
+            else:
+                mapped["Policy ID"] = ""
 
             mapped["DOB"] = _dental_bv_format_date_mmddyyyy(mapped.get("DOB"))
             mapped["Appointment"] = _dental_bv_format_date_mmddyyyy(
