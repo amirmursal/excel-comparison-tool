@@ -12188,16 +12188,40 @@ def _apt_build_productivity(df, agent_col_name, date_col_name, remark_col, selec
     if filtered.empty:
         return None, None, 0, 0
 
-    filtered["_agent"] = filtered[agent_col_name].fillna("").astype(str).str.strip()
+    # Case-insensitive agent identity: same spelling different casing → one agent for counts/averages.
+    filtered["_agent_raw"] = filtered[agent_col_name].fillna("").astype(str).str.strip()
+    filtered["_agent_key"] = filtered["_agent_raw"].str.lower()
     filtered["_workdate"] = pd.to_datetime(filtered[date_col_name], errors="coerce")
-    filtered = filtered[(filtered["_agent"] != "") & (filtered["_workdate"].notna())]
+    filtered = filtered[(filtered["_agent_raw"] != "") & (filtered["_workdate"].notna())]
     if filtered.empty:
         return None, None, 0, 0
 
-    detail_grouped = (
-        filtered.groupby(["_agent", "_workdate"]).size().reset_index(name="Count")
+    def _apt_pick_agent_display(series):
+        s = series.dropna().astype(str).str.strip()
+        s = s[s != ""]
+        if s.empty:
+            return ""
+        m = s.mode()
+        if len(m) > 0:
+            return m.iloc[0]
+        return s.iloc[0]
+
+    key_display = (
+        filtered.groupby("_agent_key", sort=False)["_agent_raw"]
+        .agg(_apt_pick_agent_display)
+        .reset_index()
     )
-    detail_grouped.columns = ["Agent Name", "Work Date", "Count"]
+    key_display.columns = ["_agent_key", "_agent_display"]
+
+    detail_grouped = (
+        filtered.groupby(["_agent_key", "_workdate"], sort=False)
+        .size()
+        .reset_index(name="Count")
+    )
+    detail_grouped = detail_grouped.merge(key_display, on="_agent_key", how="left")
+    detail_grouped["Agent Name"] = detail_grouped["_agent_display"].fillna("")
+    detail_grouped["Work Date"] = detail_grouped["_workdate"]
+    detail_grouped = detail_grouped[["Agent Name", "Work Date", "Count"]]
     detail_grouped = detail_grouped.sort_values(["Agent Name", "Work Date"])
 
     summary_rows = []
