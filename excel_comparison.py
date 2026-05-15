@@ -5227,6 +5227,32 @@ def compare_patient_names(raw_df, previous_df):
             # Column already exists, initialize empty values if needed
             result_df[secondary_col_name] = result_df[secondary_col_name].fillna("")
 
+        # Ensure Team Leader column exists right after Supervisor.
+        supervisor_col = None
+        for col in result_df.columns:
+            if str(col).strip().lower() == "supervisor":
+                supervisor_col = col
+                break
+        if supervisor_col:
+            team_leader_col = None
+            for col in result_df.columns:
+                if str(col).strip().lower() == "team leader":
+                    team_leader_col = col
+                    break
+
+            supervisor_idx = result_df.columns.get_loc(supervisor_col)
+            if team_leader_col is None:
+                result_df.insert(supervisor_idx + 1, "Team Leader", "")
+            else:
+                # Keep existing data but move column right after Supervisor.
+                team_leader_data = result_df[team_leader_col].copy()
+                if team_leader_col != "Team Leader":
+                    result_df = result_df.drop(columns=[team_leader_col])
+                else:
+                    result_df = result_df.drop(columns=["Team Leader"])
+                supervisor_idx = result_df.columns.get_loc(supervisor_col)
+                result_df.insert(supervisor_idx + 1, "Team Leader", team_leader_data)
+
         # Compare and populate insurance columns in Smart Assist file from Appointment Report
         matched_count = 0
         unmatched_patids = []  # Track unmatched PATIDs for debugging
@@ -9232,6 +9258,34 @@ def download_smart_assist():
 
                             df_clean[col] = df_clean[col].apply(format_date)
                             df_clean[col] = df_clean[col].astype(str)
+
+                    # Ensure Team Leader column exists right after Supervisor.
+                    supervisor_col = None
+                    for col in df_clean.columns:
+                        if str(col).strip().lower() == "supervisor":
+                            supervisor_col = col
+                            break
+                    if supervisor_col:
+                        team_leader_col = None
+                        for col in df_clean.columns:
+                            if str(col).strip().lower() == "team leader":
+                                team_leader_col = col
+                                break
+
+                        supervisor_idx = df_clean.columns.get_loc(supervisor_col)
+                        if team_leader_col is None:
+                            df_clean.insert(supervisor_idx + 1, "Team Leader", "")
+                        else:
+                            # Keep existing data but move column right after Supervisor.
+                            team_leader_data = df_clean[team_leader_col].copy()
+                            if team_leader_col != "Team Leader":
+                                df_clean = df_clean.drop(columns=[team_leader_col])
+                            else:
+                                df_clean = df_clean.drop(columns=["Team Leader"])
+                            supervisor_idx = df_clean.columns.get_loc(supervisor_col)
+                            df_clean.insert(
+                                supervisor_idx + 1, "Team Leader", team_leader_data
+                            )
 
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
                     _apply_imagen_excel_sheet_styling(writer, sheet_name, df_clean)
