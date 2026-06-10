@@ -5253,6 +5253,37 @@ def compare_patient_names(raw_df, previous_df):
                 supervisor_idx = result_df.columns.get_loc(supervisor_col)
                 result_df.insert(supervisor_idx + 1, "Team Leader", team_leader_data)
 
+        # Ensure Relationship column exists between Group Number and Category.
+        group_number_col = None
+        category_col = None
+        for col in result_df.columns:
+            col_norm = str(col).strip().lower().replace("_", " ")
+            if col_norm == "group number":
+                group_number_col = col
+            elif col_norm == "category":
+                category_col = col
+        if group_number_col and category_col:
+            relationship_col = None
+            for col in result_df.columns:
+                if str(col).strip().lower() == "relationship":
+                    relationship_col = col
+                    break
+
+            group_idx = result_df.columns.get_loc(group_number_col)
+            if relationship_col is None:
+                # Place right after Group Number (i.e., before Category in typical layout).
+                result_df.insert(group_idx + 1, "Relationship", "")
+            else:
+                rel_idx = result_df.columns.get_loc(relationship_col)
+                if rel_idx != group_idx + 1:
+                    relationship_data = result_df[relationship_col].copy()
+                    if relationship_col != "Relationship":
+                        result_df = result_df.drop(columns=[relationship_col])
+                    else:
+                        result_df = result_df.drop(columns=["Relationship"])
+                    group_idx = result_df.columns.get_loc(group_number_col)
+                    result_df.insert(group_idx + 1, "Relationship", relationship_data)
+
         # Compare and populate insurance columns in Smart Assist file from Appointment Report
         matched_count = 0
         unmatched_patids = []  # Track unmatched PATIDs for debugging
@@ -9287,6 +9318,40 @@ def download_smart_assist():
                                 supervisor_idx + 1, "Team Leader", team_leader_data
                             )
 
+                    # Ensure Relationship column exists between Group Number and Category.
+                    group_number_col = None
+                    category_col = None
+                    for col in df_clean.columns:
+                        col_norm = str(col).strip().lower().replace("_", " ")
+                        if col_norm == "group number":
+                            group_number_col = col
+                        elif col_norm == "category":
+                            category_col = col
+                    if group_number_col and category_col:
+                        relationship_col = None
+                        for col in df_clean.columns:
+                            if str(col).strip().lower() == "relationship":
+                                relationship_col = col
+                                break
+
+                        group_idx = df_clean.columns.get_loc(group_number_col)
+                        category_idx = df_clean.columns.get_loc(category_col)
+                        if relationship_col is None:
+                            # Place right after Group Number (i.e., before Category in typical layout).
+                            df_clean.insert(group_idx + 1, "Relationship", "")
+                        else:
+                            rel_idx = df_clean.columns.get_loc(relationship_col)
+                            if rel_idx != group_idx + 1:
+                                relationship_data = df_clean[relationship_col].copy()
+                                if relationship_col != "Relationship":
+                                    df_clean = df_clean.drop(columns=[relationship_col])
+                                else:
+                                    df_clean = df_clean.drop(columns=["Relationship"])
+                                group_idx = df_clean.columns.get_loc(group_number_col)
+                                df_clean.insert(
+                                    group_idx + 1, "Relationship", relationship_data
+                                )
+
                     df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
                     _apply_imagen_excel_sheet_styling(writer, sheet_name, df_clean)
 
@@ -10394,8 +10459,43 @@ def download_reallocation():
         try:
             with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 for sheet_name, df in data_to_write.items():
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
+                    df_clean = df.copy()
+
+                    # Ensure Relationship column exists between Group Number and Category.
+                    group_number_col = None
+                    category_col = None
+                    for col in df_clean.columns:
+                        col_norm = str(col).strip().lower().replace("_", " ")
+                        if col_norm == "group number":
+                            group_number_col = col
+                        elif col_norm == "category":
+                            category_col = col
+                    if group_number_col and category_col:
+                        relationship_col = None
+                        for col in df_clean.columns:
+                            if str(col).strip().lower() == "relationship":
+                                relationship_col = col
+                                break
+
+                        group_idx = df_clean.columns.get_loc(group_number_col)
+                        if relationship_col is None:
+                            # Place right after Group Number (i.e., before Category in typical layout).
+                            df_clean.insert(group_idx + 1, "Relationship", "")
+                        else:
+                            rel_idx = df_clean.columns.get_loc(relationship_col)
+                            if rel_idx != group_idx + 1:
+                                relationship_data = df_clean[relationship_col].copy()
+                                if relationship_col != "Relationship":
+                                    df_clean = df_clean.drop(columns=[relationship_col])
+                                else:
+                                    df_clean = df_clean.drop(columns=["Relationship"])
+                                group_idx = df_clean.columns.get_loc(group_number_col)
+                                df_clean.insert(
+                                    group_idx + 1, "Relationship", relationship_data
+                                )
+
+                    df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df_clean)
 
             return send_file(temp_path, as_attachment=True, download_name=filename)
 
