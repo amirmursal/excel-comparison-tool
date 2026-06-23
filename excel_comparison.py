@@ -5227,6 +5227,32 @@ def compare_patient_names(raw_df, previous_df):
             # Column already exists, initialize empty values if needed
             result_df[secondary_col_name] = result_df[secondary_col_name].fillna("")
 
+        # Ensure Policy ID exists between Dental Secondary Ins Carr and Received date.
+        policy_col = None
+        received_date_col = None
+        for col in result_df.columns:
+            col_norm = str(col).strip().lower().replace("_", " ")
+            if col_norm == "policy id":
+                policy_col = col
+            elif col_norm == "received date":
+                received_date_col = col
+
+        secondary_idx = result_df.columns.get_loc(secondary_col_name)
+        target_idx = secondary_idx + 1
+        if policy_col is None:
+            result_df.insert(target_idx, "Policy ID", "")
+        else:
+            current_idx = result_df.columns.get_loc(policy_col)
+            if current_idx != target_idx:
+                policy_data = result_df[policy_col].copy()
+                if policy_col != "Policy ID":
+                    result_df = result_df.drop(columns=[policy_col])
+                else:
+                    result_df = result_df.drop(columns=["Policy ID"])
+                secondary_idx = result_df.columns.get_loc(secondary_col_name)
+                target_idx = secondary_idx + 1
+                result_df.insert(target_idx, "Policy ID", policy_data)
+
         # Ensure Team Leader column exists right after Supervisor.
         supervisor_col = None
         for col in result_df.columns:
@@ -8871,6 +8897,7 @@ def upload_smart_assist():
                 "Patient Name",
                 "Dental Primary Ins Carr",
                 "Dental Secondary Ins Carr",
+                "Policy ID",
                 "Received date",
                 "Source",
                 "Status Code",
