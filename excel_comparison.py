@@ -5227,6 +5227,29 @@ def compare_patient_names(raw_df, previous_df):
             # Column already exists, initialize empty values if needed
             result_df[secondary_col_name] = result_df[secondary_col_name].fillna("")
 
+        # Ensure OON 20% exists between Dental Secondary Ins Carr and Received date.
+        oon_col = None
+        for col in result_df.columns:
+            if str(col).strip().lower().replace("_", " ") == "oon 20%":
+                oon_col = col
+                break
+
+        secondary_idx = result_df.columns.get_loc(secondary_col_name)
+        target_idx = secondary_idx + 1
+        if oon_col is None:
+            result_df.insert(target_idx, "OON 20%", "")
+        else:
+            current_idx = result_df.columns.get_loc(oon_col)
+            if current_idx != target_idx:
+                oon_data = result_df[oon_col].copy()
+                if oon_col != "OON 20%":
+                    result_df = result_df.drop(columns=[oon_col])
+                else:
+                    result_df = result_df.drop(columns=["OON 20%"])
+                secondary_idx = result_df.columns.get_loc(secondary_col_name)
+                target_idx = secondary_idx + 1
+                result_df.insert(target_idx, "OON 20%", oon_data)
+
         # Ensure Team Leader column exists right after Supervisor.
         supervisor_col = None
         for col in result_df.columns:
@@ -8871,6 +8894,7 @@ def upload_smart_assist():
                 "Patient Name",
                 "Dental Primary Ins Carr",
                 "Dental Secondary Ins Carr",
+                "OON 20%",
                 "Received date",
                 "Source",
                 "Status Code",
@@ -8987,6 +9011,8 @@ def upload_smart_assist():
             standardized["Dental Secondary Ins Carr"] = (
                 df[secondary_ins_col] if secondary_ins_col else ""
             )
+            oon_20_col = find_col(["oon", "20"])
+            standardized["OON 20%"] = df[oon_20_col] if oon_20_col else ""
             # Set "Received date" to current computer date in MM/DD/YYYY format
             current_date = datetime.now().strftime("%m/%d/%Y")
             standardized["Received date"] = current_date
