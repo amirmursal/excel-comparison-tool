@@ -5934,8 +5934,8 @@ def download_result():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"smart_assist_result_{timestamp}.xlsx"
+        date_str = datetime.now().strftime("%m.%d.%Y")
+        filename = f"comparison tool report - {date_str}.xlsx"
 
     try:
         # Create a temporary file
@@ -9277,9 +9277,9 @@ def download_smart_assist():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        # Format: Imagen Dental IV Allocation File - MM.DD.YYYY.xlsx
+        # Format: processed smart assist report - MM.DD.YYYY.xlsx
         date_str = datetime.now().strftime("%m.%d.%Y")
-        filename = f"Imagen Dental IV Allocation File - {date_str}.xlsx"
+        filename = f"processed smart assist report - {date_str}.xlsx"
 
     try:
         import tempfile
