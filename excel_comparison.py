@@ -153,6 +153,7 @@ nh_output = None  # bytes for download
 NH_OUTPUT_COLUMNS = [
     "Software",
     "Office Name",
+    "Dr. Name",
     "PracticeId",
     "Location",
     "Source",
@@ -186,6 +187,7 @@ NH_OUTPUT_COLUMNS = [
 NH_DATE_COLUMNS_MM_DD_YYYY = [
     "Received Date",
     "DOS/DOB",
+    "DOB",
     "Work Date",
     "Subscriber DOB",
     "Date work",
@@ -198,6 +200,7 @@ NH_COLUMN_ALIASES = {
     "Office Name": ["Office"],
     "PracticeId": ["Practice ID"],
     "Agent Name": ["Agent"],
+    "Dr. Name": ["Doctor Name", "Dr Name", "Doctor", "Dr."],
 }
 
 NH_STEP1_COLUMN_MAPPING = {
@@ -208,6 +211,10 @@ NH_STEP1_COLUMN_MAPPING = {
     "Appointmen": "Appointment",
     "Appointment": "Appointment",
     "Practice ID": "PracticeId",
+    "Dr. Name": "Dr. Name",
+    "Doctor Name": "Dr. Name",
+    "Dr Name": "Dr. Name",
+    "Doctor": "Dr. Name",
 }
 
 # Insurance values that should set Remark to "Not to Work" in NH final output (matched case-insensitively)
@@ -12841,6 +12848,48 @@ def _nh_series_format_date_mmddyyyy_or_keep(series):
     return pd.Series(series).apply(_nh_format_date_cell_mmddyyyy_or_keep)
 
 
+def _nh_format_date_like_cell_with_na(v):
+    """NH date-like formatting rule:
+    - blank / '-' / NaT / no-info variations -> 'N/A'
+    - parseable date -> MM/DD/YYYY
+    - otherwise keep original value as-is
+    """
+    if v is None:
+        return "N/A"
+    try:
+        if pd.isna(v) and not isinstance(v, str):
+            return "N/A"
+    except (ValueError, TypeError):
+        pass
+
+    s = str(v).strip()
+    if not s:
+        return "N/A"
+
+    s_lower = s.lower()
+    nat_norm = re.sub(r"[\s\-_./]+", "", s_lower)
+    if s == "-" or s_lower in {"nat", "none", "null", "n/a", "na"} or nat_norm == "nat":
+        return "N/A"
+
+    no_info_norm = re.sub(r"[\s\-_]+", "", s_lower)
+    if no_info_norm == "noinfo":
+        return "N/A"
+
+    return _nh_format_date_cell_mmddyyyy_or_keep(v)
+
+
+def _nh_series_format_appointment(series):
+    if series is None:
+        return pd.Series(dtype=object)
+    return pd.Series(series).apply(_nh_format_date_like_cell_with_na)
+
+
+def _nh_series_format_date_like_with_na(series):
+    if series is None:
+        return pd.Series(dtype=object)
+    return pd.Series(series).apply(_nh_format_date_like_cell_with_na)
+
+
 def _nh_map_file2_to_output_columns(df2):
     """Map a Step 2 dataframe to NH_OUTPUT_COLUMNS; returns a DataFrame with same columns."""
     mapped = pd.DataFrame(columns=NH_OUTPUT_COLUMNS)
@@ -12958,9 +13007,14 @@ def nh_merge_step2_sheets():
         merged_df = merged_df.fillna("")
         for _nh_col in NH_DATE_COLUMNS_MM_DD_YYYY:
             if _nh_col in merged_df.columns:
-                merged_df[_nh_col] = _nh_series_format_date_mmddyyyy_or_keep(
-                    merged_df[_nh_col]
-                )
+                if _nh_col in {"Appointment", "DOS/DOB", "Subscriber DOB", "DOB"}:
+                    merged_df[_nh_col] = _nh_series_format_appointment(
+                        merged_df[_nh_col]
+                    )
+                else:
+                    merged_df[_nh_col] = _nh_series_format_date_mmddyyyy_or_keep(
+                        merged_df[_nh_col]
+                    )
 
         # Apply Remark rules from Insurance: "NO INFO" -> "No Info"; MCD list -> "Not to Work" (except Office Name "Dr. Startaloo")
         if "Insurance" in merged_df.columns and "Remark" in merged_df.columns:
