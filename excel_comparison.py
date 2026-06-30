@@ -5117,16 +5117,14 @@ def compare_patient_names(raw_df, previous_df):
                     "secondary": secondary_value,
                 }
 
-        # Build mapping from Patient ID to "Dental Primary Ins Carr" and "Dental Secondary Ins Carr" from Conversion Report (File 2)
-        # This is used to replace "CONVERSION <text>" values with actual insurance names
+        # Build mapping from Patient ID to conversion insurance + row payload.
+        # Insurance fallback order is Appointment -> Conversion -> "No Insurance".
         conversion_insurance_map = {}  # Primary insurance mapping
         conversion_secondary_insurance_map = {}  # Secondary insurance mapping
+        conversion_row_map = {}  # First conversion row per patient ID
         if merge_file2_data:
-            # Search through all sheets in Conversion Report (except "Zero ID")
+            # Search through all sheets in Conversion Report.
             for sheet_name, conversion_df in merge_file2_data.items():
-                if sheet_name.lower().strip() == "zero id":
-                    continue
-
                 # Find Patient ID column in Conversion Report
                 conversion_pat_id_col = None
                 for col in conversion_df.columns:
@@ -5143,37 +5141,33 @@ def compare_patient_names(raw_df, previous_df):
                             conversion_pat_id_col = col
                             break
 
-                # Find "Dental Primary Ins Carr" column in Conversion Report
-                conversion_primary_ins_col = None
+                # Find primary/secondary insurance candidates in Conversion Report.
+                # Prefer explicit primary/secondary columns; use generic insurance as fallback.
+                conversion_primary_candidates = []
+                conversion_secondary_candidates = []
+                generic_primary_fallback_candidates = []
                 for col in conversion_df.columns:
                     col_lower = str(col).lower().strip()
-                    if (
-                        "dental" in col_lower
-                        and "primary" in col_lower
-                        and "ins" in col_lower
-                    ) or (
-                        "dental" in col_lower
-                        and "primary" in col_lower
-                        and "insurance" in col_lower
+                    if "secondary" in col_lower and (
+                        "ins" in col_lower or "insurance" in col_lower
                     ):
-                        conversion_primary_ins_col = col
-                        break
+                        conversion_secondary_candidates.append(col)
+                        continue
+                    if "primary" in col_lower and (
+                        "ins" in col_lower or "insurance" in col_lower
+                    ):
+                        conversion_primary_candidates.append(col)
+                        continue
+                    if col_lower in [
+                        "insurance",
+                        "insurance name",
+                        "carrier",
+                        "carrier name",
+                    ]:
+                        generic_primary_fallback_candidates.append(col)
 
-                # Find "Dental Secondary Ins Carr" column in Conversion Report
-                conversion_secondary_ins_col = None
-                for col in conversion_df.columns:
-                    col_lower = str(col).lower().strip()
-                    if (
-                        "dental" in col_lower
-                        and "secondary" in col_lower
-                        and "ins" in col_lower
-                    ) or (
-                        "dental" in col_lower
-                        and "secondary" in col_lower
-                        and "insurance" in col_lower
-                    ):
-                        conversion_secondary_ins_col = col
-                        break
+                if not conversion_primary_candidates:
+                    conversion_primary_candidates = generic_primary_fallback_candidates
 
                 # Build mapping if Patient ID and at least one insurance column found
                 if conversion_pat_id_col:
@@ -5181,29 +5175,52 @@ def compare_patient_names(raw_df, previous_df):
                         pat_id_val = row[conversion_pat_id_col]
                         pat_id = normalize_patient_id(pat_id_val)
                         if pat_id:
-                            # Map primary insurance (only add if not already in map - first occurrence wins)
-                            if (
-                                conversion_primary_ins_col
-                                and pat_id not in conversion_insurance_map
-                            ):
-                                ins_val = row[conversion_primary_ins_col]
-                                if pd.notna(ins_val):
-                                    ins_str = str(ins_val).strip()
-                                    if ins_str:  # Only add non-empty values
-                                        conversion_insurance_map[pat_id] = ins_str
+                            # Keep the first conversion row for this patient for append flow.
+                            if pat_id not in conversion_row_map:
+                                conversion_row_map[pat_id] = row
 
-                            # Map secondary insurance (only add if not already in map - first occurrence wins)
-                            if (
-                                conversion_secondary_ins_col
-                                and pat_id not in conversion_secondary_insurance_map
-                            ):
-                                ins_val = row[conversion_secondary_ins_col]
-                                if pd.notna(ins_val):
-                                    ins_str = str(ins_val).strip()
-                                    if ins_str:  # Only add non-empty values
+                            # Map primary insurance (prefer first non-empty, but allow later rows
+                            # to fill if earlier value was missing).
+                            if conversion_primary_candidates:
+                                selected_primary = ""
+                                for primary_col in conversion_primary_candidates:
+                                    ins_val = row[primary_col]
+                                    if pd.notna(ins_val):
+                                        ins_str = str(ins_val).strip()
+                                        if ins_str:
+                                            selected_primary = ins_str
+                                            break
+                                if selected_primary:
+                                    existing_primary = conversion_insurance_map.get(
+                                        pat_id, ""
+                                    )
+                                    if not str(existing_primary).strip():
+                                        conversion_insurance_map[pat_id] = selected_primary
+
+                            # Map secondary insurance (same fill behavior as primary).
+                            if conversion_secondary_candidates:
+                                selected_secondary = ""
+                                for secondary_col in conversion_secondary_candidates:
+                                    ins_val = row[secondary_col]
+                                    if pd.notna(ins_val):
+                                        ins_str = str(ins_val).strip()
+                                        if ins_str:
+                                            selected_secondary = ins_str
+                                            break
+                                if selected_secondary:
+                                    existing_secondary = (
+                                        conversion_secondary_insurance_map.get(pat_id, "")
+                                    )
+                                    if not str(existing_secondary).strip():
                                         conversion_secondary_insurance_map[pat_id] = (
-                                            ins_str
+                                            selected_secondary
                                         )
+
+        def _is_missing_insurance(value):
+            """Treat NaN/blank as missing; keep explicit values like 'No Insurance'."""
+            if pd.isna(value):
+                return True
+            return str(value).strip() == ""
 
         # Use Smart Assist file as the result file (base)
         result_df = smart_assist_df.copy()
@@ -5323,10 +5340,17 @@ def compare_patient_names(raw_df, previous_df):
         conversion_secondary_replaced_count = (
             0  # Track how many secondary CONVERSION values were replaced
         )
+        fallback_to_conversion_count = 0
+        secondary_to_primary_fallback_count = 0
+        no_insurance_assigned_count = 0
+        existing_smart_assist_patids = set()
         for idx, row in result_df.iterrows():
             patid_val = row[previous_patient_col]
             # Normalize patient ID for consistent matching
             patid = normalize_patient_id(patid_val)
+            if patid:
+                existing_smart_assist_patids.add(patid)
+
             if patid and patid in appointment_insurance_map:
                 # Match found - Patient ID from Appointment Report matches PATID in Smart Assist
                 # Copy insurance data FROM Appointment Report TO Smart Assist file
@@ -5370,13 +5394,176 @@ def compare_patient_names(raw_df, previous_df):
                         # If no match found in Conversion Report, set to blank
                         secondary_insurance_value = ""
 
+                # Priority fallback for PRIMARY insurance:
+                # Appointment value -> Conversion value -> "No Insurance"
+                primary_missing_after_appointment = _is_missing_insurance(
+                    primary_insurance_value
+                )
+                if primary_missing_after_appointment and patid in conversion_insurance_map:
+                    primary_insurance_value = format_insurance_name(
+                        conversion_insurance_map[patid]
+                    )
+                    if not _is_missing_insurance(primary_insurance_value):
+                        fallback_to_conversion_count += 1
+                # If conversion primary is empty but conversion secondary exists, use secondary
+                # as primary to avoid false "No Insurance".
+                if _is_missing_insurance(primary_insurance_value) and (
+                    patid in conversion_secondary_insurance_map
+                ):
+                    primary_insurance_value = format_insurance_name(
+                        conversion_secondary_insurance_map[patid]
+                    )
+                    if not _is_missing_insurance(primary_insurance_value):
+                        secondary_to_primary_fallback_count += 1
+                if _is_missing_insurance(primary_insurance_value):
+                    primary_insurance_value = "No Insurance"
+                    no_insurance_assigned_count += 1
+
+                # Secondary fallback: if blank in appointment, prefer conversion value.
+                if _is_missing_insurance(
+                    secondary_insurance_value
+                ) and patid in conversion_secondary_insurance_map:
+                    secondary_insurance_value = format_insurance_name(
+                        conversion_secondary_insurance_map[patid]
+                    )
+
                 result_df.at[idx, primary_col_name] = primary_insurance_value
                 result_df.at[idx, secondary_col_name] = secondary_insurance_value
                 matched_count += 1
             elif patid:
+                # Strict Priority 1 flow when appointment insurance is unavailable:
+                # Appointment (missing) -> Conversion -> "No Insurance"
+                primary_insurance_value = ""
+                secondary_insurance_value = ""
+
+                if patid in conversion_insurance_map:
+                    primary_insurance_value = format_insurance_name(
+                        conversion_insurance_map[patid]
+                    )
+                    if not _is_missing_insurance(primary_insurance_value):
+                        fallback_to_conversion_count += 1
+                if patid in conversion_secondary_insurance_map:
+                    secondary_insurance_value = format_insurance_name(
+                        conversion_secondary_insurance_map[patid]
+                    )
+                if _is_missing_insurance(primary_insurance_value) and (
+                    patid in conversion_secondary_insurance_map
+                ):
+                    primary_insurance_value = format_insurance_name(
+                        conversion_secondary_insurance_map[patid]
+                    )
+                    if not _is_missing_insurance(primary_insurance_value):
+                        secondary_to_primary_fallback_count += 1
+                if _is_missing_insurance(primary_insurance_value):
+                    primary_insurance_value = "No Insurance"
+                    no_insurance_assigned_count += 1
+
+                result_df.at[idx, primary_col_name] = primary_insurance_value
+                result_df.at[idx, secondary_col_name] = secondary_insurance_value
+
                 # Track unmatched PATIDs (limit to first 10 for display)
                 if len(unmatched_patids) < 10:
                     unmatched_patids.append(str(patid_val))
+
+        # Priority 2: append patients present in Conversion Report but missing from Smart Assist output.
+        appended_from_conversion_count = 0
+        skipped_not_eligible_count = 0
+        if conversion_row_map:
+            # Build flexible conversion->result column mapping.
+            result_col_by_norm = {
+                str(col).strip().lower().replace("_", " "): col for col in result_df.columns
+            }
+            for patid, conversion_row in conversion_row_map.items():
+                if patid in existing_smart_assist_patids:
+                    continue
+
+                # Skip terminated patients from Conversion Report.
+                conversion_status_value = ""
+                for conv_col in conversion_row.index:
+                    norm_conv_col = str(conv_col).strip().lower().replace("_", " ")
+                    if norm_conv_col == "status":
+                        raw_status = conversion_row[conv_col]
+                        if pd.notna(raw_status):
+                            conversion_status_value = str(raw_status).strip()
+                        break
+                if conversion_status_value.lower() == "not eligible":
+                    skipped_not_eligible_count += 1
+                    continue
+
+                new_row = {col: "" for col in result_df.columns}
+                new_row[previous_patient_col] = patid
+
+                # Populate all matching columns from conversion row where names align.
+                for conv_col in conversion_row.index:
+                    norm_conv_col = str(conv_col).strip().lower().replace("_", " ")
+                    result_col = result_col_by_norm.get(norm_conv_col)
+                    if not result_col:
+                        continue
+                    conv_val = conversion_row[conv_col]
+                    if pd.notna(conv_val):
+                        new_row[result_col] = conv_val
+
+                # Ensure insurance columns respect fallback logic.
+                primary_from_conversion = format_insurance_name(
+                    conversion_insurance_map.get(patid, "")
+                )
+                secondary_from_conversion = format_insurance_name(
+                    conversion_secondary_insurance_map.get(patid, "")
+                )
+                if _is_missing_insurance(primary_from_conversion) and not _is_missing_insurance(
+                    secondary_from_conversion
+                ):
+                    primary_from_conversion = secondary_from_conversion
+                    secondary_to_primary_fallback_count += 1
+                if _is_missing_insurance(primary_from_conversion):
+                    primary_from_conversion = "No Insurance"
+                    no_insurance_assigned_count += 1
+                else:
+                    fallback_to_conversion_count += 1
+
+                new_row[primary_col_name] = primary_from_conversion
+                new_row[secondary_col_name] = secondary_from_conversion
+
+                result_df = pd.concat([result_df, pd.DataFrame([new_row])], ignore_index=True)
+                existing_smart_assist_patids.add(patid)
+                appended_from_conversion_count += 1
+
+        # Trace + repair pass:
+        # If conversion has insurance for a patient but output primary is still No Insurance,
+        # backfill primary from conversion and report any remaining IDs.
+        repaired_no_ins_with_conversion_count = 0
+        conversion_has_any_insurance_ids = set(conversion_insurance_map.keys()) | set(
+            conversion_secondary_insurance_map.keys()
+        )
+        for idx, row in result_df.iterrows():
+            patid = normalize_patient_id(row.get(previous_patient_col))
+            if not patid or patid not in conversion_has_any_insurance_ids:
+                continue
+
+            current_primary = row.get(primary_col_name, "")
+            if str(current_primary).strip().lower().startswith("no ins"):
+                replacement_primary = format_insurance_name(
+                    conversion_insurance_map.get(patid, "")
+                )
+                if _is_missing_insurance(replacement_primary):
+                    replacement_primary = format_insurance_name(
+                        conversion_secondary_insurance_map.get(patid, "")
+                    )
+                if not _is_missing_insurance(replacement_primary) and not str(
+                    replacement_primary
+                ).strip().lower().startswith("no ins"):
+                    result_df.at[idx, primary_col_name] = replacement_primary
+                    repaired_no_ins_with_conversion_count += 1
+
+        still_no_ins_with_conversion_ids = []
+        for _, row in result_df.iterrows():
+            patid = normalize_patient_id(row.get(previous_patient_col))
+            if not patid or patid not in conversion_has_any_insurance_ids:
+                continue
+            current_primary = row.get(primary_col_name, "")
+            if str(current_primary).strip().lower().startswith("no ins"):
+                if len(still_no_ins_with_conversion_ids) < 15:
+                    still_no_ins_with_conversion_ids.append(str(patid))
 
         # Count statistics
         total_patients = len(result_df)
@@ -5395,7 +5582,13 @@ def compare_patient_names(raw_df, previous_df):
 
         # Build conversion replacement info
         conversion_info = ""
-        if conversion_replaced_count > 0 or conversion_secondary_replaced_count > 0:
+        if (
+            conversion_replaced_count > 0
+            or conversion_secondary_replaced_count > 0
+            or fallback_to_conversion_count > 0
+            or appended_from_conversion_count > 0
+            or no_insurance_assigned_count > 0
+        ):
             conversion_info_parts = []
             if conversion_replaced_count > 0:
                 conversion_info_parts.append(f"Primary: {conversion_replaced_count}")
@@ -5403,7 +5596,22 @@ def compare_patient_names(raw_df, previous_df):
                 conversion_info_parts.append(
                     f"Secondary: {conversion_secondary_replaced_count}"
                 )
-            conversion_info = f"\n- CONVERSION values replaced with Conversion Report insurance ({', '.join(conversion_info_parts)})"
+            if conversion_info_parts:
+                conversion_info += f"\n- CONVERSION values replaced with Conversion Report insurance ({', '.join(conversion_info_parts)})"
+            if fallback_to_conversion_count > 0:
+                conversion_info += f"\n- Blank/missing Appointment primary insurance filled from Conversion Report: {fallback_to_conversion_count}"
+            if secondary_to_primary_fallback_count > 0:
+                conversion_info += f"\n- Primary filled from Conversion secondary insurance: {secondary_to_primary_fallback_count}"
+            if appended_from_conversion_count > 0:
+                conversion_info += f"\n- Conversion-only patients appended to Smart Assist output: {appended_from_conversion_count}"
+            if skipped_not_eligible_count > 0:
+                conversion_info += f"\n- Conversion-only patients skipped (Status = Not Eligible): {skipped_not_eligible_count}"
+            if repaired_no_ins_with_conversion_count > 0:
+                conversion_info += f"\n- No-Insurance rows auto-repaired using Conversion insurance: {repaired_no_ins_with_conversion_count}"
+            if still_no_ins_with_conversion_ids:
+                conversion_info += f"\n- ⚠️ Still No Insurance despite Conversion insurance (sample IDs): {', '.join(still_no_ins_with_conversion_ids)}"
+            if no_insurance_assigned_count > 0:
+                conversion_info += f"\n- 'No Insurance' assigned only when missing in both reports: {no_insurance_assigned_count}"
 
         result_message = f"""✅ Comparison completed successfully!
 
@@ -5429,7 +5637,8 @@ def compare_patient_names(raw_df, previous_df):
 - Based on Smart Assist file
 - "Dental Primary Ins Carr" - populated from Appointment Report for matched records
 - "Dental Secondary Ins Carr" - populated from Appointment Report for matched records
-- Empty cells for records not found in Appointment report
+- Missing Appointment insurance falls back to Conversion Report first, then "No Insurance"
+- Conversion-only patients are appended with mapped details
 {f'- "CONVERSION" values replaced with insurance from Conversion Report (Primary: {conversion_replaced_count}, Secondary: {conversion_secondary_replaced_count})' if (conversion_replaced_count > 0 or conversion_secondary_replaced_count > 0) else ''}
 
 💾 Ready to download the result file!"""
@@ -5643,6 +5852,39 @@ def merge_dataframes_by_columns(df1, df2):
     return merged_df
 
 
+def _filter_not_eligible_rows(df):
+    """Remove rows where any status-like column indicates Not Eligible."""
+    if df is None or df.empty:
+        return df
+
+    # Be tolerant to variants like "Status", "Patient Status", "Appt_Status", etc.
+    status_like_cols = []
+    for col in df.columns:
+        col_norm = str(col).strip().lower().replace("_", " ")
+        if "status" in col_norm:
+            status_like_cols.append(col)
+
+    if not status_like_cols:
+        return df
+
+    # Exclude rows that contain "not eligible" in any status-like column.
+    exclude_mask = pd.Series(False, index=df.index)
+    for status_col in status_like_cols:
+        status_series = (
+            df[status_col]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .str.replace(r"\s+", " ", regex=True)
+        )
+        exclude_mask = exclude_mask | status_series.str.contains(
+            r"\bnot\s*eligible\b", regex=True, na=False
+        )
+
+    return df[~exclude_mask].copy()
+
+
 @app.route("/upload_merge_file1", methods=["POST"])
 def upload_merge_file1():
     global merge_file1_data, merge_file1_filename, merge_result
@@ -5747,6 +5989,7 @@ def merge_files():
         # Merge all non-Zero ID sheets into one single dataframe
         all_merged_dataframes = []
         total_rows_before = 0
+        total_not_eligible_removed = 0
 
         for sheet_name in other_sheets:
             df1 = merge_file1_data.get(sheet_name, pd.DataFrame())
@@ -5754,14 +5997,19 @@ def merge_files():
 
             # Merge the dataframes by matching columns
             merged_df = merge_dataframes_by_columns(df1, df2)
+            rows_before_filter = len(merged_df)
+            merged_df = _filter_not_eligible_rows(merged_df)
+            rows_removed = rows_before_filter - len(merged_df)
+            total_not_eligible_removed += rows_removed
 
             if not merged_df.empty:
                 all_merged_dataframes.append(merged_df)
                 rows_before = len(df1) + len(df2)
                 total_rows_before += rows_before
-                merge_summary.append(
-                    f"Sheet '{sheet_name}': {len(df1)} + {len(df2)} rows"
-                )
+                detail = f"Sheet '{sheet_name}': {len(df1)} + {len(df2)} rows"
+                if rows_removed > 0:
+                    detail += f" (removed {rows_removed} Not Eligible)"
+                merge_summary.append(detail)
 
         # Combine all merged dataframes into one
         if all_merged_dataframes:
@@ -5781,20 +6029,27 @@ def merge_files():
 
             # Merge Zero ID sheets together
             merged_zero_id = merge_dataframes_by_columns(df1, df2)
+            zero_before_filter = len(merged_zero_id)
+            merged_zero_id = _filter_not_eligible_rows(merged_zero_id)
+            zero_rows_removed = zero_before_filter - len(merged_zero_id)
+            total_not_eligible_removed += zero_rows_removed
             merged_sheets[sheet_name] = merged_zero_id
 
             rows_before = len(df1) + len(df2)
             rows_after = len(merged_zero_id)
-            merge_summary.append(
+            zero_detail = (
                 f"Sheet '{sheet_name}': {len(df1)} + {len(df2)} rows → {rows_after} rows (kept separate)"
             )
+            if zero_rows_removed > 0:
+                zero_detail += f" (removed {zero_rows_removed} Not Eligible)"
+            merge_summary.append(zero_detail)
 
         # Store merged result as raw_data (Appointment Report)
         raw_data = merged_sheets
         raw_filename = f"Merged Appointment Report ({merge_file1_filename} + {merge_file2_filename})"
 
         summary_text = "\n".join(merge_summary)
-        merge_result = f"✅ Files merged successfully! Merged Appointment Report created with {len(merged_sheets)} sheet(s).\n\n{summary_text}"
+        merge_result = f"✅ Files merged successfully! Merged Appointment Report created with {len(merged_sheets)} sheet(s).\n🧹 Removed 'Not Eligible' rows in Step 1: {total_not_eligible_removed}\n\n{summary_text}"
 
         return redirect("/comparison?tab=comparison")
 
@@ -5927,7 +6182,7 @@ def compare_files():
 
 @app.route("/download_result", methods=["POST"])
 def download_result():
-    global previous_data, previous_filename
+    global previous_data, previous_filename, merge_file2_data
 
     if not previous_data:
         return jsonify({"error": "No data to download"}), 400
@@ -5947,6 +6202,147 @@ def download_result():
             # Process data: Extract "No insurance" rows and remove from main sheets
             processed_data = {}
             no_ins_rows_list = []
+            total_duplicate_patids_removed = 0
+            duplicate_audit_frames = []
+
+            def _find_patient_id_column(df_src):
+                for _col in df_src.columns:
+                    col_norm = str(_col).strip().lower().replace("_", " ")
+                    if (
+                        col_norm in ["pat id", "patid", "patient id", "patientid"]
+                        or ("pat" in col_norm and "id" in col_norm)
+                        or ("patient" in col_norm and "id" in col_norm)
+                    ):
+                        return _col
+                return None
+
+            def _dedupe_by_patient_id(df_src, stage_name="", sheet_name=""):
+                """Drop duplicate rows by normalized Patient ID (keep first)."""
+                if df_src is None or df_src.empty:
+                    return df_src, 0
+                pat_col = _find_patient_id_column(df_src)
+                if not pat_col:
+                    return df_src, 0
+
+                normalized_ids = df_src[pat_col].apply(normalize_patient_id)
+                has_id = normalized_ids.notna() & (
+                    normalized_ids.astype(str).str.strip() != ""
+                )
+                duplicate_mask = has_id & normalized_ids.duplicated(keep="first")
+                removed_count = int(duplicate_mask.sum())
+                if removed_count == 0:
+                    return df_src, 0
+                duplicate_rows = df_src[duplicate_mask].copy()
+                if not duplicate_rows.empty:
+                    duplicate_audit_frames.append(duplicate_rows)
+                return df_src[~duplicate_mask].copy(), removed_count
+
+            # Build a hard exclusion set from Conversion Report:
+            # all patient IDs whose Status indicates Not Eligible.
+            not_eligible_conversion_patids = set()
+            eligible_conversion_insurance_map = {}
+            eligible_conversion_secondary_map = {}
+            eligible_conversion_status_map = {}
+            if merge_file2_data:
+                for _, conversion_df in merge_file2_data.items():
+                    if conversion_df is None or conversion_df.empty:
+                        continue
+
+                    conversion_patient_col = None
+                    conversion_status_col = None
+                    conversion_primary_candidates = []
+                    conversion_secondary_candidates = []
+                    generic_primary_fallback_candidates = []
+                    for col in conversion_df.columns:
+                        col_norm = str(col).strip().lower().replace("_", " ")
+                        if conversion_patient_col is None and (
+                            col_norm in ["pat id", "patid", "patient id", "patientid"]
+                            or ("pat" in col_norm and "id" in col_norm)
+                            or ("patient" in col_norm and "id" in col_norm)
+                        ):
+                            conversion_patient_col = col
+                        if conversion_status_col is None and "status" in col_norm:
+                            conversion_status_col = col
+                        if "secondary" in col_norm and (
+                            "ins" in col_norm or "insurance" in col_norm
+                        ):
+                            conversion_secondary_candidates.append(col)
+                            continue
+                        if "primary" in col_norm and (
+                            "ins" in col_norm or "insurance" in col_norm
+                        ):
+                            conversion_primary_candidates.append(col)
+                            continue
+                        if col_norm in [
+                            "insurance",
+                            "insurance name",
+                            "carrier",
+                            "carrier name",
+                        ]:
+                            generic_primary_fallback_candidates.append(col)
+
+                    if not conversion_primary_candidates:
+                        conversion_primary_candidates = (
+                            generic_primary_fallback_candidates
+                        )
+
+                    if not conversion_patient_col or not conversion_status_col:
+                        continue
+
+                    status_series = (
+                        conversion_df[conversion_status_col]
+                        .fillna("")
+                        .astype(str)
+                        .str.strip()
+                        .str.lower()
+                        .str.replace(r"\s+", " ", regex=True)
+                    )
+                    not_eligible_mask = status_series.str.contains(
+                        r"\bnot\s*eligible\b", regex=True, na=False
+                    )
+                    for pat_val in conversion_df.loc[
+                        not_eligible_mask, conversion_patient_col
+                    ]:
+                        normalized = normalize_patient_id(pat_val)
+                        if normalized:
+                            not_eligible_conversion_patids.add(normalized)
+
+                    eligible_df = conversion_df[~not_eligible_mask].copy()
+                    for _, conversion_row in eligible_df.iterrows():
+                        normalized = normalize_patient_id(
+                            conversion_row[conversion_patient_col]
+                        )
+                        if not normalized:
+                            continue
+
+                        selected_primary = ""
+                        for primary_col in conversion_primary_candidates:
+                            primary_val = conversion_row[primary_col]
+                            if pd.notna(primary_val):
+                                primary_str = str(primary_val).strip()
+                                if primary_str:
+                                    selected_primary = format_insurance_name(primary_str)
+                                    break
+
+                        selected_secondary = ""
+                        for secondary_col in conversion_secondary_candidates:
+                            secondary_val = conversion_row[secondary_col]
+                            if pd.notna(secondary_val):
+                                secondary_str = str(secondary_val).strip()
+                                if secondary_str:
+                                    selected_secondary = format_insurance_name(
+                                        secondary_str
+                                    )
+                                    break
+
+                        if selected_primary and normalized not in eligible_conversion_insurance_map:
+                            eligible_conversion_insurance_map[normalized] = selected_primary
+                        if selected_secondary and normalized not in eligible_conversion_secondary_map:
+                            eligible_conversion_secondary_map[normalized] = selected_secondary
+
+                        raw_status = conversion_row[conversion_status_col]
+                        if pd.notna(raw_status) and normalized not in eligible_conversion_status_map:
+                            eligible_conversion_status_map[normalized] = str(raw_status).strip()
 
             for sheet_name, df in previous_data.items():
                 # Skip "NO INS" sheet if it already exists (to avoid processing it)
@@ -5954,6 +6350,35 @@ def download_result():
                     continue
 
                 df_clean = df.copy()
+                # Always exclude terminated patients from final output.
+                df_clean = _filter_not_eligible_rows(df_clean)
+
+                # Also hard-remove any PATID/Patient ID found as Not Eligible in Conversion Report.
+                if not_eligible_conversion_patids:
+                    output_patient_col = None
+                    for col in df_clean.columns:
+                        col_norm = str(col).strip().lower().replace("_", " ")
+                        if (
+                            col_norm in ["pat id", "patid", "patient id", "patientid"]
+                            or ("pat" in col_norm and "id" in col_norm)
+                            or ("patient" in col_norm and "id" in col_norm)
+                        ):
+                            output_patient_col = col
+                            break
+                    if output_patient_col:
+                        normalized_output_patids = df_clean[output_patient_col].apply(
+                            normalize_patient_id
+                        )
+                        exclusion_mask = normalized_output_patids.isin(
+                            not_eligible_conversion_patids
+                        )
+                        df_clean = df_clean[~exclusion_mask].copy()
+
+                # De-duplicate by Patient ID before routing to Today / NO INS.
+                df_clean, dup_removed = _dedupe_by_patient_id(
+                    df_clean, stage_name="Sheet Processing", sheet_name=sheet_name
+                )
+                total_duplicate_patids_removed += dup_removed
 
                 # Find "Dental Primary Ins Carr" column (case-insensitive, flexible matching)
                 primary_ins_col = None
@@ -6025,13 +6450,88 @@ def download_result():
             if no_ins_rows_list:
                 no_ins_combined = pd.concat(no_ins_rows_list, ignore_index=True)
                 if len(no_ins_combined) > 0:
+                    no_ins_combined, dup_removed = _dedupe_by_patient_id(
+                        no_ins_combined, stage_name="NO INS Combine", sheet_name="NO INS"
+                    )
+                    total_duplicate_patids_removed += dup_removed
                     processed_data["NO INS"] = no_ins_combined
+                    # Build audit sheet: patients in NO INS who still have insurance in Conversion.
+                    no_ins_patient_col = None
+                    for col in no_ins_combined.columns:
+                        col_norm = str(col).strip().lower().replace("_", " ")
+                        if (
+                            col_norm in ["pat id", "patid", "patient id", "patientid"]
+                            or ("pat" in col_norm and "id" in col_norm)
+                            or ("patient" in col_norm and "id" in col_norm)
+                        ):
+                            no_ins_patient_col = col
+                            break
+
+                    if no_ins_patient_col:
+                        audit_rows = []
+                        seen_ids = set()
+                        for _, no_ins_row in no_ins_combined.iterrows():
+                            normalized = normalize_patient_id(no_ins_row[no_ins_patient_col])
+                            if not normalized or normalized in seen_ids:
+                                continue
+                            conversion_primary = eligible_conversion_insurance_map.get(
+                                normalized, ""
+                            )
+                            conversion_secondary = eligible_conversion_secondary_map.get(
+                                normalized, ""
+                            )
+                            has_conversion_ins = bool(
+                                str(conversion_primary).strip()
+                                or str(conversion_secondary).strip()
+                            )
+                            if has_conversion_ins:
+                                seen_ids.add(normalized)
+                                audit_rows.append(
+                                    {
+                                        "Patient ID": normalized,
+                                        "Conversion Primary Insurance": conversion_primary,
+                                        "Conversion Secondary Insurance": conversion_secondary,
+                                        "Conversion Status": eligible_conversion_status_map.get(
+                                            normalized, ""
+                                        ),
+                                        "Issue": "In NO INS but insurance exists in Conversion",
+                                    }
+                                )
+
+                        if audit_rows:
+                            processed_data["INSURANCE_MISMATCH_AUDIT"] = pd.DataFrame(
+                                audit_rows
+                            )
+
+            if duplicate_audit_frames:
+                processed_data["DUPLICATE_AUDIT"] = pd.concat(
+                    duplicate_audit_frames, ignore_index=True
+                )
+            else:
+                audit_cols = []
+                if processed_data:
+                    first_df = next(iter(processed_data.values()))
+                    if first_df is not None and hasattr(first_df, "columns"):
+                        audit_cols = list(first_df.columns)
+                if not audit_cols and previous_data:
+                    first_prev_df = next(iter(previous_data.values()))
+                    if first_prev_df is not None and hasattr(first_prev_df, "columns"):
+                        audit_cols = list(first_prev_df.columns)
+                processed_data["DUPLICATE_AUDIT"] = pd.DataFrame(
+                    columns=audit_cols
+                )
 
             # Write processed data to Excel
             with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
                 # Collect main sheets (not special sheets) to combine into "Today"
                 main_sheets_data = []
-                special_sheets = ["NO INS", "Zero ID", "zero id"]
+                special_sheets = [
+                    "NO INS",
+                    "Zero ID",
+                    "zero id",
+                    "INSURANCE_MISMATCH_AUDIT",
+                    "DUPLICATE_AUDIT",
+                ]
 
                 for sheet_name, df_clean in processed_data.items():
                     # Skip special sheets - they will be written separately
@@ -6060,6 +6560,11 @@ def download_result():
                             if main_sheets_data
                             else pd.DataFrame()
                         )
+
+                    today_df, dup_removed = _dedupe_by_patient_id(
+                        today_df, stage_name="Today Combine", sheet_name="Today"
+                    )
+                    total_duplicate_patids_removed += dup_removed
 
                     # Format "Appt Date" column to MM/DD/YYYY format
                     appt_date_col = None
