@@ -13823,6 +13823,16 @@ def run_general_comparison():
                     available_cols += f", ... ({len(main_df.columns)} total)"
                 general_comparison_result = f"❌ Update column '{col}' not found in main dataset sheet. Available columns: {available_cols}"
                 return redirect("/comparison?tab=general")
+            if col not in primary_df.columns:
+                available_cols = ", ".join(list(primary_df.columns)[:10])
+                if len(primary_df.columns) > 10:
+                    available_cols += f", ... ({len(primary_df.columns)} total)"
+                general_comparison_result = (
+                    f"❌ Error: Header not found: '{col}'. "
+                    f"Please verify that the Primary and Secondary files have matching column names. "
+                    f"Missing in Primary sheet. Available columns: {available_cols}"
+                )
+                return redirect("/comparison?tab=general")
 
         def normalize_val(v, is_patient_id=False):
             """Normalize a value for key matching. Use patient ID normalization for Patient ID columns."""
@@ -13930,11 +13940,6 @@ def run_general_comparison():
             f"Unique keys in MAIN: {main_keys.nunique()} (total rows: {len(main_keys)})"
         )
         output_lines.append(f"Unique keys in MAIN (non-empty): {len(main_key_map)}")
-
-        # Ensure update columns exist in primary (add if missing)
-        for col in update_columns:
-            if col not in primary_df.columns:
-                primary_df[col] = ""
 
         matched_rows = 0
         updated_cells = 0
