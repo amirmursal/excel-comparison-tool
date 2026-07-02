@@ -5121,6 +5121,7 @@ def compare_patient_names(raw_df, previous_df):
         # Insurance fallback order is Appointment -> Conversion -> "No Insurance".
         conversion_insurance_map = {}  # Primary insurance mapping
         conversion_secondary_insurance_map = {}  # Secondary insurance mapping
+        conversion_appt_date_map = {}  # Appointment date mapping from Conversion ("Appt Date" etc.)
         conversion_row_map = {}  # First conversion row per patient ID
         if merge_file2_data:
             # Search through all sheets in Conversion Report.
@@ -5146,8 +5147,10 @@ def compare_patient_names(raw_df, previous_df):
                 conversion_primary_candidates = []
                 conversion_secondary_candidates = []
                 generic_primary_fallback_candidates = []
+                conversion_appt_date_candidates = []
                 for col in conversion_df.columns:
                     col_lower = str(col).lower().strip()
+                    col_norm = col_lower.replace("_", " ")
                     if "secondary" in col_lower and (
                         "ins" in col_lower or "insurance" in col_lower
                     ):
@@ -5165,6 +5168,11 @@ def compare_patient_names(raw_df, previous_df):
                         "carrier name",
                     ]:
                         generic_primary_fallback_candidates.append(col)
+                    if (
+                        ("appt" in col_norm and "date" in col_norm)
+                        or ("appointment" in col_norm and "date" in col_norm)
+                    ):
+                        conversion_appt_date_candidates.append(col)
 
                 if not conversion_primary_candidates:
                     conversion_primary_candidates = generic_primary_fallback_candidates
@@ -5216,6 +5224,21 @@ def compare_patient_names(raw_df, previous_df):
                                             selected_secondary
                                         )
 
+                            if conversion_appt_date_candidates:
+                                selected_appt_date = ""
+                                for appt_col in conversion_appt_date_candidates:
+                                    appt_val = row[appt_col]
+                                    if pd.notna(appt_val):
+                                        appt_str = str(appt_val).strip()
+                                        if appt_str and appt_str.lower() not in {"nan", "nat"}:
+                                            selected_appt_date = appt_val
+                                            break
+                                if selected_appt_date != "":
+                                    existing_appt = conversion_appt_date_map.get(pat_id, "")
+                                    existing_appt_str = str(existing_appt).strip() if existing_appt is not None else ""
+                                    if existing_appt_str in {"", "nan", "NaT", "nat"}:
+                                        conversion_appt_date_map[pat_id] = selected_appt_date
+
         def _is_missing_insurance(value):
             """Treat NaN/blank as missing; keep explicit values like 'No Insurance'."""
             if pd.isna(value):
@@ -5231,6 +5254,21 @@ def compare_patient_names(raw_df, previous_df):
         # Check if insurance columns already exist, if not create them
         primary_col_name = "Dental Primary Ins Carr"
         secondary_col_name = "Dental Secondary Ins Carr"
+        appointment_date_col_name = None
+
+        for col in result_df.columns:
+            col_norm = str(col).strip().lower().replace("_", " ")
+            if col_norm == "appointment date":
+                appointment_date_col_name = col
+                break
+        if appointment_date_col_name is None:
+            for col in result_df.columns:
+                col_norm = str(col).strip().lower().replace("_", " ")
+                if ("appt" in col_norm and "date" in col_norm) or (
+                    "appointment" in col_norm and "date" in col_norm
+                ):
+                    appointment_date_col_name = col
+                    break
 
         if primary_col_name not in result_df.columns:
             result_df.insert(patid_col_index + 1, primary_col_name, "")
@@ -5342,6 +5380,7 @@ def compare_patient_names(raw_df, previous_df):
         )
         fallback_to_conversion_count = 0
         secondary_to_primary_fallback_count = 0
+        appointment_date_fallback_count = 0
         no_insurance_assigned_count = 0
         existing_smart_assist_patids = set()
         for idx, row in result_df.iterrows():
@@ -5429,6 +5468,19 @@ def compare_patient_names(raw_df, previous_df):
 
                 result_df.at[idx, primary_col_name] = primary_insurance_value
                 result_df.at[idx, secondary_col_name] = secondary_insurance_value
+                if appointment_date_col_name:
+                    current_appt_val = row.get(appointment_date_col_name, "")
+                    current_appt_str = (
+                        str(current_appt_val).strip() if pd.notna(current_appt_val) else ""
+                    )
+                    if (
+                        current_appt_str in {"", "-", "nan", "NaT", "nat"}
+                        and patid in conversion_appt_date_map
+                    ):
+                        result_df.at[idx, appointment_date_col_name] = conversion_appt_date_map[
+                            patid
+                        ]
+                        appointment_date_fallback_count += 1
                 matched_count += 1
             elif patid:
                 # Strict Priority 1 flow when appointment insurance is unavailable:
@@ -5460,6 +5512,19 @@ def compare_patient_names(raw_df, previous_df):
 
                 result_df.at[idx, primary_col_name] = primary_insurance_value
                 result_df.at[idx, secondary_col_name] = secondary_insurance_value
+                if appointment_date_col_name:
+                    current_appt_val = row.get(appointment_date_col_name, "")
+                    current_appt_str = (
+                        str(current_appt_val).strip() if pd.notna(current_appt_val) else ""
+                    )
+                    if (
+                        current_appt_str in {"", "-", "nan", "NaT", "nat"}
+                        and patid in conversion_appt_date_map
+                    ):
+                        result_df.at[idx, appointment_date_col_name] = conversion_appt_date_map[
+                            patid
+                        ]
+                        appointment_date_fallback_count += 1
 
                 # Track unmatched PATIDs (limit to first 10 for display)
                 if len(unmatched_patids) < 10:
@@ -5523,6 +5588,11 @@ def compare_patient_names(raw_df, previous_df):
 
                 new_row[primary_col_name] = primary_from_conversion
                 new_row[secondary_col_name] = secondary_from_conversion
+                if appointment_date_col_name and patid in conversion_appt_date_map:
+                    existing_new_appt = str(new_row.get(appointment_date_col_name, "")).strip()
+                    if existing_new_appt in {"", "-", "nan", "NaT", "nat"}:
+                        new_row[appointment_date_col_name] = conversion_appt_date_map[patid]
+                        appointment_date_fallback_count += 1
 
                 result_df = pd.concat([result_df, pd.DataFrame([new_row])], ignore_index=True)
                 existing_smart_assist_patids.add(patid)
@@ -5606,6 +5676,8 @@ def compare_patient_names(raw_df, previous_df):
                 conversion_info += f"\n- Conversion-only patients appended to Smart Assist output: {appended_from_conversion_count}"
             if skipped_not_eligible_count > 0:
                 conversion_info += f"\n- Conversion-only patients skipped (Status = Not Eligible): {skipped_not_eligible_count}"
+            if appointment_date_fallback_count > 0:
+                conversion_info += f"\n- Missing Appointment Date filled from Conversion 'Appt Date': {appointment_date_fallback_count}"
             if repaired_no_ins_with_conversion_count > 0:
                 conversion_info += f"\n- No-Insurance rows auto-repaired using Conversion insurance: {repaired_no_ins_with_conversion_count}"
             if still_no_ins_with_conversion_ids:
@@ -6240,6 +6312,7 @@ def download_result():
             # Build a hard exclusion set from Conversion Report:
             # all patient IDs whose Status indicates Not Eligible.
             not_eligible_conversion_patids = set()
+            conversion_patient_status_flags = {}
             eligible_conversion_insurance_map = {}
             eligible_conversion_secondary_map = {}
             eligible_conversion_status_map = {}
@@ -6300,12 +6373,31 @@ def download_result():
                     not_eligible_mask = status_series.str.contains(
                         r"\bnot\s*eligible\b", regex=True, na=False
                     )
-                    for pat_val in conversion_df.loc[
-                        not_eligible_mask, conversion_patient_col
-                    ]:
+                    for idx, pat_val in conversion_df[conversion_patient_col].items():
                         normalized = normalize_patient_id(pat_val)
-                        if normalized:
-                            not_eligible_conversion_patids.add(normalized)
+                        if not normalized:
+                            continue
+                        if normalized not in conversion_patient_status_flags:
+                            conversion_patient_status_flags[normalized] = {
+                                "has_not_eligible": False,
+                                "has_other_status": False,
+                            }
+                        status_is_not_eligible = bool(not_eligible_mask.loc[idx])
+                        if status_is_not_eligible:
+                            conversion_patient_status_flags[normalized][
+                                "has_not_eligible"
+                            ] = True
+                        else:
+                            conversion_patient_status_flags[normalized][
+                                "has_other_status"
+                            ] = True
+
+                    # Build exclusion set only for patients that are exclusively Not Eligible.
+                    not_eligible_conversion_patids = {
+                        pid
+                        for pid, flags in conversion_patient_status_flags.items()
+                        if flags.get("has_not_eligible") and not flags.get("has_other_status")
+                    }
 
                     eligible_df = conversion_df[~not_eligible_mask].copy()
                     for _, conversion_row in eligible_df.iterrows():
