@@ -7197,15 +7197,22 @@ def upload_conversion_file():
                                     processed_df[pat_id_col] == pat_id
                                 ]
 
-                                # Get unique insurance names for this Pat ID (preserve order of first occurrence)
-                                insurance_names = []
-                                seen = set()
+                                # Get insurance names for this Pat ID (preserve row order)
+                                # Keep full ordered list to support case where first and second are the same.
+                                ordered_insurance_names = []
                                 for ins in same_id_rows["Formatted Insurance"]:
                                     if pd.notna(ins):
                                         ins_str = str(ins).strip()
-                                        if ins_str and ins_str not in seen:
-                                            insurance_names.append(ins_str)
-                                            seen.add(ins_str)
+                                        if ins_str:
+                                            ordered_insurance_names.append(ins_str)
+
+                                # Also keep unique list for fallback behavior.
+                                insurance_names = []
+                                seen = set()
+                                for ins_str in ordered_insurance_names:
+                                    if ins_str not in seen:
+                                        insurance_names.append(ins_str)
+                                        seen.add(ins_str)
 
                                 # Set Primary Insurance (first unique insurance)
                                 if len(insurance_names) > 0:
@@ -7215,15 +7222,18 @@ def upload_conversion_file():
                                 else:
                                     processed_df.at[idx, "Dental Primary Ins Carr"] = ""
 
-                                # Set Secondary Insurance (second unique insurance if exists)
-                                if len(insurance_names) > 1:
-                                    processed_df.at[
-                                        idx, "Dental Secondary Ins Carr"
-                                    ] = insurance_names[1]
-                                else:
-                                    processed_df.at[
-                                        idx, "Dental Secondary Ins Carr"
-                                    ] = ""
+                                # Set Secondary Insurance:
+                                # 1) Use second encountered insurance when available (even if same as first)
+                                # 2) Else fallback to second unique insurance if available
+                                # 3) Else blank
+                                secondary_value = ""
+                                if len(ordered_insurance_names) > 1:
+                                    secondary_value = ordered_insurance_names[1]
+                                elif len(insurance_names) > 1:
+                                    secondary_value = insurance_names[1]
+                                processed_df.at[idx, "Dental Secondary Ins Carr"] = (
+                                    secondary_value
+                                )
 
                             # Track stats (no rows consolidated since we keep duplicates)
                             rows_after = len(processed_df)
