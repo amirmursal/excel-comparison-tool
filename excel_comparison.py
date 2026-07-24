@@ -5369,6 +5369,37 @@ def compare_patient_names(raw_df, previous_df):
                     group_idx = result_df.columns.get_loc(group_number_col)
                     result_df.insert(group_idx + 1, "Relationship", relationship_data)
 
+        # Set "Received date" to today's date for all output rows (MM/DD/YYYY).
+        received_date_col = None
+        for col in result_df.columns:
+            col_norm = str(col).strip().lower().replace("_", " ")
+            if col_norm == "received date":
+                received_date_col = col
+                break
+        if received_date_col is None:
+            for col in result_df.columns:
+                col_norm = str(col).strip().lower().replace("_", " ")
+                if "received" in col_norm and "date" in col_norm:
+                    received_date_col = col
+                    break
+        if received_date_col is None:
+            # If not present, create it as expected output field.
+            result_df["Received date"] = ""
+            received_date_col = "Received date"
+        today_str = datetime.now().strftime("%m/%d/%Y")
+        result_df[received_date_col] = today_str
+
+        # Set "Remark" to Workable for all output rows.
+        remark_col = None
+        for col in result_df.columns:
+            if str(col).strip().lower() == "remark":
+                remark_col = col
+                break
+        if remark_col is None:
+            result_df["Remark"] = ""
+            remark_col = "Remark"
+        result_df[remark_col] = "Workable"
+
         # Compare and populate insurance columns in Smart Assist file from Appointment Report
         matched_count = 0
         unmatched_patids = []  # Track unmatched PATIDs for debugging
