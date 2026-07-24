@@ -5619,6 +5619,14 @@ def compare_patient_names(raw_df, previous_df):
 
                 new_row[primary_col_name] = primary_from_conversion
                 new_row[secondary_col_name] = secondary_from_conversion
+                # Mark rows appended from Conversion file.
+                source_col = None
+                for col in result_df.columns:
+                    if str(col).strip().lower() == "source":
+                        source_col = col
+                        break
+                if source_col:
+                    new_row[source_col] = "Conversion"
                 if appointment_date_col_name and patid in conversion_appt_date_map:
                     existing_new_appt = str(new_row.get(appointment_date_col_name, "")).strip()
                     if existing_new_appt in {"", "-", "nan", "NaT", "nat"}:
@@ -6475,6 +6483,53 @@ def download_result():
                 df_clean = df.copy()
                 # Always exclude terminated patients from final output.
                 df_clean = _filter_not_eligible_rows(df_clean)
+
+                # Enforce required default values in final output across all sheets.
+                # 1) Received date / Recieve Date -> today's date
+                # 2) Remark -> Workable
+                # 3) Source -> conversion (only when blank)
+                today_str = datetime.now().strftime("%m/%d/%Y")
+
+                received_col = None
+                for col in df_clean.columns:
+                    col_norm = str(col).strip().lower().replace("_", " ")
+                    if col_norm in {"received date", "recieve date"}:
+                        received_col = col
+                        break
+                if received_col is None:
+                    for col in df_clean.columns:
+                        col_norm = str(col).strip().lower().replace("_", " ")
+                        if (
+                            ("received" in col_norm and "date" in col_norm)
+                            or ("recieve" in col_norm and "date" in col_norm)
+                        ):
+                            received_col = col
+                            break
+                if received_col is None:
+                    received_col = "Received date"
+                    df_clean[received_col] = ""
+                df_clean[received_col] = today_str
+
+                remark_col = None
+                for col in df_clean.columns:
+                    if str(col).strip().lower() == "remark":
+                        remark_col = col
+                        break
+                if remark_col is None:
+                    remark_col = "Remark"
+                    df_clean[remark_col] = ""
+                df_clean[remark_col] = "Workable"
+
+                # Keep Source values as provided by compare step.
+                # (Only conversion-appended rows are marked as "conversion" there.)
+                source_col = None
+                for col in df_clean.columns:
+                    if str(col).strip().lower() == "source":
+                        source_col = col
+                        break
+                if source_col is None:
+                    source_col = "Source"
+                    df_clean[source_col] = ""
 
                 # Also hard-remove any PATID/Patient ID found as Not Eligible in Conversion Report.
                 if not_eligible_conversion_patids:
