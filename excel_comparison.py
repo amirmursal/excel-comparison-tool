@@ -1844,6 +1844,7 @@ HTML_TEMPLATE = """
                         <input type="text" id="output_filename" name="filename" 
                                placeholder="comparison_result.xlsx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
+                    <input type="hidden" id="comparison_local_date" name="local_system_date" value="">
                     <button type="submit" id="comparison-download-btn">💾 Download Result File</button>
                 </form>
             </div>
@@ -4037,6 +4038,14 @@ HTML_TEMPLATE = """
         if (comparisonDownloadForm) {
             comparisonDownloadForm.addEventListener('submit', function(ev) {
                 ev.preventDefault();
+                const localDateInput = document.getElementById('comparison_local_date');
+                if (localDateInput) {
+                    const now = new Date();
+                    const mm = String(now.getMonth() + 1).padStart(2, '0');
+                    const dd = String(now.getDate()).padStart(2, '0');
+                    const yyyy = String(now.getFullYear());
+                    localDateInput.value = `${mm}/${dd}/${yyyy}`;
+                }
                 void submitDownloadFormAsBlob(comparisonDownloadForm, {
                     buttonId: 'comparison-download-btn',
                     title: 'Preparing download',
@@ -6315,6 +6324,16 @@ def download_result():
             no_ins_rows_list = []
             total_duplicate_patids_removed = 0
             duplicate_audit_frames = []
+            local_system_date = request.form.get("local_system_date", "").strip()
+            received_date_value = datetime.now().strftime("%m/%d/%Y")
+            if local_system_date:
+                try:
+                    # Accept only MM/DD/YYYY to avoid accidental malformed values.
+                    parsed_local_date = datetime.strptime(local_system_date, "%m/%d/%Y")
+                    received_date_value = parsed_local_date.strftime("%m/%d/%Y")
+                except ValueError:
+                    # Keep server-date fallback when client value is invalid.
+                    pass
 
             def _find_patient_id_column(df_src):
                 for _col in df_src.columns:
@@ -6488,8 +6507,6 @@ def download_result():
                 # 1) Received date / Recieve Date -> today's date
                 # 2) Remark -> Workable
                 # 3) Source -> conversion (only when blank)
-                today_str = datetime.now().strftime("%m/%d/%Y")
-
                 received_col = None
                 for col in df_clean.columns:
                     col_norm = str(col).strip().lower().replace("_", " ")
@@ -6508,7 +6525,7 @@ def download_result():
                 if received_col is None:
                     received_col = "Received date"
                     df_clean[received_col] = ""
-                df_clean[received_col] = today_str
+                df_clean[received_col] = received_date_value
 
                 remark_col = None
                 for col in df_clean.columns:
@@ -10237,11 +10254,26 @@ def process_data_cleanser():
         removed_df = df[mask].copy()
         clean_df = df[~mask].copy()
 
-        # Create output with both sheets
+        # Create output workbook by keeping all original sheets.
+        # Replace selected sheet with cleaned data, and add removed-data sheet.
         data_cleanser_processed_data = {
-            sheet_name: clean_df,  # Clean main sheet (same name as original)
-            removed_sheet_name: removed_df,  # Removed data sheet (user-defined name)
+            name: sheet_df.copy() for name, sheet_df in data_cleanser_data.items()
         }
+        data_cleanser_processed_data[sheet_name] = clean_df  # replace selected sheet
+
+        # Avoid accidental overwrite when removed sheet name already exists.
+        final_removed_sheet_name = removed_sheet_name
+        if (
+            final_removed_sheet_name in data_cleanser_processed_data
+            and final_removed_sheet_name != sheet_name
+        ):
+            suffix = 1
+            while (
+                f"{removed_sheet_name}_{suffix}" in data_cleanser_processed_data
+            ):
+                suffix += 1
+            final_removed_sheet_name = f"{removed_sheet_name}_{suffix}"
+        data_cleanser_processed_data[final_removed_sheet_name] = removed_df
 
         # Generate output message
         output_lines = []
@@ -10258,7 +10290,10 @@ def process_data_cleanser():
         output_lines.append(f"Removed rows: {len(removed_df)}")
         output_lines.append("")
         output_lines.append(f"✅ Clean data saved to sheet: {sheet_name}")
-        output_lines.append(f"✅ Removed data saved to sheet: {removed_sheet_name}")
+        output_lines.append(f"✅ Removed data saved to sheet: {final_removed_sheet_name}")
+        output_lines.append(
+            f"✅ Other original sheets kept as-is: {len(data_cleanser_processed_data) - 2}"
+        )
 
         data_cleanser_output = "\n".join(output_lines)
         data_cleanser_result = f"✅ Data cleaning completed successfully! Removed {len(removed_df)} row(s) from '{column_name}' column."
