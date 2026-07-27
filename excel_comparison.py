@@ -150,6 +150,32 @@ nh_file2_filename = None
 nh_result = None
 nh_output = None  # bytes for download
 
+# Master Allocation Builder globals
+mab_step1_files = []  # list of {"filename": str, "sheets": {sheet_name: df}, "sheet_names": [str], "selected_sheet": str}
+mab_result = None
+mab_output = ""
+mab_step1_selected_sheets = {}  # filename -> selected sheet name
+mab_step1_unique_appointment_dates = []  # MM/DD/YYYY strings
+mab_step1_excluded_appointment_dates = []
+mab_step1_unique_remarks = []
+mab_step1_excluded_remarks = []
+mab_step1_work_done_data = None  # {"Work Done": df}
+mab_step2_files = []  # list of {"filename": str, "sheets": {sheet_name: df}, "sheet_names": [str], "selected_sheet": str}
+mab_step2_selected_sheets = {}  # filename -> selected sheet name
+mab_step2_filter_by = "agent_name"
+mab_step2_unique_filter_values = []
+mab_step2_selected_filter_values = []
+mab_step2_master_data = None  # {"Previous Allocation Master": df}
+mab_step2_result = None
+mab_step2_output = ""
+mab_step3_comparison_file = None  # {"filename": str, "sheets": {sheet: df}, "sheet_names": [str], "selected_sheet": str}
+mab_step3_result = None
+mab_step3_output = ""
+mab_step3_merged_data = None  # {"Step 3 Merged": df}
+mab_step4_result = None
+mab_step4_output = ""
+mab_step4_final_data = None  # {"Final Master Allocation": df}
+
 NH_OUTPUT_COLUMNS = [
     "Software",
     "Office Name",
@@ -1578,6 +1604,9 @@ HTML_TEMPLATE = """
                 <div class="menu-item {% if active_tab == 'reallocation' %}active{% endif %}" onclick="switchTab('reallocation')">
                     <span>Generate Reallocation Data</span>
                 </div>
+                <div class="menu-item {% if active_tab == 'masterallocationbuilder' %}active{% endif %}" onclick="switchTab('masterallocationbuilder')">
+                    <span>Master Allocation Builder</span>
+                </div>
 
                 <div class="menu-group-header">General Automation</div>
                 <div class="menu-item {% if active_tab == 'general' %}active{% endif %}" onclick="switchTab('general')">
@@ -1628,6 +1657,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'smartassist' %}🤖 Smart Assist Report Formatting
                     {% elif active_tab == 'consolidate' %}📊 Consolidate Report
                     {% elif active_tab == 'reallocation' %}♻️ Generate Reallocation Data
+                    {% elif active_tab == 'masterallocationbuilder' %}🧱 Master Allocation Builder
                     {% elif active_tab == 'general' %}🧭 General Comparison
                     {% elif active_tab == 'datacleanser' %}🧹 Data Cleanser
                     {% elif active_tab == 'agentremarktransfer' %}🔄 Agent & Remark Transfer
@@ -1647,6 +1677,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'smartassist' %}Format smart assist report insurance columns
                     {% elif active_tab == 'consolidate' %}Consolidate master and daily report files
                     {% elif active_tab == 'reallocation' %}Generate reallocation data from consolidate file
+                    {% elif active_tab == 'masterallocationbuilder' %}Build Work Done file from uploaded files with sheet/date filtering
                     {% elif active_tab == 'general' %}Compare two files and update primary rows on match
                     {% elif active_tab == 'datacleanser' %}Remove selected values from a column and create clean/removed sheets
                     {% elif active_tab == 'agentremarktransfer' %}Transfer Agent Name to Agent 1 and Remark to Remark 1
@@ -1858,6 +1889,324 @@ HTML_TEMPLATE = """
                     <button type="submit" class="reset-btn">🗑️ Reset Comparison Tool</button>
                 </form>
             </div>
+            </div>
+
+            <!-- Tab: Master Allocation Builder -->
+            <div id="masterallocationbuilder-tab" class="tab-content {% if active_tab == 'masterallocationbuilder' %}active{% endif %}">
+                <div class="section">
+                    <h3>🧱 Master Allocation Builder</h3>
+                    <p>Step 1: Upload files, pick one sheet per file, exclude Appointment Date/Remark values, dedupe by Patient ID using remark priority, and generate Work Done file.</p>
+                </div>
+
+                <div class="section">
+                    <h3>📁 Step 1A: Upload Excel Files</h3>
+                    <form action="/upload_master_allocation_builder_step1" method="post" enctype="multipart/form-data" id="mab-step1-upload-form">
+                        <div class="form-group">
+                            <label for="mab_step1_files">Select files (multiple allowed):</label>
+                            <input type="file" id="mab_step1_files" name="files" accept=".xlsx,.xls" multiple required>
+                        </div>
+                        <button type="submit" id="mab-step1-upload-btn">📤 Upload Files</button>
+                    </form>
+                </div>
+
+                {% if mab_step1_files and mab_step1_files|length > 0 %}
+                <div class="section">
+                    <h3>📋 Step 1B: Select Sheet Per File</h3>
+                    <form action="/load_master_allocation_builder_step1_dates" method="post" id="mab-step1-sheet-form">
+                        {% for file_info in mab_step1_files %}
+                        <div class="form-group">
+                            <label for="mab_sheet_{{ loop.index0 }}">{{ file_info.filename }} — Select sheet:</label>
+                            <select id="mab_sheet_{{ loop.index0 }}" name="sheet_{{ loop.index0 }}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                {% for sheet_name in file_info.sheet_names %}
+                                <option value="{{ sheet_name }}" {% if file_info.selected_sheet == sheet_name %}selected{% endif %}>{{ sheet_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% endfor %}
+                        <button type="submit" id="mab-step1-load-dates-btn">🔎 Load Appointment Dates</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if mab_step1_unique_appointment_dates and mab_step1_unique_appointment_dates|length > 0 %}
+                <div class="section">
+                    <h3>🗓️ Step 1C: Exclude Appointment Dates</h3>
+                    <form action="/generate_master_allocation_builder_step1" method="post" id="mab-step1-generate-form">
+                        {% for file_info in mab_step1_files %}
+                        <input type="hidden" name="sheet_{{ loop.index0 }}" value="{{ file_info.selected_sheet }}">
+                        {% endfor %}
+                        <div style="max-height: 240px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #fff;">
+                            {% for date_val in mab_step1_unique_appointment_dates %}
+                            <label style="display: block; padding: 2px 0;">
+                                <input type="checkbox" name="exclude_dates" value="{{ date_val }}"
+                                       {% if date_val in mab_step1_excluded_appointment_dates %}checked{% endif %}>
+                                {{ date_val }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <small>Checked dates will be excluded from Work Done output.</small>
+                        {% if mab_step1_unique_remarks and mab_step1_unique_remarks|length > 0 %}
+                        <h4 style="margin-top: 16px;">🏷️ Exclude Remarks</h4>
+                        <div style="max-height: 240px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #fff;">
+                            {% for remark_val in mab_step1_unique_remarks %}
+                            <label style="display: block; padding: 2px 0;">
+                                <input type="checkbox" name="exclude_remarks" value="{{ remark_val }}"
+                                       {% if remark_val|lower in mab_step1_excluded_remarks %}checked{% endif %}>
+                                {{ remark_val }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <small>Checked Remarks will be excluded before duplicate removal.</small>
+                        {% endif %}
+                        <div style="margin-top: 12px;">
+                            <button type="submit" id="mab-step1-generate-btn">🚀 Generate Cleaned Work Done File</button>
+                        </div>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if mab_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">{{ mab_result | safe }}</div>
+                </div>
+                {% endif %}
+
+                {% if mab_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ mab_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if mab_step1_work_done_data %}
+                <div class="section">
+                    <h3>💾 Download Step 1 Output</h3>
+                    <form action="/download_master_allocation_builder_step1" method="post" id="mab-step1-download-form">
+                        <div class="form-group">
+                            <label for="mab_step1_output_filename">Output filename (optional):</label>
+                            <input type="text" id="mab_step1_output_filename" name="filename"
+                                   placeholder="Work Done MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="mab-step1-download-btn">💾 Download Work Done File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <div class="section" style="border-top: 2px dashed #dcdcdc; margin-top: 20px; padding-top: 20px;">
+                    <h3>📦 Step 2: Previous Allocation Master File</h3>
+                    <p>Upload files, choose one sheet per file, keep selected Agent Name values, and dedupe by Patient ID with remark priority.</p>
+                </div>
+
+                <div class="section">
+                    <h3>📁 Step 2A: Upload Excel Files</h3>
+                    <form action="/upload_master_allocation_builder_step2" method="post" enctype="multipart/form-data" id="mab-step2-upload-form">
+                        <div class="form-group">
+                            <label for="mab_step2_files">Select files (multiple allowed):</label>
+                            <input type="file" id="mab_step2_files" name="files" accept=".xlsx,.xls" multiple required>
+                        </div>
+                        <button type="submit" id="mab-step2-upload-btn">📤 Upload Step 2 Files</button>
+                    </form>
+                </div>
+
+                {% if mab_step2_files and mab_step2_files|length > 0 %}
+                <div class="section">
+                    <h3>📋 Step 2B: Select Sheets</h3>
+                    <form action="/load_master_allocation_builder_step2_values" method="post" id="mab-step2-sheet-form">
+                        {% for file_info in mab_step2_files %}
+                        <div class="form-group">
+                            <label for="mab_step2_sheet_{{ loop.index0 }}">{{ file_info.filename }} — Select sheet:</label>
+                            <select id="mab_step2_sheet_{{ loop.index0 }}" name="step2_sheet_{{ loop.index0 }}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                {% for sheet_name in file_info.sheet_names %}
+                                <option value="{{ sheet_name }}" {% if file_info.selected_sheet == sheet_name %}selected{% endif %}>{{ sheet_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% endfor %}
+
+                        <button type="submit" id="mab-step2-load-values-btn">🔎 Load Agent Name Values</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if mab_step2_unique_filter_values and mab_step2_unique_filter_values|length > 0 %}
+                <div class="section">
+                    <h3>🏷️ Step 2C: Select Values to Exclude</h3>
+                    <form action="/generate_master_allocation_builder_step2" method="post" id="mab-step2-generate-form">
+                        {% for file_info in mab_step2_files %}
+                        <input type="hidden" name="step2_sheet_{{ loop.index0 }}" value="{{ file_info.selected_sheet }}">
+                        {% endfor %}
+                        <div style="max-height: 240px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #fff;">
+                            {% for val in mab_step2_unique_filter_values %}
+                            <label style="display: block; padding: 2px 0;">
+                                <input type="checkbox" name="step2_selected_values" value="{{ val }}"
+                                       {% if val|lower in mab_step2_selected_filter_values %}checked{% endif %}>
+                                {{ val }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <small>Selected Agent Name values will be excluded from output.</small>
+                        <div style="margin-top: 12px;">
+                            <button type="submit" id="mab-step2-generate-btn">🚀 Generate Previous Allocation Master File</button>
+                        </div>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if mab_step2_result %}
+                <div class="section">
+                    <h3>📢 Step 2 Status</h3>
+                    <div class="status-message">{{ mab_step2_result | safe }}</div>
+                </div>
+                {% endif %}
+
+                {% if mab_step2_output %}
+                <div class="section">
+                    <h3>📝 Step 2 Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ mab_step2_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if mab_step2_master_data %}
+                <div class="section">
+                    <h3>💾 Download Step 2 Output</h3>
+                    <form action="/download_master_allocation_builder_step2" method="post" id="mab-step2-download-form">
+                        <div class="form-group">
+                            <label for="mab_step2_output_filename">Output filename (optional):</label>
+                            <input type="text" id="mab_step2_output_filename" name="filename"
+                                   placeholder="Previous Allocation Master MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="mab-step2-download-btn">💾 Download Previous Allocation Master File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <div class="section" style="border-top: 2px dashed #dcdcdc; margin-top: 20px; padding-top: 20px;">
+                    <h3>🔗 Step 3: Merge Comparison Tool Output with Step 1</h3>
+                    <p>Upload Comparison Tool output, remove overlapping Patient IDs using Step 1 as reference, then merge remaining rows with complete Step 1 data.</p>
+                </div>
+
+                <div class="section">
+                    <h3>📁 Step 3A: Upload Comparison Tool Output File</h3>
+                    {% if not mab_step1_work_done_data or not mab_step2_master_data %}
+                    <p style="color: #b00020; margin-bottom: 10px;">Complete Step 1 and Step 2 first to enable Step 3.</p>
+                    {% endif %}
+                    <form action="/upload_master_allocation_builder_step3" method="post" enctype="multipart/form-data" id="mab-step3-upload-form">
+                        <div class="form-group">
+                            <label for="mab_step3_file">Comparison Tool output file:</label>
+                            <input type="file" id="mab_step3_file" name="file" accept=".xlsx,.xls" required {% if not mab_step1_work_done_data or not mab_step2_master_data %}disabled{% endif %}>
+                        </div>
+                        <button type="submit" id="mab-step3-upload-btn" {% if not mab_step1_work_done_data or not mab_step2_master_data %}disabled{% endif %}>📤 Upload Step 3 File</button>
+                    </form>
+                </div>
+
+                {% if mab_step3_comparison_file %}
+                <div class="section">
+                    <h3>📋 Step 3B: Select Sheet and Generate Merged Output</h3>
+                    <form action="/generate_master_allocation_builder_step3" method="post" id="mab-step3-generate-form">
+                        <div class="form-group">
+                            <label for="mab_step3_sheet">{{ mab_step3_comparison_file.filename }} — Select sheet:</label>
+                            <select id="mab_step3_sheet" name="step3_sheet" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                {% for sheet_name in mab_step3_comparison_file.sheet_names %}
+                                <option value="{{ sheet_name }}" {% if mab_step3_comparison_file.selected_sheet == sheet_name %}selected{% endif %}>{{ sheet_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" id="mab-step3-generate-btn">🚀 Generate Step 3 Merged File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if mab_step3_result %}
+                <div class="section">
+                    <h3>📢 Step 3 Status</h3>
+                    <div class="status-message">{{ mab_step3_result | safe }}</div>
+                </div>
+                {% endif %}
+
+                {% if mab_step3_output %}
+                <div class="section">
+                    <h3>📝 Step 3 Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ mab_step3_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if mab_step3_merged_data %}
+                <div class="section">
+                    <h3>💾 Download Step 3 Output</h3>
+                    <form action="/download_master_allocation_builder_step3" method="post" id="mab-step3-download-form">
+                        <div class="form-group">
+                            <label for="mab_step3_output_filename">Output filename (optional):</label>
+                            <input type="text" id="mab_step3_output_filename" name="filename"
+                                   placeholder="Master Allocation Builder Step-3 Merged MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="mab-step3-download-btn">💾 Download Step 3 Merged File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <div class="section" style="border-top: 2px dashed #dcdcdc; margin-top: 20px; padding-top: 20px;">
+                    <h3>🏁 Step 4: Final Master Allocation File</h3>
+                    <p>Compare Step 3 output against Step 2 output, keep Step 2 for overlapping Patient IDs, and merge unique Step 3 rows into final master.</p>
+                </div>
+
+                <div class="section">
+                    <h3>🚀 Step 4A: Generate Final Master Allocation</h3>
+                    {% if not mab_step2_master_data or not mab_step3_merged_data %}
+                    <p style="color: #b00020; margin-bottom: 10px;">Complete Step 2 and Step 3 first to enable Step 4.</p>
+                    {% endif %}
+                    <form action="/generate_master_allocation_builder_step4" method="post" id="mab-step4-generate-form">
+                        <button type="submit" id="mab-step4-generate-btn" {% if not mab_step2_master_data or not mab_step3_merged_data %}disabled{% endif %}>🚀 Generate Final Master Allocation File</button>
+                    </form>
+                </div>
+
+                {% if mab_step4_result %}
+                <div class="section">
+                    <h3>📢 Step 4 Status</h3>
+                    <div class="status-message">{{ mab_step4_result | safe }}</div>
+                </div>
+                {% endif %}
+
+                {% if mab_step4_output %}
+                <div class="section">
+                    <h3>📝 Step 4 Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ mab_step4_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if mab_step4_final_data %}
+                <div class="section">
+                    <h3>💾 Download Step 4 Output</h3>
+                    <form action="/download_master_allocation_builder_step4" method="post" id="mab-step4-download-form">
+                        <div class="form-group">
+                            <label for="mab_step4_output_filename">Output filename (optional):</label>
+                            <input type="text" id="mab_step4_output_filename" name="filename"
+                                   placeholder="Final Master Allocation MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="mab-step4-download-btn">💾 Download Final Master Allocation File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <div class="section">
+                    <h3>🔄 Reset Master Allocation Builder</h3>
+                    <p>Clear all uploaded files and generated Step 1 output.</p>
+                    <form action="/reset_master_allocation_builder" method="post" onsubmit="return confirm('Reset Master Allocation Builder and clear all data?');">
+                        <button type="submit" class="reset-btn">🗑️ Reset Master Allocation Builder</button>
+                    </form>
+                </div>
             </div>
 
             <!-- Tab 2: Conversion Report Formatting -->
@@ -3148,6 +3497,12 @@ HTML_TEMPLATE = """
                                 {% endfor %}
                             </select>
                         </div>
+                        <div class="form-group">
+                            <label>Step 3: Select Office Name values (checkboxes) to mark <code>OON 20%</code> = <code>YES</code>:</label>
+                            <div id="agentremarktransfer_office_values" style="max-height: 220px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #fff;">
+                                <div style="color: #666; font-size: 0.9em;">Select a sheet to load Office Name values.</div>
+                            </div>
+                        </div>
                         <button type="submit" id="agentremarktransfer-process-btn">🔄 Process & Transfer Data</button>
                     </form>
                     <div class="loading" id="agentremarktransfer-process-loading">
@@ -3155,6 +3510,62 @@ HTML_TEMPLATE = """
                         <p>Processing data...</p>
                     </div>
                 </div>
+                <script>
+                (function(){
+                    const sheetSel = document.getElementById('agentremarktransfer_sheet');
+                    const officeWrap = document.getElementById('agentremarktransfer_office_values');
+                    if (!sheetSel || !officeWrap) return;
+
+                    async function loadOfficeValues() {
+                        const sheet = sheetSel.value || '';
+                        officeWrap.innerHTML = '';
+                        if (!sheet) {
+                            officeWrap.innerHTML = '<div style="color:#666; font-size:0.9em;">Select a sheet to load Office Name values.</div>';
+                            return;
+                        }
+                        try {
+                            const resp = await fetch('/load_agent_remark_transfer_office_values', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                                body: 'sheet=' + encodeURIComponent(sheet)
+                            });
+                            const data = await resp.json();
+                            if (!data.ok) throw new Error(data.error || 'Failed to load office values');
+                            const values = data.values || [];
+                            if (!values.length) {
+                                officeWrap.innerHTML = '<div style="color:#666; font-size:0.9em;">No Office Name values found.</div>';
+                                return;
+                            }
+                            values.forEach((val, idx) => {
+                                const row = document.createElement('label');
+                                row.style.display = 'flex';
+                                row.style.alignItems = 'center';
+                                row.style.gap = '8px';
+                                row.style.padding = '2px 0';
+
+                                const cb = document.createElement('input');
+                                cb.type = 'checkbox';
+                                cb.name = 'office_values';
+                                cb.value = val;
+                                cb.id = `agentremarktransfer_office_${idx}`;
+
+                                const txt = document.createElement('span');
+                                txt.textContent = val;
+
+                                row.appendChild(cb);
+                                row.appendChild(txt);
+                                officeWrap.appendChild(row);
+                            });
+                        } catch (e) {
+                            // Keep UI usable even if values fail to load.
+                            officeWrap.innerHTML = '<div style="color:#b00020; font-size:0.9em;">Unable to load office values.</div>';
+                        }
+                    }
+
+                    sheetSel.addEventListener('change', loadOfficeValues);
+                    if (sheetSel.value) loadOfficeValues();
+                })();
+                </script>
                 {% endif %}
 
                 <!-- Status Messages -->
@@ -3731,6 +4142,77 @@ HTML_TEMPLATE = """
             document.body.style.overflow = '';
         }
 
+        // Persist/restore page scroll position across form actions.
+        const SCROLL_STATE_KEY = 'comparison_tool_scroll_state_v1';
+        const TAB_SCROLL_KEY = 'comparison_tool_tab_scroll_v1';
+
+        function getCurrentTabName() {
+            const active = document.querySelector('.tab-content.active');
+            if (!active || !active.id) return '';
+            return active.id.replace(/-tab$/, '');
+        }
+
+        function saveScrollState() {
+            try {
+                const state = {
+                    y: window.scrollY || window.pageYOffset || 0,
+                    tab: getCurrentTabName(),
+                    path: window.location.pathname,
+                    ts: Date.now(),
+                };
+                sessionStorage.setItem(SCROLL_STATE_KEY, JSON.stringify(state));
+            } catch (e) { /* ignore */ }
+        }
+
+        function restoreScrollState() {
+            try {
+                const raw = sessionStorage.getItem(SCROLL_STATE_KEY);
+                if (!raw) return;
+                const state = JSON.parse(raw);
+                if (!state || state.path !== window.location.pathname) return;
+
+                const urlTab = new URLSearchParams(window.location.search).get('tab') || '';
+                if (state.tab && urlTab && state.tab !== urlTab) return;
+                const y = Number(state.y || 0);
+                if (!Number.isFinite(y) || y < 0) return;
+
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        window.scrollTo(0, y);
+                    });
+                });
+            } catch (e) { /* ignore */ }
+        }
+
+        function readTabScrollMap() {
+            try {
+                const raw = sessionStorage.getItem(TAB_SCROLL_KEY);
+                if (!raw) return {};
+                const obj = JSON.parse(raw);
+                return obj && typeof obj === 'object' ? obj : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveCurrentTabScroll() {
+            const tab = getCurrentTabName();
+            if (!tab) return;
+            const map = readTabScrollMap();
+            map[tab] = window.scrollY || window.pageYOffset || 0;
+            try {
+                sessionStorage.setItem(TAB_SCROLL_KEY, JSON.stringify(map));
+            } catch (e) { /* ignore */ }
+        }
+
+        function restoreTabScroll(tabName) {
+            if (!tabName) return;
+            const map = readTabScrollMap();
+            const y = Number(map[tabName] || 0);
+            if (!Number.isFinite(y) || y < 0) return;
+            requestAnimationFrame(() => window.scrollTo(0, y));
+        }
+
         /** POST form as fetch, show processing modal, trigger file download, then go to tab (server clears session). */
         async function submitDownloadFormAsBlob(form, opts) {
             const o = opts || {};
@@ -3809,6 +4291,7 @@ HTML_TEMPLATE = """
         // Tab switching function
         function switchTab(tabName, skipUrlUpdate = false) {
             if (!tabName) return;
+            saveCurrentTabScroll();
             
             // Hide all tab contents
             document.querySelectorAll('.tab-content').forEach(content => {
@@ -3838,6 +4321,7 @@ HTML_TEMPLATE = """
                     (tabName === 'smartassist' && itemText.includes('smart assist')) ||
                     (tabName === 'consolidate' && itemText.includes('consolidate')) ||
                     (tabName === 'reallocation' && itemText.includes('reallocation')) ||
+                    (tabName === 'masterallocationbuilder' && itemText.includes('master allocation builder')) ||
                     (tabName === 'general' && itemText.includes('general comparison')) ||
                     (tabName === 'datacleanser' && itemText.includes('data cleanser')) ||
                     (tabName === 'agentremarktransfer' && itemText.includes('agent') && itemText.includes('remark')) ||
@@ -3859,6 +4343,7 @@ HTML_TEMPLATE = """
                 'smartassist': '🤖 Smart Assist Report Formatting',
                 'consolidate': '📊 Consolidate Report',
                 'reallocation': '♻️ Generate Reallocation Data',
+                'masterallocationbuilder': '🧱 Master Allocation Builder',
                 'general': '🧭 General Comparison',
                 'datacleanser': '🧹 Data Cleanser',
                 'agentremarktransfer': '🔄 Agent & Remark Transfer',
@@ -3877,6 +4362,7 @@ HTML_TEMPLATE = """
                 'smartassist': 'Format smart assist report insurance columns',
                 'consolidate': 'Consolidate master and daily report files',
                 'reallocation': 'Generate reallocation data from consolidate file',
+                'masterallocationbuilder': 'Build Work Done file from uploaded files with sheet/date filtering',
                 'general': 'Compare two files and update primary rows on match',
                 'datacleanser': 'Remove selected values from a column and create clean/removed sheets',
                 'agentremarktransfer': 'Transfer Agent Name to Agent 1 and Remark to Remark 1',
@@ -3899,6 +4385,9 @@ HTML_TEMPLATE = """
                 const newUrl = window.location.pathname + '?tab=' + tabName;
                 window.history.pushState({path: newUrl}, '', newUrl);
             }
+
+            // Restore the last known scroll for this tab/menu.
+            restoreTabScroll(tabName);
         }
         // Form submission with processing modal
         const mergeFile1Form = document.getElementById('merge-file1-form');
@@ -4422,6 +4911,143 @@ HTML_TEMPLATE = """
             });
         }
 
+        const mabStep1UploadForm = document.getElementById('mab-step1-upload-form');
+        if (mabStep1UploadForm) {
+            mabStep1UploadForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading files', 'Reading uploaded workbooks and sheet names...');
+                const btn = document.getElementById('mab-step1-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mabStep1SheetForm = document.getElementById('mab-step1-sheet-form');
+        if (mabStep1SheetForm) {
+            mabStep1SheetForm.addEventListener('submit', function() {
+                showProcessingModal('Loading values', 'Collecting unique Appointment Date and Remark values...');
+                const btn = document.getElementById('mab-step1-load-dates-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mabStep1GenerateForm = document.getElementById('mab-step1-generate-form');
+        if (mabStep1GenerateForm) {
+            mabStep1GenerateForm.addEventListener('submit', function() {
+                showProcessingModal('Generating output', 'Applying exclusions and removing duplicate patients...');
+                const btn = document.getElementById('mab-step1-generate-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mabStep1DownloadForm = document.getElementById('mab-step1-download-form');
+        if (mabStep1DownloadForm) {
+            mabStep1DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(mabStep1DownloadForm, {
+                    buttonId: 'mab-step1-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your Work Done file. Please wait...',
+                    redirectTab: 'masterallocationbuilder',
+                    defaultFilename: 'work_done.xlsx',
+                });
+            });
+        }
+
+        const mabStep2UploadForm = document.getElementById('mab-step2-upload-form');
+        if (mabStep2UploadForm) {
+            mabStep2UploadForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading files', 'Reading Step 2 workbooks and sheet names...');
+                const btn = document.getElementById('mab-step2-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mabStep2SheetForm = document.getElementById('mab-step2-sheet-form');
+        if (mabStep2SheetForm) {
+            mabStep2SheetForm.addEventListener('submit', function() {
+                showProcessingModal('Loading values', 'Collecting unique Agent Name or Status values...');
+                const btn = document.getElementById('mab-step2-load-values-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mabStep2GenerateForm = document.getElementById('mab-step2-generate-form');
+        if (mabStep2GenerateForm) {
+            mabStep2GenerateForm.addEventListener('submit', function() {
+                showProcessingModal('Generating output', 'Applying selected values and resolving duplicate patients...');
+                const btn = document.getElementById('mab-step2-generate-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mabStep2DownloadForm = document.getElementById('mab-step2-download-form');
+        if (mabStep2DownloadForm) {
+            mabStep2DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(mabStep2DownloadForm, {
+                    buttonId: 'mab-step2-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your Previous Allocation Master file. Please wait...',
+                    redirectTab: 'masterallocationbuilder',
+                    defaultFilename: 'previous_allocation_master.xlsx',
+                });
+            });
+        }
+
+        const mabStep3UploadForm = document.getElementById('mab-step3-upload-form');
+        if (mabStep3UploadForm) {
+            mabStep3UploadForm.addEventListener('submit', function() {
+                showProcessingModal('Uploading file', 'Reading Comparison Tool output workbook...');
+                const btn = document.getElementById('mab-step3-upload-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mabStep3GenerateForm = document.getElementById('mab-step3-generate-form');
+        if (mabStep3GenerateForm) {
+            mabStep3GenerateForm.addEventListener('submit', function() {
+                showProcessingModal('Generating output', 'Removing overlaps and merging with Step 1 data...');
+                const btn = document.getElementById('mab-step3-generate-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mabStep3DownloadForm = document.getElementById('mab-step3-download-form');
+        if (mabStep3DownloadForm) {
+            mabStep3DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(mabStep3DownloadForm, {
+                    buttonId: 'mab-step3-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your Step 3 merged file. Please wait...',
+                    redirectTab: 'masterallocationbuilder',
+                    defaultFilename: 'master_allocation_builder_step3_merged.xlsx',
+                });
+            });
+        }
+
+        const mabStep4GenerateForm = document.getElementById('mab-step4-generate-form');
+        if (mabStep4GenerateForm) {
+            mabStep4GenerateForm.addEventListener('submit', function() {
+                showProcessingModal('Generating output', 'Comparing Step 3 with Step 2 and building final master file...');
+                const btn = document.getElementById('mab-step4-generate-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        const mabStep4DownloadForm = document.getElementById('mab-step4-download-form');
+        if (mabStep4DownloadForm) {
+            mabStep4DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(mabStep4DownloadForm, {
+                    buttonId: 'mab-step4-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building your Final Master Allocation file. Please wait...',
+                    redirectTab: 'masterallocationbuilder',
+                    defaultFilename: 'final_master_allocation.xlsx',
+                });
+            });
+        }
+
         // Reset forms - show modal when form is submitted (HTML confirm already handled)
         const resetForms = document.querySelectorAll('form[action*="reset"]');
         resetForms.forEach(form => {
@@ -4429,6 +5055,16 @@ HTML_TEMPLATE = """
                 // Show modal - HTML onsubmit confirm already handled the confirmation
                 showProcessingModal('Resetting', 'Clearing all data and files');
             });
+        });
+
+        // Save scroll position before any form-driven action/navigation.
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', function() {
+                saveScrollState();
+            });
+        });
+        window.addEventListener('beforeunload', function() {
+            saveScrollState();
         });
 
         function toggleAllAptRemarks(source) {
@@ -4485,7 +5121,14 @@ HTML_TEMPLATE = """
                 switchTab('agentproductivity', true);
             } else if (activeTab === 'nhallocation') {
                 switchTab('nhallocation', true);
+            } else if (activeTab === 'masterallocationbuilder') {
+                switchTab('masterallocationbuilder', true);
             }
+
+            // Restore scroll where user was before the last action.
+            restoreScrollState();
+            // Also keep per-menu/tab scroll behavior consistent.
+            saveCurrentTabScroll();
             
             // Show toast notification for conversion validation and processing
             {% if conversion_result %}
@@ -5789,6 +6432,12 @@ def comparison_index():
     global data_cleanser_data, data_cleanser_filename, data_cleanser_result, data_cleanser_output, data_cleanser_processed_data
     global agent_remark_transfer_data, agent_remark_transfer_filename, agent_remark_transfer_result, agent_remark_transfer_output, agent_remark_transfer_processed_data
     global ev_allocation_files, ev_allocation_result, ev_allocation_output, ev_allocation_output_filename
+    global mab_step1_files, mab_result, mab_output, mab_step1_selected_sheets, mab_step1_unique_appointment_dates, mab_step1_excluded_appointment_dates, mab_step1_unique_remarks, mab_step1_excluded_remarks, mab_step1_work_done_data
+    global mab_step2_files, mab_step2_selected_sheets, mab_step2_filter_by, mab_step2_unique_filter_values, mab_step2_selected_filter_values, mab_step2_master_data, mab_step2_result, mab_step2_output
+    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step4_result, mab_step4_output, mab_step4_final_data
+    global mab_step4_result, mab_step4_output, mab_step4_final_data
+    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -5860,6 +6509,30 @@ def comparison_index():
         agent_remark_transfer_result=agent_remark_transfer_result,
         agent_remark_transfer_output=agent_remark_transfer_output,
         agent_remark_transfer_processed_data=agent_remark_transfer_processed_data,
+        mab_step1_files=mab_step1_files,
+        mab_result=mab_result,
+        mab_output=mab_output,
+        mab_step1_selected_sheets=mab_step1_selected_sheets,
+        mab_step1_unique_appointment_dates=mab_step1_unique_appointment_dates,
+        mab_step1_excluded_appointment_dates=mab_step1_excluded_appointment_dates,
+        mab_step1_unique_remarks=mab_step1_unique_remarks,
+        mab_step1_excluded_remarks=mab_step1_excluded_remarks,
+        mab_step1_work_done_data=mab_step1_work_done_data,
+        mab_step2_files=mab_step2_files,
+        mab_step2_selected_sheets=mab_step2_selected_sheets,
+        mab_step2_filter_by=mab_step2_filter_by,
+        mab_step2_unique_filter_values=mab_step2_unique_filter_values,
+        mab_step2_selected_filter_values=mab_step2_selected_filter_values,
+        mab_step2_master_data=mab_step2_master_data,
+        mab_step2_result=mab_step2_result,
+        mab_step2_output=mab_step2_output,
+        mab_step3_comparison_file=mab_step3_comparison_file,
+        mab_step3_result=mab_step3_result,
+        mab_step3_output=mab_step3_output,
+        mab_step3_merged_data=mab_step3_merged_data,
+        mab_step4_result=mab_step4_result,
+        mab_step4_output=mab_step4_output,
+        mab_step4_final_data=mab_step4_final_data,
         ev_allocation_files=ev_allocation_files,
         ev_allocation_result=ev_allocation_result,
         ev_allocation_output_filename=ev_allocation_output_filename
@@ -6309,8 +6982,8 @@ def download_result():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        date_str = datetime.now().strftime("%m.%d.%Y")
-        filename = f"comparison tool report - {date_str}.xlsx"
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Comparison Report {date_str}.xlsx"
 
     try:
         # Create a temporary file
@@ -7537,8 +8210,8 @@ def download_conversion_result():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"conversion_report_{timestamp}.xlsx"
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Conversion Report {date_str}.xlsx"
 
     try:
         # Create a temporary file
@@ -7802,8 +8475,8 @@ def download_insurance_formatting():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"formatted_insurance_names_{timestamp}.xlsx"
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Formatted Insurance {date_str}.xlsx"
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
 
@@ -8674,12 +9347,8 @@ def download_remarks():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        if remarks_appointments_filename:
-            base_name = os.path.splitext(remarks_appointments_filename)[0]
-            filename = f"{base_name}_appointments.xlsx"
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"appointments_with_remarks_{timestamp}.xlsx"
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Appointments Remarks {date_str}.xlsx"
 
     try:
         # Create Excel file
@@ -9270,8 +9939,8 @@ def download_appointment_report():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"formatted_appointment_report_{timestamp}.xlsx"
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Formatted Appointment Report {date_str}.xlsx"
 
     try:
         # Create a temporary file
@@ -9987,9 +10656,8 @@ def download_smart_assist():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        # Format: processed smart assist report - MM.DD.YYYY.xlsx
-        date_str = datetime.now().strftime("%m.%d.%Y")
-        filename = f"processed smart assist report - {date_str}.xlsx"
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Smart Assist Report {date_str}.xlsx"
 
     try:
         import tempfile
@@ -10131,6 +10799,974 @@ def reset_smart_assist():
             f"❌ Error resetting smart assist report formatting tool: {str(e)}"
         )
         return redirect("/comparison?tab=smartassist")
+
+
+def _mab_normalize_appt_date(value):
+    """Normalize appointment date to MM/DD/YYYY (ignoring time) when parseable."""
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value) and not isinstance(value, str):
+            return ""
+    except (ValueError, TypeError):
+        pass
+    s = str(value).strip()
+    if not s or s.lower() in {"nan", "nat"}:
+        return ""
+    try:
+        dt = pd.to_datetime(value, errors="coerce")
+        if pd.notna(dt):
+            return dt.strftime("%m/%d/%Y")
+    except Exception:
+        pass
+    return s
+
+
+def _mab_find_column(df, candidate_names):
+    """Find column by exact normalized name match."""
+    norm_to_col = {}
+    for col in df.columns:
+        key = str(col).strip().lower().replace("_", " ")
+        key = re.sub(r"\s+", " ", key)
+        norm_to_col[key] = col
+    for name in candidate_names:
+        key = str(name).strip().lower().replace("_", " ")
+        key = re.sub(r"\s+", " ", key)
+        if key in norm_to_col:
+            return norm_to_col[key]
+    return None
+
+
+def _mab_dedupe_by_patient_id_with_priority(df):
+    """
+    Deduplicate by Patient ID and keep highest-priority remark row.
+    Priority: NTC > NTBP > ATS > Workable.
+    """
+    patient_col = _mab_find_column(df, ["Patient ID", "PAT ID"])
+    if patient_col is None or df.empty:
+        return df.copy(), 0
+
+    remark_col = _mab_find_column(df, ["Pending Remark", "Remark"])
+    tmp = df.copy()
+    tmp["_mab_pid"] = tmp[patient_col].fillna("").astype(str).str.strip().str.lower()
+    if remark_col is not None:
+        tmp["_mab_remark"] = (
+            tmp[remark_col].fillna("").astype(str).str.strip().str.lower()
+        )
+    else:
+        tmp["_mab_remark"] = ""
+
+    priority_map = {"ntc": 0, "ntbp": 1, "ats": 2, "workable": 3}
+    tmp["_mab_priority"] = tmp["_mab_remark"].apply(lambda v: priority_map.get(v, 100))
+    tmp["_mab_idx"] = range(len(tmp))
+    tmp = tmp.sort_values(by=["_mab_pid", "_mab_priority", "_mab_idx"], kind="stable")
+
+    with_pid = tmp[tmp["_mab_pid"] != ""].copy()
+    without_pid = tmp[tmp["_mab_pid"] == ""].copy()
+    dedup_with_pid = with_pid.drop_duplicates(subset=["_mab_pid"], keep="first").copy()
+    dedup = pd.concat([dedup_with_pid, without_pid], ignore_index=True)
+    removed = len(tmp) - len(dedup)
+    dedup = dedup.sort_values(by="_mab_idx", kind="stable")
+    dedup = dedup[[c for c in dedup.columns if not c.startswith("_mab_")]].reset_index(
+        drop=True
+    )
+    return dedup, removed
+
+
+def _mab_apply_excluded_appointment_dates(df, excluded_dates):
+    """Remove rows whose appointment date matches excluded Step 1C dates."""
+    if df is None or df.empty or not excluded_dates:
+        return df.copy() if df is not None else df, 0
+    appt_col = _mab_find_column(df, ["Appointment Date", "Appointment", "Appt Date"])
+    if appt_col is None:
+        return df.copy(), 0
+
+    excluded_set = set(str(v).strip() for v in excluded_dates if str(v).strip())
+    if not excluded_set:
+        return df.copy(), 0
+
+    appt_norm = df[appt_col].apply(_mab_normalize_appt_date)
+    keep_mask = ~appt_norm.isin(excluded_set)
+    removed = int((~keep_mask).sum())
+    return df[keep_mask].copy(), removed
+
+
+@app.route("/upload_master_allocation_builder_step1", methods=["POST"])
+def upload_master_allocation_builder_step1():
+    global mab_step1_files, mab_result, mab_output, mab_step1_selected_sheets, mab_step1_unique_appointment_dates, mab_step1_excluded_appointment_dates, mab_step1_unique_remarks, mab_step1_excluded_remarks, mab_step1_work_done_data
+    try:
+        files = request.files.getlist("files")
+        if not files or all((not f or f.filename == "") for f in files):
+            mab_result = "❌ No file selected."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        loaded_files = []
+        for f in files:
+            if not f or f.filename == "":
+                continue
+            original_name = secure_filename(f.filename)
+            f.seek(0)
+            engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+            sheets = pd.read_excel(f, sheet_name=None, engine=engine)
+            cleaned = {}
+            for sn, df in sheets.items():
+                df = df.copy()
+                df.columns = df.columns.astype(str)
+                df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
+                cleaned[sn] = df
+            sheet_names = list(cleaned.keys())
+            if not sheet_names:
+                mab_result = f"❌ No sheets found in '{original_name}'."
+                return redirect("/comparison?tab=masterallocationbuilder")
+            loaded_files.append(
+                {
+                    "filename": original_name,
+                    "sheet_names": sheet_names,
+                    "sheets": cleaned,
+                    "selected_sheet": sheet_names[0],
+                }
+            )
+
+        if not loaded_files:
+            mab_result = "❌ No valid files uploaded."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        mab_step1_files = loaded_files
+        mab_step1_selected_sheets = {
+            info["filename"]: info["selected_sheet"] for info in loaded_files
+        }
+        mab_step1_unique_appointment_dates = []
+        mab_step1_excluded_appointment_dates = []
+        mab_step1_unique_remarks = []
+        mab_step1_excluded_remarks = []
+        mab_step1_work_done_data = None
+        mab_output = ""
+        mab_result = f"✅ Uploaded {len(loaded_files)} file(s). Select one sheet per file and load Appointment Dates."
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_result = f"❌ Error uploading files: {str(e)}"
+        mab_output = ""
+        return redirect("/comparison?tab=masterallocationbuilder")
+
+
+@app.route("/load_master_allocation_builder_step1_dates", methods=["POST"])
+def load_master_allocation_builder_step1_dates():
+    global mab_step1_files, mab_result, mab_step1_selected_sheets, mab_step1_unique_appointment_dates, mab_step1_excluded_appointment_dates, mab_step1_unique_remarks, mab_step1_excluded_remarks
+    try:
+        if not mab_step1_files:
+            mab_result = "❌ No files uploaded for Master Allocation Builder."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        all_dates = set()
+        all_remarks = set()
+        for i, info in enumerate(mab_step1_files):
+            selected_sheet = request.form.get(f"sheet_{i}", "").strip()
+            if not selected_sheet or selected_sheet not in info["sheets"]:
+                selected_sheet = info["selected_sheet"]
+            info["selected_sheet"] = selected_sheet
+            mab_step1_selected_sheets[info["filename"]] = selected_sheet
+
+            df = info["sheets"][selected_sheet]
+            if "Appointment Date" not in df.columns:
+                mab_result = (
+                    f"❌ 'Appointment Date' column not found in file '{info['filename']}' sheet '{selected_sheet}'."
+                )
+                return redirect("/comparison?tab=masterallocationbuilder")
+            normalized_dates = df["Appointment Date"].apply(_mab_normalize_appt_date)
+            for d in normalized_dates.tolist():
+                if d:
+                    all_dates.add(d)
+            if "Remark" in df.columns:
+                remark_series = df["Remark"].fillna("").astype(str).str.strip()
+                for remark in remark_series.tolist():
+                    if remark:
+                        all_remarks.add(remark)
+
+        def _sort_key(date_text):
+            dt = pd.to_datetime(date_text, errors="coerce")
+            if pd.notna(dt):
+                return (0, dt)
+            return (1, str(date_text))
+
+        mab_step1_unique_appointment_dates = sorted(all_dates, key=_sort_key)
+        mab_step1_excluded_appointment_dates = []
+        mab_step1_unique_remarks = sorted(all_remarks, key=lambda x: x.lower())
+        mab_step1_excluded_remarks = []
+        mab_result = (
+            f"✅ Loaded {len(mab_step1_unique_appointment_dates)} unique Appointment Date value(s) and "
+            f"{len(mab_step1_unique_remarks)} unique Remark value(s). "
+            "Select values to exclude and generate Work Done file."
+        )
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_result = f"❌ Error loading Appointment Dates: {str(e)}"
+        return redirect("/comparison?tab=masterallocationbuilder")
+
+
+@app.route("/generate_master_allocation_builder_step1", methods=["POST"])
+def generate_master_allocation_builder_step1():
+    global mab_step1_files, mab_result, mab_output, mab_step1_selected_sheets, mab_step1_excluded_appointment_dates, mab_step1_excluded_remarks, mab_step1_work_done_data
+    try:
+        if not mab_step1_files:
+            mab_result = "❌ No files uploaded for Master Allocation Builder."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        excluded_dates = request.form.getlist("exclude_dates")
+        excluded_set = set(str(v).strip() for v in excluded_dates if str(v).strip())
+        mab_step1_excluded_appointment_dates = sorted(excluded_set)
+        excluded_remarks = request.form.getlist("exclude_remarks")
+        excluded_remark_set = set(
+            str(v).strip().lower() for v in excluded_remarks if str(v).strip()
+        )
+        mab_step1_excluded_remarks = sorted(excluded_remark_set)
+
+        output_lines = []
+        output_lines.append("=" * 80)
+        output_lines.append("MASTER ALLOCATION BUILDER - STEP 1")
+        output_lines.append("=" * 80)
+
+        selected_frames = []
+        combined_cols = []
+        seen_cols = set()
+        total_rows_before = 0
+        total_rows_after_date_filter = 0
+        total_rows_after_remark_filter = 0
+
+        for i, info in enumerate(mab_step1_files):
+            selected_sheet = request.form.get(f"sheet_{i}", "").strip()
+            if not selected_sheet or selected_sheet not in info["sheets"]:
+                selected_sheet = info["selected_sheet"]
+            info["selected_sheet"] = selected_sheet
+            mab_step1_selected_sheets[info["filename"]] = selected_sheet
+
+            df = info["sheets"][selected_sheet].copy()
+            if "Appointment Date" not in df.columns:
+                mab_result = (
+                    f"❌ 'Appointment Date' column not found in file '{info['filename']}' sheet '{selected_sheet}'."
+                )
+                return redirect("/comparison?tab=masterallocationbuilder")
+
+            total_rows_before += len(df)
+            appt_norm = df["Appointment Date"].apply(_mab_normalize_appt_date)
+            keep_date_mask = ~appt_norm.isin(excluded_set)
+            filtered_df = df[keep_date_mask].copy()
+            total_rows_after_date_filter += len(filtered_df)
+
+            if "Remark" in filtered_df.columns and excluded_remark_set:
+                remark_norm = (
+                    filtered_df["Remark"].fillna("").astype(str).str.strip().str.lower()
+                )
+                filtered_df = filtered_df[~remark_norm.isin(excluded_remark_set)].copy()
+            total_rows_after_remark_filter += len(filtered_df)
+
+            for c in filtered_df.columns:
+                if c not in seen_cols:
+                    seen_cols.add(c)
+                    combined_cols.append(c)
+            selected_frames.append(filtered_df)
+
+            output_lines.append(
+                f"- {info['filename']} | Sheet: {selected_sheet} | Rows: {len(df)} -> {len(filtered_df)}"
+            )
+
+        aligned_frames = [f.reindex(columns=combined_cols) for f in selected_frames]
+        work_done_df = (
+            pd.concat(aligned_frames, ignore_index=True)
+            if aligned_frames
+            else pd.DataFrame(columns=combined_cols)
+        )
+
+        work_done_df, removed_duplicates = _mab_dedupe_by_patient_id_with_priority(
+            work_done_df
+        )
+
+        mab_step1_work_done_data = {"Work Done": work_done_df}
+        output_lines.append("")
+        output_lines.append(f"Total rows before exclusion: {total_rows_before}")
+        output_lines.append(
+            f"Rows after Appointment Date exclusion: {total_rows_after_date_filter}"
+        )
+        output_lines.append(
+            f"Rows after Remark exclusion: {total_rows_after_remark_filter}"
+        )
+        output_lines.append(f"Excluded Appointment Dates: {len(excluded_set)}")
+        output_lines.append(f"Excluded Remarks: {len(excluded_remark_set)}")
+        output_lines.append(f"Duplicate patients removed: {removed_duplicates}")
+        output_lines.append("✅ Work Done file generated and saved for next steps.")
+
+        mab_output = "\n".join(output_lines)
+        mab_result = f"✅ Step 1 completed successfully! Work Done rows: {len(work_done_df)}"
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_result = f"❌ Error generating Work Done file: {str(e)}"
+        mab_output = ""
+        return redirect("/comparison?tab=masterallocationbuilder")
+
+
+@app.route("/download_master_allocation_builder_step1", methods=["POST"])
+def download_master_allocation_builder_step1():
+    global mab_step1_work_done_data
+    if not mab_step1_work_done_data:
+        return jsonify(
+            {"error": "No Step 1 output available. Generate Work Done file first."}
+        ), 400
+
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Work Done {date_str}.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
+    try:
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                for sheet_name, df in mab_step1_work_done_data.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/upload_master_allocation_builder_step2", methods=["POST"])
+def upload_master_allocation_builder_step2():
+    global mab_step2_files, mab_step2_selected_sheets, mab_step2_filter_by, mab_step2_unique_filter_values, mab_step2_selected_filter_values, mab_step2_master_data, mab_step2_result, mab_step2_output
+    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step4_result, mab_step4_output, mab_step4_final_data
+    try:
+        files = request.files.getlist("files")
+        if not files or all((not f or f.filename == "") for f in files):
+            mab_step2_result = "❌ No file selected."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        loaded_files = []
+        for f in files:
+            if not f or f.filename == "":
+                continue
+            original_name = secure_filename(f.filename)
+            f.seek(0)
+            engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+            sheets = pd.read_excel(f, sheet_name=None, engine=engine)
+            cleaned = {}
+            for sn, df in sheets.items():
+                df = df.copy()
+                df.columns = df.columns.astype(str)
+                df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
+                cleaned[sn] = df
+            sheet_names = list(cleaned.keys())
+            if not sheet_names:
+                mab_step2_result = f"❌ No sheets found in '{original_name}'."
+                return redirect("/comparison?tab=masterallocationbuilder")
+            loaded_files.append(
+                {
+                    "filename": original_name,
+                    "sheet_names": sheet_names,
+                    "sheets": cleaned,
+                    "selected_sheet": sheet_names[0],
+                }
+            )
+
+        if not loaded_files:
+            mab_step2_result = "❌ No valid files uploaded."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        mab_step2_files = loaded_files
+        mab_step2_selected_sheets = {
+            info["filename"]: info["selected_sheet"] for info in loaded_files
+        }
+        mab_step2_filter_by = "agent_name"
+        mab_step2_unique_filter_values = []
+        mab_step2_selected_filter_values = []
+        mab_step2_master_data = None
+        mab_step2_output = ""
+        mab_step3_comparison_file = None
+        mab_step3_result = None
+        mab_step3_output = ""
+        mab_step3_merged_data = None
+        mab_step4_result = None
+        mab_step4_output = ""
+        mab_step4_final_data = None
+        mab_step2_result = f"✅ Step 2: Uploaded {len(loaded_files)} file(s). Select sheets and load Agent Name values."
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_step2_result = f"❌ Error uploading Step 2 files: {str(e)}"
+        mab_step2_output = ""
+        return redirect("/comparison?tab=masterallocationbuilder")
+
+
+@app.route("/load_master_allocation_builder_step2_values", methods=["POST"])
+def load_master_allocation_builder_step2_values():
+    global mab_step2_files, mab_step2_selected_sheets, mab_step2_filter_by, mab_step2_unique_filter_values, mab_step2_selected_filter_values, mab_step2_result
+    try:
+        if not mab_step2_files:
+            mab_step2_result = "❌ No Step 2 files uploaded."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        mab_step2_filter_by = "agent_name"
+        target_candidates = ["Agent Name"]
+
+        unique_values = set()
+        for i, info in enumerate(mab_step2_files):
+            selected_sheet = request.form.get(f"step2_sheet_{i}", "").strip()
+            if not selected_sheet or selected_sheet not in info["sheets"]:
+                selected_sheet = info["selected_sheet"]
+            info["selected_sheet"] = selected_sheet
+            mab_step2_selected_sheets[info["filename"]] = selected_sheet
+
+            df = info["sheets"][selected_sheet]
+            filter_col = _mab_find_column(df, target_candidates)
+            if filter_col is None:
+                mab_step2_result = f"❌ 'Agent Name' column not found in file '{info['filename']}' sheet '{selected_sheet}'."
+                return redirect("/comparison?tab=masterallocationbuilder")
+
+            values = df[filter_col].fillna("").astype(str).str.strip()
+            for v in values.tolist():
+                if v:
+                    unique_values.add(v)
+
+        mab_step2_unique_filter_values = sorted(unique_values, key=lambda x: x.lower())
+        mab_step2_selected_filter_values = []
+        mab_step2_result = (
+            f"✅ Loaded {len(mab_step2_unique_filter_values)} unique Agent Name value(s). "
+            "Select one or more Agent Name values to exclude and generate Previous Allocation Master file."
+        )
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_step2_result = f"❌ Error loading Step 2 values: {str(e)}"
+        return redirect("/comparison?tab=masterallocationbuilder")
+
+
+@app.route("/generate_master_allocation_builder_step2", methods=["POST"])
+def generate_master_allocation_builder_step2():
+    global mab_step2_files, mab_step2_selected_sheets, mab_step2_filter_by, mab_step2_selected_filter_values, mab_step2_master_data, mab_step2_result, mab_step2_output
+    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step4_result, mab_step4_output, mab_step4_final_data
+    try:
+        if not mab_step2_files:
+            mab_step2_result = "❌ No Step 2 files uploaded."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        mab_step2_filter_by = "agent_name"
+        target_candidates = ["Agent Name"]
+        label = "Agent Name"
+
+        selected_values = request.form.getlist("step2_selected_values")
+        selected_set = set(str(v).strip().lower() for v in selected_values if str(v).strip())
+        mab_step2_selected_filter_values = sorted(selected_set)
+
+        output_lines = [
+            "=" * 80,
+            "MASTER ALLOCATION BUILDER - STEP 2",
+            "=" * 80,
+            f"Filter basis: {label}",
+            f"Selected values to exclude: {len(selected_set)}",
+        ]
+
+        selected_frames = []
+        combined_cols = []
+        seen_cols = set()
+        total_rows_before = 0
+        total_rows_after_filter = 0
+
+        for i, info in enumerate(mab_step2_files):
+            selected_sheet = request.form.get(f"step2_sheet_{i}", "").strip()
+            if not selected_sheet or selected_sheet not in info["sheets"]:
+                selected_sheet = info["selected_sheet"]
+            info["selected_sheet"] = selected_sheet
+            mab_step2_selected_sheets[info["filename"]] = selected_sheet
+
+            df = info["sheets"][selected_sheet].copy()
+            filter_col = _mab_find_column(df, target_candidates)
+            if filter_col is None:
+                mab_step2_result = f"❌ '{label}' column not found in file '{info['filename']}' sheet '{selected_sheet}'."
+                return redirect("/comparison?tab=masterallocationbuilder")
+
+            total_rows_before += len(df)
+            filter_norm = df[filter_col].fillna("").astype(str).str.strip().str.lower()
+            if selected_set:
+                filtered_df = df[~filter_norm.isin(selected_set)].copy()
+            else:
+                filtered_df = df.copy()
+            total_rows_after_filter += len(filtered_df)
+
+            for c in filtered_df.columns:
+                if c not in seen_cols:
+                    seen_cols.add(c)
+                    combined_cols.append(c)
+            selected_frames.append(filtered_df)
+            output_lines.append(
+                f"- {info['filename']} | Sheet: {selected_sheet} | Rows: {len(df)} -> {len(filtered_df)}"
+            )
+
+        aligned_frames = [f.reindex(columns=combined_cols) for f in selected_frames]
+        merged_df = (
+            pd.concat(aligned_frames, ignore_index=True)
+            if aligned_frames
+            else pd.DataFrame(columns=combined_cols)
+        )
+        deduped_df, removed_duplicates = _mab_dedupe_by_patient_id_with_priority(merged_df)
+
+        mab_step2_master_data = {"Previous Allocation Master": deduped_df}
+        mab_step3_comparison_file = None
+        mab_step3_result = None
+        mab_step3_output = ""
+        mab_step3_merged_data = None
+        mab_step4_result = None
+        mab_step4_output = ""
+        mab_step4_final_data = None
+        output_lines.append("")
+        output_lines.append(f"Total rows before filter: {total_rows_before}")
+        output_lines.append(f"Rows after {label} filter: {total_rows_after_filter}")
+        output_lines.append(f"Duplicate patients removed: {removed_duplicates}")
+        output_lines.append(f"Final rows: {len(deduped_df)}")
+        output_lines.append("✅ Previous Allocation Master file generated successfully.")
+        mab_step2_output = "\n".join(output_lines)
+        mab_step2_result = (
+            "✅ Step 2 completed successfully! Previous Allocation Master file is ready."
+        )
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_step2_result = f"❌ Error generating Step 2 output: {str(e)}"
+        mab_step2_output = ""
+        return redirect("/comparison?tab=masterallocationbuilder")
+
+
+@app.route("/download_master_allocation_builder_step2", methods=["POST"])
+def download_master_allocation_builder_step2():
+    global mab_step2_master_data
+    if not mab_step2_master_data:
+        return jsonify(
+            {
+                "error": "No Step 2 output available. Generate Previous Allocation Master file first."
+            }
+        ), 400
+
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Previous Allocation Master {date_str}.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
+    try:
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                for sheet_name, df in mab_step2_master_data.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/upload_master_allocation_builder_step3", methods=["POST"])
+def upload_master_allocation_builder_step3():
+    global mab_step1_work_done_data, mab_step2_master_data, mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step4_result, mab_step4_output, mab_step4_final_data
+    try:
+        if not mab_step1_work_done_data or "Work Done" not in mab_step1_work_done_data:
+            mab_step3_result = "❌ Step 1 Work Done data not available. Complete Step 1 first."
+            return redirect("/comparison?tab=masterallocationbuilder")
+        if not mab_step2_master_data or "Previous Allocation Master" not in mab_step2_master_data:
+            mab_step3_result = "❌ Step 2 output not available. Complete Step 2 first."
+            return redirect("/comparison?tab=masterallocationbuilder")
+        if "file" not in request.files:
+            mab_step3_result = "❌ No file provided."
+            return redirect("/comparison?tab=masterallocationbuilder")
+        file = request.files["file"]
+        if not file or file.filename == "":
+            mab_step3_result = "❌ No file selected."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        original_name = secure_filename(file.filename)
+        file.seek(0)
+        engine = "xlrd" if original_name.lower().endswith(".xls") else "openpyxl"
+        sheets = pd.read_excel(file, sheet_name=None, engine=engine)
+        cleaned = {}
+        for sn, df in sheets.items():
+            df = df.copy()
+            df.columns = df.columns.astype(str)
+            df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
+            cleaned[sn] = df
+
+        sheet_names = list(cleaned.keys())
+        if not sheet_names:
+            mab_step3_result = f"❌ No sheets found in '{original_name}'."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        mab_step3_comparison_file = {
+            "filename": original_name,
+            "sheet_names": sheet_names,
+            "sheets": cleaned,
+            "selected_sheet": sheet_names[0],
+        }
+        mab_step3_output = ""
+        mab_step3_merged_data = None
+        mab_step4_result = None
+        mab_step4_output = ""
+        mab_step4_final_data = None
+        mab_step3_result = (
+            "✅ Step 3 file uploaded. Select a sheet and generate merged output."
+        )
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_step3_result = f"❌ Error uploading Step 3 file: {str(e)}"
+        mab_step3_output = ""
+        return redirect("/comparison?tab=masterallocationbuilder")
+
+
+@app.route("/generate_master_allocation_builder_step3", methods=["POST"])
+def generate_master_allocation_builder_step3():
+    global mab_step1_work_done_data, mab_step2_master_data, mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step1_excluded_appointment_dates
+    global mab_step4_result, mab_step4_output, mab_step4_final_data
+    try:
+        if not mab_step1_work_done_data or "Work Done" not in mab_step1_work_done_data:
+            mab_step3_result = (
+                "❌ Step 1 Work Done data not available. Generate Step 1 first."
+            )
+            return redirect("/comparison?tab=masterallocationbuilder")
+        if not mab_step2_master_data or "Previous Allocation Master" not in mab_step2_master_data:
+            mab_step3_result = "❌ Step 2 output not available. Generate Step 2 first."
+            return redirect("/comparison?tab=masterallocationbuilder")
+        if not mab_step3_comparison_file:
+            mab_step3_result = "❌ Step 3 comparison file not uploaded."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        selected_sheet = request.form.get("step3_sheet", "").strip()
+        if (
+            not selected_sheet
+            or selected_sheet not in mab_step3_comparison_file["sheets"]
+        ):
+            selected_sheet = mab_step3_comparison_file["selected_sheet"]
+        mab_step3_comparison_file["selected_sheet"] = selected_sheet
+
+        step1_df = mab_step1_work_done_data["Work Done"].copy()
+        comparison_df = mab_step3_comparison_file["sheets"][selected_sheet].copy()
+
+        step1_pid_col = _mab_find_column(step1_df, ["Patient ID", "PAT ID"])
+        comp_pid_col = _mab_find_column(comparison_df, ["Patient ID", "PAT ID"])
+        if step1_pid_col is None:
+            mab_step3_result = "❌ 'Patient ID' column not found in Step 1 Work Done data."
+            return redirect("/comparison?tab=masterallocationbuilder")
+        if comp_pid_col is None:
+            mab_step3_result = (
+                f"❌ 'Patient ID' column not found in Step 3 file sheet '{selected_sheet}'."
+            )
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        step1_pid_norm = (
+            step1_df[step1_pid_col].fillna("").astype(str).str.strip().str.lower()
+        )
+        step1_pid_set = set(v for v in step1_pid_norm.tolist() if v)
+
+        comp_pid_norm = (
+            comparison_df[comp_pid_col].fillna("").astype(str).str.strip().str.lower()
+        )
+        overlap_mask = comp_pid_norm.isin(step1_pid_set)
+        removed_overlap_count = int(overlap_mask.sum())
+        comp_unique_df = comparison_df[~overlap_mask].copy()
+
+        # Ensure one-row-per-Patient-ID for comparison-only leftovers.
+        comp_unique_df["_mab_pid"] = (
+            comp_unique_df[comp_pid_col].fillna("").astype(str).str.strip().str.lower()
+        )
+        with_pid = comp_unique_df[comp_unique_df["_mab_pid"] != ""].copy()
+        without_pid = comp_unique_df[comp_unique_df["_mab_pid"] == ""].copy()
+        comp_unique_dedup = with_pid.drop_duplicates(subset=["_mab_pid"], keep="first")
+        removed_comp_internal_dups = len(with_pid) - len(comp_unique_dedup)
+        comp_unique_df = pd.concat(
+            [comp_unique_dedup, without_pid], ignore_index=True
+        ).drop(columns=["_mab_pid"], errors="ignore")
+
+        # Merge Step 1 full data + comparison-only unique rows.
+        combined_cols = []
+        seen = set()
+        for c in list(step1_df.columns) + list(comp_unique_df.columns):
+            if c not in seen:
+                seen.add(c)
+                combined_cols.append(c)
+        final_df = pd.concat(
+            [
+                step1_df.reindex(columns=combined_cols),
+                comp_unique_df.reindex(columns=combined_cols),
+            ],
+            ignore_index=True,
+        )
+
+        # Final safety dedupe by patient id (keep Step 1 first occurrence).
+        final_pid_norm = (
+            final_df[step1_pid_col].fillna("").astype(str).str.strip().str.lower()
+        )
+        tmp = final_df.copy()
+        tmp["_mab_pid"] = final_pid_norm
+        with_pid_final = tmp[tmp["_mab_pid"] != ""].copy()
+        without_pid_final = tmp[tmp["_mab_pid"] == ""].copy()
+        dedup_final = with_pid_final.drop_duplicates(subset=["_mab_pid"], keep="first")
+        final_removed_by_safety = len(with_pid_final) - len(dedup_final)
+        final_df = pd.concat(
+            [dedup_final, without_pid_final], ignore_index=True
+        ).drop(columns=["_mab_pid"], errors="ignore")
+
+        # Enforce Step 1C date exclusions again after merge so excluded dates
+        # cannot re-enter from non-Step-1 sources.
+        final_df, removed_by_step1c = _mab_apply_excluded_appointment_dates(
+            final_df, mab_step1_excluded_appointment_dates
+        )
+
+        mab_step3_merged_data = {"Step 3 Merged": final_df}
+        mab_step4_result = None
+        mab_step4_output = ""
+        mab_step4_final_data = None
+        lines = [
+            "=" * 80,
+            "MASTER ALLOCATION BUILDER - STEP 3",
+            "=" * 80,
+            f"Step 1 rows: {len(step1_df)}",
+            f"Comparison rows ({selected_sheet}): {len(comparison_df)}",
+            f"Removed overlap rows from Comparison: {removed_overlap_count}",
+            f"Removed internal Comparison duplicates: {removed_comp_internal_dups}",
+            f"Final safety dedupe removals: {final_removed_by_safety}",
+            f"Removed by Step 1C date exclusions: {removed_by_step1c}",
+            f"Final merged rows: {len(final_df)}",
+            "✅ Step 3 merged file generated successfully.",
+        ]
+        mab_step3_output = "\n".join(lines)
+        mab_step3_result = "✅ Step 3 completed successfully! Merged output is ready."
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_step3_result = f"❌ Error generating Step 3 output: {str(e)}"
+        mab_step3_output = ""
+        return redirect("/comparison?tab=masterallocationbuilder")
+
+
+@app.route("/download_master_allocation_builder_step3", methods=["POST"])
+def download_master_allocation_builder_step3():
+    global mab_step3_merged_data
+    if not mab_step3_merged_data:
+        return jsonify({"error": "No Step 3 output available. Generate Step 3 first."}), 400
+
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Master Allocation Builder Step-3 Merged {date_str}.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
+    try:
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                for sheet_name, df in mab_step3_merged_data.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/generate_master_allocation_builder_step4", methods=["POST"])
+def generate_master_allocation_builder_step4():
+    global mab_step2_master_data, mab_step3_merged_data, mab_step4_result, mab_step4_output, mab_step4_final_data
+    global mab_step1_excluded_appointment_dates
+    try:
+        if (
+            not mab_step2_master_data
+            or "Previous Allocation Master" not in mab_step2_master_data
+        ):
+            mab_step4_result = "❌ Step 2 output not available. Generate Step 2 first."
+            return redirect("/comparison?tab=masterallocationbuilder")
+        if not mab_step3_merged_data or "Step 3 Merged" not in mab_step3_merged_data:
+            mab_step4_result = "❌ Step 3 output not available. Generate Step 3 first."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        step2_df = mab_step2_master_data["Previous Allocation Master"].copy()
+        step3_df = mab_step3_merged_data["Step 3 Merged"].copy()
+
+        step2_pid_col = _mab_find_column(step2_df, ["Patient ID", "PAT ID"])
+        step3_pid_col = _mab_find_column(step3_df, ["Patient ID", "PAT ID"])
+        if step2_pid_col is None:
+            mab_step4_result = "❌ 'Patient ID' column not found in Step 2 output."
+            return redirect("/comparison?tab=masterallocationbuilder")
+        if step3_pid_col is None:
+            mab_step4_result = "❌ 'Patient ID' column not found in Step 3 output."
+            return redirect("/comparison?tab=masterallocationbuilder")
+
+        step2_pid_norm = (
+            step2_df[step2_pid_col].fillna("").astype(str).str.strip().str.lower()
+        )
+        step2_pid_set = set(v for v in step2_pid_norm.tolist() if v)
+
+        step3_pid_norm = (
+            step3_df[step3_pid_col].fillna("").astype(str).str.strip().str.lower()
+        )
+        overlap_mask = step3_pid_norm.isin(step2_pid_set)
+        removed_overlap_from_step3 = int(overlap_mask.sum())
+        step3_unique_df = step3_df[~overlap_mask].copy()
+
+        # Deduplicate Step 3 leftovers by patient id.
+        step3_unique_df["_mab_pid"] = (
+            step3_unique_df[step3_pid_col]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.lower()
+        )
+        step3_with_pid = step3_unique_df[step3_unique_df["_mab_pid"] != ""].copy()
+        step3_without_pid = step3_unique_df[step3_unique_df["_mab_pid"] == ""].copy()
+        step3_with_pid_dedup = step3_with_pid.drop_duplicates(
+            subset=["_mab_pid"], keep="first"
+        )
+        removed_internal_step3_dupes = len(step3_with_pid) - len(step3_with_pid_dedup)
+        step3_unique_df = pd.concat(
+            [step3_with_pid_dedup, step3_without_pid], ignore_index=True
+        ).drop(columns=["_mab_pid"], errors="ignore")
+
+        # Merge Step 2 complete dataset + Step 3 unique records.
+        combined_cols = []
+        seen = set()
+        for c in list(step2_df.columns) + list(step3_unique_df.columns):
+            if c not in seen:
+                seen.add(c)
+                combined_cols.append(c)
+        merged_df = pd.concat(
+            [
+                step2_df.reindex(columns=combined_cols),
+                step3_unique_df.reindex(columns=combined_cols),
+            ],
+            ignore_index=True,
+        )
+
+        # Final safety dedupe by patient id (prefer Step 2 order/rows first).
+        final_pid_col = _mab_find_column(merged_df, ["Patient ID", "PAT ID"])
+        final_removed_safety = 0
+        if final_pid_col is not None:
+            tmp = merged_df.copy()
+            tmp["_mab_pid"] = (
+                tmp[final_pid_col].fillna("").astype(str).str.strip().str.lower()
+            )
+            with_pid = tmp[tmp["_mab_pid"] != ""].copy()
+            without_pid = tmp[tmp["_mab_pid"] == ""].copy()
+            with_pid_dedup = with_pid.drop_duplicates(subset=["_mab_pid"], keep="first")
+            final_removed_safety = len(with_pid) - len(with_pid_dedup)
+            merged_df = pd.concat([with_pid_dedup, without_pid], ignore_index=True).drop(
+                columns=["_mab_pid"], errors="ignore"
+            )
+
+        # Enforce Step 1C date exclusions on final master output as well.
+        merged_df, removed_by_step1c = _mab_apply_excluded_appointment_dates(
+            merged_df, mab_step1_excluded_appointment_dates
+        )
+
+        mab_step4_final_data = {"Final Master Allocation": merged_df}
+        mab_step4_output = "\n".join(
+            [
+                "=" * 80,
+                "MASTER ALLOCATION BUILDER - STEP 4",
+                "=" * 80,
+                f"Step 2 rows: {len(step2_df)}",
+                f"Step 3 rows: {len(step3_df)}",
+                f"Removed Step 3 overlaps with Step 2: {removed_overlap_from_step3}",
+                f"Removed Step 3 internal duplicates: {removed_internal_step3_dupes}",
+                f"Final safety dedupe removals: {final_removed_safety}",
+                f"Removed by Step 1C date exclusions: {removed_by_step1c}",
+                f"Final Master Allocation rows: {len(merged_df)}",
+                "✅ Final Master Allocation file generated successfully.",
+            ]
+        )
+        mab_step4_result = "✅ Step 4 completed successfully! Final output is ready."
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_step4_result = f"❌ Error generating Step 4 output: {str(e)}"
+        mab_step4_output = ""
+        return redirect("/comparison?tab=masterallocationbuilder")
+
+
+@app.route("/download_master_allocation_builder_step4", methods=["POST"])
+def download_master_allocation_builder_step4():
+    global mab_step4_final_data
+    if not mab_step4_final_data:
+        return jsonify({"error": "No Step 4 output available. Generate Step 4 first."}), 400
+
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Final Master Allocation {date_str}.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
+    try:
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                for sheet_name, df in mab_step4_final_data.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, sheet_name, df)
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_master_allocation_builder", methods=["POST"])
+def reset_master_allocation_builder():
+    global mab_step1_files, mab_result, mab_output, mab_step1_selected_sheets, mab_step1_unique_appointment_dates, mab_step1_excluded_appointment_dates, mab_step1_unique_remarks, mab_step1_excluded_remarks, mab_step1_work_done_data
+    global mab_step2_files, mab_step2_selected_sheets, mab_step2_filter_by, mab_step2_unique_filter_values, mab_step2_selected_filter_values, mab_step2_master_data, mab_step2_result, mab_step2_output
+    try:
+        mab_step1_files = []
+        mab_result = "🔄 Master Allocation Builder reset successfully! All files and data have been cleared."
+        mab_output = ""
+        mab_step1_selected_sheets = {}
+        mab_step1_unique_appointment_dates = []
+        mab_step1_excluded_appointment_dates = []
+        mab_step1_unique_remarks = []
+        mab_step1_excluded_remarks = []
+        mab_step1_work_done_data = None
+        mab_step2_files = []
+        mab_step2_selected_sheets = {}
+        mab_step2_filter_by = "agent_name"
+        mab_step2_unique_filter_values = []
+        mab_step2_selected_filter_values = []
+        mab_step2_master_data = None
+        mab_step2_result = None
+        mab_step2_output = ""
+        mab_step3_comparison_file = None
+        mab_step3_result = None
+        mab_step3_output = ""
+        mab_step3_merged_data = None
+        mab_step4_result = None
+        mab_step4_output = ""
+        mab_step4_final_data = None
+        return redirect("/comparison?tab=masterallocationbuilder")
+    except Exception as e:
+        mab_result = f"❌ Error resetting Master Allocation Builder: {str(e)}"
+        return redirect("/comparison?tab=masterallocationbuilder")
 
 
 @app.route("/upload_data_cleanser", methods=["POST"])
@@ -10315,7 +11951,8 @@ def download_data_cleanser():
 
     filename = request.form.get("filename", "").strip()
     if not filename:
-        filename = "cleaned_data.xlsx"
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Data Cleanser {date_str}.xlsx"
 
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
@@ -10404,6 +12041,7 @@ def process_agent_remark_transfer():
 
     try:
         sheet_name = request.form.get("sheet", "")
+        selected_office_values = request.form.getlist("office_values")
 
         if not sheet_name or sheet_name not in agent_remark_transfer_data:
             agent_remark_transfer_result = "❌ Error: Invalid sheet name"
@@ -10536,6 +12174,43 @@ def process_agent_remark_transfer():
                     df.at[idx, remark_col] = "Not to work"
                     rows_marked_not_to_work += 1
 
+        # Step 3: Set "OON 20%" = "YES" for selected Office Name values
+        office_name_col = None
+        for col in df.columns:
+            col_lower = str(col).lower().strip()
+            if col_lower == "office name" or ("office" in col_lower and "name" in col_lower):
+                office_name_col = col
+                break
+
+        oon_20_col = None
+        for col in df.columns:
+            col_norm = str(col).lower().strip().replace("_", " ")
+            if col_norm == "oon 20%":
+                oon_20_col = col
+                break
+        if oon_20_col is None:
+            for col in df.columns:
+                col_norm = str(col).lower().strip().replace("_", " ")
+                if "oon" in col_norm and "20" in col_norm:
+                    oon_20_col = col
+                    break
+        if oon_20_col is None:
+            oon_20_col = "OON 20%"
+            df[oon_20_col] = ""
+
+        rows_marked_oon_yes = 0
+        selected_office_set = set(
+            str(v).strip().lower() for v in selected_office_values if str(v).strip()
+        )
+        if office_name_col and selected_office_set:
+            for idx in df.index:
+                office_val = df.at[idx, office_name_col]
+                office_str = str(office_val).strip().lower() if pd.notna(office_val) else ""
+                if office_str in selected_office_set:
+                    if str(df.at[idx, oon_20_col]).strip().upper() != "YES":
+                        rows_marked_oon_yes += 1
+                    df.at[idx, oon_20_col] = "YES"
+
         # Store processed data (all sheets, but only selected sheet is modified)
         agent_remark_transfer_processed_data = agent_remark_transfer_data.copy()
         agent_remark_transfer_processed_data[sheet_name] = df
@@ -10562,6 +12237,10 @@ def process_agent_remark_transfer():
             output_lines.append(
                 f"Rows marked 'Not to work' (insurance match): {rows_marked_not_to_work}"
             )
+        if selected_office_set:
+            output_lines.append(
+                f"Rows marked 'YES' in '{oon_20_col}' for selected Office Name values: {rows_marked_oon_yes}"
+            )
         output_lines.append("")
         output_lines.append(f"✅ Agent Name values copied to '{agent1_col}'")
         output_lines.append(f"✅ Agent Name column cleared for processed rows")
@@ -10570,6 +12249,10 @@ def process_agent_remark_transfer():
         if dental_primary_ins_col:
             output_lines.append(
                 f"✅ Remark set to 'Not to work' for {rows_marked_not_to_work} row(s) with matching insurance companies"
+            )
+        if selected_office_set:
+            output_lines.append(
+                f"✅ Step 3 applied: Set '{oon_20_col}' = 'YES' for {rows_marked_oon_yes} row(s) matching selected Office Name values"
             )
 
         agent_remark_transfer_output = "\n".join(output_lines)
@@ -10583,12 +12266,49 @@ def process_agent_remark_transfer():
         return redirect("/comparison?tab=agentremarktransfer")
 
 
+@app.route("/load_agent_remark_transfer_office_values", methods=["POST"])
+def load_agent_remark_transfer_office_values():
+    global agent_remark_transfer_data
+
+    if not agent_remark_transfer_data:
+        return jsonify({"ok": False, "error": "No file uploaded"}), 400
+
+    sheet_name = request.form.get("sheet", "")
+    if not sheet_name or sheet_name not in agent_remark_transfer_data:
+        return jsonify({"ok": False, "error": "Invalid sheet name"}), 400
+
+    df = agent_remark_transfer_data[sheet_name]
+
+    office_col = None
+    for col in df.columns:
+        col_lower = str(col).strip().lower()
+        if col_lower == "office name" or ("office" in col_lower and "name" in col_lower):
+            office_col = col
+            break
+
+    if office_col is None:
+        return jsonify({"ok": False, "error": "'Office Name' column not found"}), 400
+
+    unique_values = (
+        df[office_col]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    unique_values = sorted([v for v in unique_values.unique().tolist() if v])
+
+    return jsonify({"ok": True, "values": unique_values})
+
+
 @app.route("/download_agent_remark_transfer", methods=["POST"])
 def download_agent_remark_transfer():
     if not agent_remark_transfer_processed_data:
         return jsonify({"error": "No processed data to download"}), 400
 
-    filename = request.form.get("filename", "").strip() or "agent_remark_transferred.xlsx"
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Agent Remark Transferred {date_str}.xlsx"
 
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
@@ -10823,7 +12543,10 @@ def download_consolidate():
         if not consolidate_master_data:
             return "No consolidate data available", 400
 
-        filename = request.form.get("filename", "consolidated_report.xlsx")
+        filename = request.form.get("filename", "").strip()
+        if not filename:
+            date_str = datetime.now().strftime("%m_%d_%Y")
+            filename = f"Consolidated Report {date_str}.xlsx"
         if not filename.endswith(".xlsx"):
             filename += ".xlsx"
 
@@ -10848,7 +12571,10 @@ def download_consolidate_consolidated_only():
         if not consolidate_master_data or "consolidated" not in consolidate_master_data:
             return "No consolidated data available", 400
 
-        filename = request.form.get("filename", "consolidated_only.xlsx")
+        filename = request.form.get("filename", "").strip()
+        if not filename:
+            date_str = datetime.now().strftime("%m_%d_%Y")
+            filename = f"Consolidated Only {date_str}.xlsx"
         if not filename.endswith(".xlsx"):
             filename += ".xlsx"
 
@@ -11208,7 +12934,10 @@ def download_reallocation():
     if not data_to_write:
         return jsonify({"error": "No reallocation data available"}), 400
 
-    filename = request.form.get("filename", "").strip() or "reallocation_data.xlsx"
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Generate Reallocation Data {date_str}.xlsx"
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
 
@@ -11957,7 +13686,10 @@ def download_ev_allocation():
     if ev_allocation_output is None:
         return jsonify({"error": "No output file to download. Generate the report first."}), 400
 
-    filename = request.form.get("filename", "").strip() or "ev_allocation_report.xlsx"
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"EV Allocation Report {date_str}.xlsx"
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
 
@@ -12941,7 +14673,10 @@ def download_dental_bv_step():
     if output is None:
         return jsonify({"error": "No output for this step. Run the step first."}), 400
 
-    filename = request.form.get("filename", "").strip() or f"dental_bv_step{step}_output.xlsx"
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Dental BV Step-{step} {date_str}.xlsx"
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
 
@@ -12959,7 +14694,10 @@ def download_dental_bv_final():
     if dental_bv_final_output is None:
         return jsonify({"error": "No final report to download. Complete steps and generate output first."}), 400
 
-    filename = request.form.get("filename", "").strip() or "dental_bv_report.xlsx"
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Dental BV Report {date_str}.xlsx"
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
 
@@ -13258,7 +14996,10 @@ def download_apt():
     if apt_output is None:
         return jsonify({"error": "No report to download. Run Calculate Productivity first."}), 400
 
-    filename = request.form.get("filename", "").strip() or "agent_productivity_report.xlsx"
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"Agent Productivity Report {date_str}.xlsx"
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
 
@@ -13798,7 +15539,10 @@ def download_nh():
     if nh_output is None:
         return jsonify({"error": "No report to download. Complete the merge step first."}), 400
 
-    filename = request.form.get("filename", "").strip() or "nh_allocation_report.xlsx"
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"NH Allocation Report {date_str}.xlsx"
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
 
@@ -14403,7 +16147,10 @@ def download_general_comparison():
     if not data_to_write:
         return jsonify({"error": "No general comparison data available"}), 400
 
-    filename = request.form.get("filename", "").strip() or "general_comparison_output.xlsx"
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        date_str = datetime.now().strftime("%m_%d_%Y")
+        filename = f"General Comparison {date_str}.xlsx"
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
 
