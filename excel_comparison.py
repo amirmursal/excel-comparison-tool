@@ -172,6 +172,7 @@ mab_step3_comparison_file = None  # {"filename": str, "sheets": {sheet: df}, "sh
 mab_step3_result = None
 mab_step3_output = ""
 mab_step3_merged_data = None  # {"Step 3 Merged": df}
+mab_step3_primary_sheet_name = None
 mab_step4_result = None
 mab_step4_output = ""
 mab_step4_final_data = None  # {"Final Master Allocation": df}
@@ -1895,7 +1896,7 @@ HTML_TEMPLATE = """
             <div id="masterallocationbuilder-tab" class="tab-content {% if active_tab == 'masterallocationbuilder' %}active{% endif %}">
                 <div class="section">
                     <h3>🧱 Master Allocation Builder</h3>
-                    <p>Step 1: Upload files, pick one sheet per file, exclude Appointment Date/Remark values, dedupe by Patient ID using remark priority, and generate Work Done file.</p>
+                    <p>Step 1: Upload Day, Night and NTBP consolidated files from allocation tool, pick one sheet per file, exclude Appointment Date/Remark values, dedupe by Patient ID using remark priority, and generate Work Done file.</p>
                 </div>
 
                 <div class="section">
@@ -1923,7 +1924,14 @@ HTML_TEMPLATE = """
                             </select>
                         </div>
                         {% endfor %}
-                        <button type="submit" id="mab-step1-load-dates-btn">🔎 Load Appointment Dates</button>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <button type="submit" id="mab-step1-load-dates-btn">🔎 Load Appointment Dates</button>
+                            <button type="submit" id="mab-step1-combined-download-btn"
+                                    formaction="/download_master_allocation_builder_step1_combined"
+                                    formmethod="post">
+                                💾 Download Combined File
+                            </button>
+                        </div>
                     </form>
                 </div>
                 {% endif %}
@@ -1998,7 +2006,7 @@ HTML_TEMPLATE = """
 
                 <div class="section" style="border-top: 2px dashed #dcdcdc; margin-top: 20px; padding-top: 20px;">
                     <h3>📦 Step 2: Previous Allocation Master File</h3>
-                    <p>Upload files, choose one sheet per file, keep selected Agent Name values, and dedupe by Patient ID with remark priority.</p>
+                    <p>Upload yesterdays allocation file and  NTC /NTBP allocation file, choose one sheet per file, keep selected Agent Name values, and dedupe by Patient ID with remark priority.</p>
                 </div>
 
                 <div class="section">
@@ -2034,7 +2042,7 @@ HTML_TEMPLATE = """
 
                 {% if mab_step2_unique_filter_values and mab_step2_unique_filter_values|length > 0 %}
                 <div class="section">
-                    <h3>🏷️ Step 2C: Select Values to Exclude</h3>
+                    <h3>🏷️ Step 2C: Select Values to Include</h3>
                     <form action="/generate_master_allocation_builder_step2" method="post" id="mab-step2-generate-form">
                         {% for file_info in mab_step2_files %}
                         <input type="hidden" name="step2_sheet_{{ loop.index0 }}" value="{{ file_info.selected_sheet }}">
@@ -2048,7 +2056,7 @@ HTML_TEMPLATE = """
                             </label>
                             {% endfor %}
                         </div>
-                        <small>Selected Agent Name values will be excluded from output.</small>
+                        <small>Only selected Agent Name values will be included in output.</small>
                         <div style="margin-top: 12px;">
                             <button type="submit" id="mab-step2-generate-btn">🚀 Generate Previous Allocation Master File</button>
                         </div>
@@ -4922,7 +4930,31 @@ HTML_TEMPLATE = """
 
         const mabStep1SheetForm = document.getElementById('mab-step1-sheet-form');
         if (mabStep1SheetForm) {
-            mabStep1SheetForm.addEventListener('submit', function() {
+            mabStep1SheetForm.addEventListener('submit', function(ev) {
+                const submitter = ev.submitter;
+                if (submitter && submitter.id === 'mab-step1-combined-download-btn') {
+                    ev.preventDefault();
+                    const tempForm = document.createElement('form');
+                    tempForm.action = '/download_master_allocation_builder_step1_combined';
+                    tempForm.method = 'post';
+                    const selects = mabStep1SheetForm.querySelectorAll('select[name^="sheet_"]');
+                    selects.forEach(sel => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = sel.name;
+                        input.value = sel.value || '';
+                        tempForm.appendChild(input);
+                    });
+                    void submitDownloadFormAsBlob(tempForm, {
+                        buttonId: 'mab-step1-combined-download-btn',
+                        title: 'Preparing download',
+                        message: 'Combining selected sheets exactly as-is. Please wait...',
+                        redirectTab: 'masterallocationbuilder',
+                        defaultFilename: 'step1_combined.xlsx',
+                    });
+                    return;
+                }
+
                 showProcessingModal('Loading values', 'Collecting unique Appointment Date and Remark values...');
                 const btn = document.getElementById('mab-step1-load-dates-btn');
                 if (btn) btn.disabled = true;
@@ -6434,7 +6466,7 @@ def comparison_index():
     global ev_allocation_files, ev_allocation_result, ev_allocation_output, ev_allocation_output_filename
     global mab_step1_files, mab_result, mab_output, mab_step1_selected_sheets, mab_step1_unique_appointment_dates, mab_step1_excluded_appointment_dates, mab_step1_unique_remarks, mab_step1_excluded_remarks, mab_step1_work_done_data
     global mab_step2_files, mab_step2_selected_sheets, mab_step2_filter_by, mab_step2_unique_filter_values, mab_step2_selected_filter_values, mab_step2_master_data, mab_step2_result, mab_step2_output
-    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data, mab_step3_primary_sheet_name
     global mab_step4_result, mab_step4_output, mab_step4_final_data
     global mab_step4_result, mab_step4_output, mab_step4_final_data
     global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
@@ -6530,6 +6562,7 @@ def comparison_index():
         mab_step3_result=mab_step3_result,
         mab_step3_output=mab_step3_output,
         mab_step3_merged_data=mab_step3_merged_data,
+        mab_step3_primary_sheet_name=mab_step3_primary_sheet_name,
         mab_step4_result=mab_step4_result,
         mab_step4_output=mab_step4_output,
         mab_step4_final_data=mab_step4_final_data,
@@ -11136,10 +11169,74 @@ def download_master_allocation_builder_step1():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/download_master_allocation_builder_step1_combined", methods=["POST"])
+def download_master_allocation_builder_step1_combined():
+    global mab_step1_files, mab_step1_selected_sheets
+    if not mab_step1_files:
+        return jsonify({"error": "No Step 1 files uploaded."}), 400
+
+    try:
+        selected_frames = []
+        combined_cols = []
+        seen_cols = set()
+
+        for i, info in enumerate(mab_step1_files):
+            selected_sheet = request.form.get(f"sheet_{i}", "").strip()
+            if not selected_sheet or selected_sheet not in info["sheets"]:
+                selected_sheet = info.get("selected_sheet", "")
+            if not selected_sheet or selected_sheet not in info["sheets"]:
+                return jsonify(
+                    {
+                        "error": f"Invalid or missing selected sheet for '{info.get('filename', 'file')}'."
+                    }
+                ), 400
+
+            info["selected_sheet"] = selected_sheet
+            mab_step1_selected_sheets[info["filename"]] = selected_sheet
+            df = info["sheets"][selected_sheet].copy()
+
+            # Combine exactly as selected (no dedupe/filter/modification),
+            # while preserving all columns across files.
+            for c in df.columns:
+                if c not in seen_cols:
+                    seen_cols.add(c)
+                    combined_cols.append(c)
+            selected_frames.append(df)
+
+        aligned_frames = [f.reindex(columns=combined_cols) for f in selected_frames]
+        combined_df = (
+            pd.concat(aligned_frames, ignore_index=True)
+            if aligned_frames
+            else pd.DataFrame(columns=combined_cols)
+        )
+
+        filename = request.form.get("filename", "").strip()
+        if not filename:
+            date_str = datetime.now().strftime("%m_%d_%Y")
+            filename = f"Step 1 Combined {date_str}.xlsx"
+        if not filename.endswith(".xlsx"):
+            filename += ".xlsx"
+
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                combined_df.to_excel(writer, sheet_name="Combined", index=False)
+                _apply_imagen_excel_sheet_styling(writer, "Combined", combined_df)
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/upload_master_allocation_builder_step2", methods=["POST"])
 def upload_master_allocation_builder_step2():
     global mab_step2_files, mab_step2_selected_sheets, mab_step2_filter_by, mab_step2_unique_filter_values, mab_step2_selected_filter_values, mab_step2_master_data, mab_step2_result, mab_step2_output
-    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data, mab_step3_primary_sheet_name
     global mab_step4_result, mab_step4_output, mab_step4_final_data
     try:
         files = request.files.getlist("files")
@@ -11191,6 +11288,7 @@ def upload_master_allocation_builder_step2():
         mab_step3_result = None
         mab_step3_output = ""
         mab_step3_merged_data = None
+        mab_step3_primary_sheet_name = None
         mab_step4_result = None
         mab_step4_output = ""
         mab_step4_final_data = None
@@ -11236,7 +11334,7 @@ def load_master_allocation_builder_step2_values():
         mab_step2_selected_filter_values = []
         mab_step2_result = (
             f"✅ Loaded {len(mab_step2_unique_filter_values)} unique Agent Name value(s). "
-            "Select one or more Agent Name values to exclude and generate Previous Allocation Master file."
+            "Select one or more Agent Name values to include and generate Previous Allocation Master file."
         )
         return redirect("/comparison?tab=masterallocationbuilder")
     except Exception as e:
@@ -11247,7 +11345,7 @@ def load_master_allocation_builder_step2_values():
 @app.route("/generate_master_allocation_builder_step2", methods=["POST"])
 def generate_master_allocation_builder_step2():
     global mab_step2_files, mab_step2_selected_sheets, mab_step2_filter_by, mab_step2_selected_filter_values, mab_step2_master_data, mab_step2_result, mab_step2_output
-    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data, mab_step3_primary_sheet_name
     global mab_step4_result, mab_step4_output, mab_step4_final_data
     try:
         if not mab_step2_files:
@@ -11260,6 +11358,9 @@ def generate_master_allocation_builder_step2():
 
         selected_values = request.form.getlist("step2_selected_values")
         selected_set = set(str(v).strip().lower() for v in selected_values if str(v).strip())
+        if not selected_set:
+            mab_step2_result = "❌ Select at least one Agent Name value to include."
+            return redirect("/comparison?tab=masterallocationbuilder")
         mab_step2_selected_filter_values = sorted(selected_set)
 
         output_lines = [
@@ -11267,7 +11368,7 @@ def generate_master_allocation_builder_step2():
             "MASTER ALLOCATION BUILDER - STEP 2",
             "=" * 80,
             f"Filter basis: {label}",
-            f"Selected values to exclude: {len(selected_set)}",
+            f"Selected values to include: {len(selected_set)}",
         ]
 
         selected_frames = []
@@ -11291,10 +11392,7 @@ def generate_master_allocation_builder_step2():
 
             total_rows_before += len(df)
             filter_norm = df[filter_col].fillna("").astype(str).str.strip().str.lower()
-            if selected_set:
-                filtered_df = df[~filter_norm.isin(selected_set)].copy()
-            else:
-                filtered_df = df.copy()
+            filtered_df = df[filter_norm.isin(selected_set)].copy()
             total_rows_after_filter += len(filtered_df)
 
             for c in filtered_df.columns:
@@ -11319,6 +11417,7 @@ def generate_master_allocation_builder_step2():
         mab_step3_result = None
         mab_step3_output = ""
         mab_step3_merged_data = None
+        mab_step3_primary_sheet_name = None
         mab_step4_result = None
         mab_step4_output = ""
         mab_step4_final_data = None
@@ -11376,7 +11475,7 @@ def download_master_allocation_builder_step2():
 
 @app.route("/upload_master_allocation_builder_step3", methods=["POST"])
 def upload_master_allocation_builder_step3():
-    global mab_step1_work_done_data, mab_step2_master_data, mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step1_work_done_data, mab_step2_master_data, mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data, mab_step3_primary_sheet_name
     global mab_step4_result, mab_step4_output, mab_step4_final_data
     try:
         if not mab_step1_work_done_data or "Work Done" not in mab_step1_work_done_data:
@@ -11409,12 +11508,14 @@ def upload_master_allocation_builder_step3():
             mab_step3_result = f"❌ No sheets found in '{original_name}'."
             return redirect("/comparison?tab=masterallocationbuilder")
 
+        default_sheet = "Today" if "Today" in sheet_names else sheet_names[0]
         mab_step3_comparison_file = {
             "filename": original_name,
             "sheet_names": sheet_names,
             "sheets": cleaned,
-            "selected_sheet": sheet_names[0],
+            "selected_sheet": default_sheet,
         }
+        mab_step3_primary_sheet_name = default_sheet
         mab_step3_output = ""
         mab_step3_merged_data = None
         mab_step4_result = None
@@ -11432,7 +11533,7 @@ def upload_master_allocation_builder_step3():
 
 @app.route("/generate_master_allocation_builder_step3", methods=["POST"])
 def generate_master_allocation_builder_step3():
-    global mab_step1_work_done_data, mab_step2_master_data, mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global mab_step1_work_done_data, mab_step2_master_data, mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data, mab_step3_primary_sheet_name
     global mab_step1_excluded_appointment_dates
     global mab_step4_result, mab_step4_output, mab_step4_final_data
     try:
@@ -11455,6 +11556,7 @@ def generate_master_allocation_builder_step3():
         ):
             selected_sheet = mab_step3_comparison_file["selected_sheet"]
         mab_step3_comparison_file["selected_sheet"] = selected_sheet
+        mab_step3_primary_sheet_name = selected_sheet
 
         step1_df = mab_step1_work_done_data["Work Done"].copy()
         comparison_df = mab_step3_comparison_file["sheets"][selected_sheet].copy()
@@ -11529,7 +11631,12 @@ def generate_master_allocation_builder_step3():
             final_df, mab_step1_excluded_appointment_dates
         )
 
-        mab_step3_merged_data = {"Step 3 Merged": final_df}
+        merged_workbook = {selected_sheet: final_df}
+        for sn, sdf in mab_step3_comparison_file["sheets"].items():
+            if sn == selected_sheet:
+                continue
+            merged_workbook[sn] = sdf.copy()
+        mab_step3_merged_data = merged_workbook
         mab_step4_result = None
         mab_step4_output = ""
         mab_step4_final_data = None
@@ -11588,7 +11695,7 @@ def download_master_allocation_builder_step3():
 
 @app.route("/generate_master_allocation_builder_step4", methods=["POST"])
 def generate_master_allocation_builder_step4():
-    global mab_step2_master_data, mab_step3_merged_data, mab_step4_result, mab_step4_output, mab_step4_final_data
+    global mab_step2_master_data, mab_step3_merged_data, mab_step3_primary_sheet_name, mab_step4_result, mab_step4_output, mab_step4_final_data
     global mab_step1_excluded_appointment_dates
     try:
         if (
@@ -11597,12 +11704,15 @@ def generate_master_allocation_builder_step4():
         ):
             mab_step4_result = "❌ Step 2 output not available. Generate Step 2 first."
             return redirect("/comparison?tab=masterallocationbuilder")
-        if not mab_step3_merged_data or "Step 3 Merged" not in mab_step3_merged_data:
+        if not mab_step3_merged_data:
             mab_step4_result = "❌ Step 3 output not available. Generate Step 3 first."
             return redirect("/comparison?tab=masterallocationbuilder")
 
         step2_df = mab_step2_master_data["Previous Allocation Master"].copy()
-        step3_df = mab_step3_merged_data["Step 3 Merged"].copy()
+        primary_sheet_name = mab_step3_primary_sheet_name
+        if not primary_sheet_name or primary_sheet_name not in mab_step3_merged_data:
+            primary_sheet_name = next(iter(mab_step3_merged_data.keys()))
+        step3_df = mab_step3_merged_data[primary_sheet_name].copy()
 
         step2_pid_col = _mab_find_column(step2_df, ["Patient ID", "PAT ID"])
         step3_pid_col = _mab_find_column(step3_df, ["Patient ID", "PAT ID"])
@@ -11679,7 +11789,12 @@ def generate_master_allocation_builder_step4():
             merged_df, mab_step1_excluded_appointment_dates
         )
 
-        mab_step4_final_data = {"Final Master Allocation": merged_df}
+        final_workbook = {primary_sheet_name: merged_df}
+        for sn, sdf in mab_step3_merged_data.items():
+            if sn == primary_sheet_name:
+                continue
+            final_workbook[sn] = sdf.copy()
+        mab_step4_final_data = final_workbook
         mab_step4_output = "\n".join(
             [
                 "=" * 80,
@@ -11738,6 +11853,8 @@ def download_master_allocation_builder_step4():
 def reset_master_allocation_builder():
     global mab_step1_files, mab_result, mab_output, mab_step1_selected_sheets, mab_step1_unique_appointment_dates, mab_step1_excluded_appointment_dates, mab_step1_unique_remarks, mab_step1_excluded_remarks, mab_step1_work_done_data
     global mab_step2_files, mab_step2_selected_sheets, mab_step2_filter_by, mab_step2_unique_filter_values, mab_step2_selected_filter_values, mab_step2_master_data, mab_step2_result, mab_step2_output
+    global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data, mab_step3_primary_sheet_name
+    global mab_step4_result, mab_step4_output, mab_step4_final_data
     try:
         mab_step1_files = []
         mab_result = "🔄 Master Allocation Builder reset successfully! All files and data have been cleared."
@@ -11760,6 +11877,7 @@ def reset_master_allocation_builder():
         mab_step3_result = None
         mab_step3_output = ""
         mab_step3_merged_data = None
+        mab_step3_primary_sheet_name = None
         mab_step4_result = None
         mab_step4_output = ""
         mab_step4_final_data = None
