@@ -5996,6 +5996,40 @@ def compare_patient_names(raw_df, previous_df):
                 target_idx = secondary_idx + 1
                 result_df.insert(target_idx, "OON 20%", oon_data)
 
+        # Ensure Shift exists between Agent Name and Supervisor.
+        agent_name_col = None
+        supervisor_col = None
+        for col in result_df.columns:
+            col_norm = str(col).strip().lower().replace("_", " ")
+            if col_norm == "agent name":
+                agent_name_col = col
+            elif col_norm == "supervisor":
+                supervisor_col = col
+        if agent_name_col and supervisor_col:
+            shift_col = None
+            for col in result_df.columns:
+                if str(col).strip().lower().replace("_", " ") == "shift":
+                    shift_col = col
+                    break
+            agent_idx = result_df.columns.get_loc(agent_name_col)
+            supervisor_idx = result_df.columns.get_loc(supervisor_col)
+            target_idx = agent_idx + 1
+            if shift_col is None:
+                result_df.insert(target_idx, "Shift", "")
+            else:
+                current_idx = result_df.columns.get_loc(shift_col)
+                if current_idx != target_idx:
+                    shift_data = result_df[shift_col].copy()
+                    if shift_col != "Shift":
+                        result_df = result_df.drop(columns=[shift_col])
+                    else:
+                        result_df = result_df.drop(columns=["Shift"])
+                    # refresh indexes after drop
+                    agent_idx = result_df.columns.get_loc(agent_name_col)
+                    supervisor_idx = result_df.columns.get_loc(supervisor_col)
+                    target_idx = agent_idx + 1
+                    result_df.insert(target_idx, "Shift", shift_data)
+
         # Ensure Team Leader column exists right after Supervisor.
         supervisor_col = None
         for col in result_df.columns:
@@ -10323,6 +10357,7 @@ def upload_smart_assist():
                 "Group Number",
                 "Category",
                 "Agent Name",
+                "Shift",
                 "Supervisor",
                 "Work Date",
                 "Remark",
@@ -10380,6 +10415,7 @@ def upload_smart_assist():
             plan_name_col = find_col(["plan", "name"])
             plan_number_col = find_col(["plan", "number"])
             supervisor_col = find_col(["supervisor"])
+            shift_col = find_col(["shift"])
             auditor_col = find_col(["auditor"])
             agent1_col = find_col(["agent", "1"]) or find_col(["agent1"])
             remark1_col = find_col(["remark", "1"]) or find_col(["remark1"])
@@ -10463,6 +10499,7 @@ def upload_smart_assist():
             )
             standardized["Category"] = df[category_col] if category_col else ""
             standardized["Agent Name"] = df[agent_name_col] if agent_name_col else ""
+            standardized["Shift"] = df[shift_col] if shift_col else ""
             standardized["Supervisor"] = df[supervisor_col] if supervisor_col else ""
             standardized["Work Date"] = df[work_date_col] if work_date_col else ""
             standardized["Remark"] = df[remark_col] if remark_col else ""
@@ -10734,6 +10771,38 @@ def download_smart_assist():
                             df_clean[col] = df_clean[col].apply(format_date)
                             df_clean[col] = df_clean[col].astype(str)
 
+                    # Ensure Shift exists between Agent Name and Supervisor.
+                    agent_name_col = None
+                    supervisor_col = None
+                    for col in df_clean.columns:
+                        col_norm = str(col).strip().lower().replace("_", " ")
+                        if col_norm == "agent name":
+                            agent_name_col = col
+                        elif col_norm == "supervisor":
+                            supervisor_col = col
+                    if agent_name_col and supervisor_col:
+                        shift_col = None
+                        for col in df_clean.columns:
+                            if str(col).strip().lower().replace("_", " ") == "shift":
+                                shift_col = col
+                                break
+
+                        agent_idx = df_clean.columns.get_loc(agent_name_col)
+                        target_idx = agent_idx + 1
+                        if shift_col is None:
+                            df_clean.insert(target_idx, "Shift", "")
+                        else:
+                            current_idx = df_clean.columns.get_loc(shift_col)
+                            if current_idx != target_idx:
+                                shift_data = df_clean[shift_col].copy()
+                                if shift_col != "Shift":
+                                    df_clean = df_clean.drop(columns=[shift_col])
+                                else:
+                                    df_clean = df_clean.drop(columns=["Shift"])
+                                agent_idx = df_clean.columns.get_loc(agent_name_col)
+                                target_idx = agent_idx + 1
+                                df_clean.insert(target_idx, "Shift", shift_data)
+
                     # Ensure Team Leader column exists right after Supervisor.
                     supervisor_col = None
                     for col in df_clean.columns:
@@ -10924,6 +10993,40 @@ def _mab_apply_excluded_appointment_dates(df, excluded_dates):
     return df[keep_mask].copy(), removed
 
 
+def _mab_ensure_shift_column_position(df):
+    """Ensure Shift exists between Agent Name and Supervisor."""
+    if df is None or df.empty:
+        return df.copy() if df is not None else df
+
+    agent_col = _mab_find_column(df, ["Agent Name"])
+    supervisor_col = _mab_find_column(df, ["Supervisor"])
+    if agent_col is None or supervisor_col is None:
+        return df.copy()
+
+    out = df.copy()
+    shift_col = _mab_find_column(out, ["Shift"])
+    target_idx = out.columns.get_loc(agent_col) + 1
+    if shift_col is None:
+        out.insert(target_idx, "Shift", "")
+        return out
+
+    current_idx = out.columns.get_loc(shift_col)
+    if current_idx == target_idx:
+        return out
+
+    shift_data = out[shift_col].copy()
+    if shift_col != "Shift":
+        out = out.drop(columns=[shift_col])
+    else:
+        out = out.drop(columns=["Shift"])
+    agent_col = _mab_find_column(out, ["Agent Name"])
+    if agent_col is None:
+        return out
+    target_idx = out.columns.get_loc(agent_col) + 1
+    out.insert(target_idx, "Shift", shift_data)
+    return out
+
+
 @app.route("/upload_master_allocation_builder_step1", methods=["POST"])
 def upload_master_allocation_builder_step1():
     global mab_step1_files, mab_result, mab_output, mab_step1_selected_sheets, mab_step1_unique_appointment_dates, mab_step1_excluded_appointment_dates, mab_step1_unique_remarks, mab_step1_excluded_remarks, mab_step1_work_done_data
@@ -11112,6 +11215,7 @@ def generate_master_allocation_builder_step1():
         work_done_df, removed_duplicates = _mab_dedupe_by_patient_id_with_priority(
             work_done_df
         )
+        work_done_df = _mab_ensure_shift_column_position(work_done_df)
 
         mab_step1_work_done_data = {"Work Done": work_done_df}
         output_lines.append("")
@@ -11209,6 +11313,7 @@ def download_master_allocation_builder_step1_combined():
             if aligned_frames
             else pd.DataFrame(columns=combined_cols)
         )
+        combined_df = _mab_ensure_shift_column_position(combined_df)
 
         filename = request.form.get("filename", "").strip()
         if not filename:
@@ -11411,6 +11516,7 @@ def generate_master_allocation_builder_step2():
             else pd.DataFrame(columns=combined_cols)
         )
         deduped_df, removed_duplicates = _mab_dedupe_by_patient_id_with_priority(merged_df)
+        deduped_df = _mab_ensure_shift_column_position(deduped_df)
 
         mab_step2_master_data = {"Previous Allocation Master": deduped_df}
         mab_step3_comparison_file = None
@@ -11630,6 +11736,7 @@ def generate_master_allocation_builder_step3():
         final_df, removed_by_step1c = _mab_apply_excluded_appointment_dates(
             final_df, mab_step1_excluded_appointment_dates
         )
+        final_df = _mab_ensure_shift_column_position(final_df)
 
         merged_workbook = {selected_sheet: final_df}
         for sn, sdf in mab_step3_comparison_file["sheets"].items():
@@ -11788,6 +11895,7 @@ def generate_master_allocation_builder_step4():
         merged_df, removed_by_step1c = _mab_apply_excluded_appointment_dates(
             merged_df, mab_step1_excluded_appointment_dates
         )
+        merged_df = _mab_ensure_shift_column_position(merged_df)
 
         final_workbook = {primary_sheet_name: merged_df}
         for sn, sdf in mab_step3_merged_data.items():
