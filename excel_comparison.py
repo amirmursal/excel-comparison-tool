@@ -177,6 +177,21 @@ mab_step4_result = None
 mab_step4_output = ""
 mab_step4_final_data = None  # {"Final Master Allocation": df}
 
+# AirPay Report globals (4 labeled inputs → Process All)
+airpay_result = None  # overall process status
+airpay_step1_data = None  # {sheet_name: df} from AirPay appointments CSV
+airpay_step1_filename = None
+airpay_step1_result = None
+airpay_step2_data = None  # Appointment Report formatted
+airpay_step2_filename = None
+airpay_step2_result = None
+airpay_step3_data = None  # Conversion Report formatted
+airpay_step3_filename = None
+airpay_step3_result = None
+airpay_step4_data = None  # Smart Assist Report formatted
+airpay_step4_filename = None
+airpay_step4_result = None
+
 NH_OUTPUT_COLUMNS = [
     "Software",
     "Office Name",
@@ -1608,6 +1623,9 @@ HTML_TEMPLATE = """
                 <div class="menu-item {% if active_tab == 'masterallocationbuilder' %}active{% endif %}" onclick="switchTab('masterallocationbuilder')">
                     <span>Master Allocation Builder</span>
                 </div>
+                <div class="menu-item {% if active_tab == 'airpay' %}active{% endif %}" onclick="switchTab('airpay')">
+                    <span>AirPay Report</span>
+                </div>
 
                 <div class="menu-group-header">General Automation</div>
                 <div class="menu-item {% if active_tab == 'general' %}active{% endif %}" onclick="switchTab('general')">
@@ -1659,6 +1677,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'consolidate' %}📊 Consolidate Report
                     {% elif active_tab == 'reallocation' %}♻️ Generate Reallocation Data
                     {% elif active_tab == 'masterallocationbuilder' %}🧱 Master Allocation Builder
+                    {% elif active_tab == 'airpay' %}✈️ AirPay Report
                     {% elif active_tab == 'general' %}🧭 General Comparison
                     {% elif active_tab == 'datacleanser' %}🧹 Data Cleanser
                     {% elif active_tab == 'agentremarktransfer' %}🔄 Agent & Remark Transfer
@@ -1679,6 +1698,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'consolidate' %}Consolidate master and daily report files
                     {% elif active_tab == 'reallocation' %}Generate reallocation data from consolidate file
                     {% elif active_tab == 'masterallocationbuilder' %}Build Work Done file from uploaded files with sheet/date filtering
+                    {% elif active_tab == 'airpay' %}Upload all four labeled files and process them in one click
                     {% elif active_tab == 'general' %}Compare two files and update primary rows on match
                     {% elif active_tab == 'datacleanser' %}Remove selected values from a column and create clean/removed sheets
                     {% elif active_tab == 'agentremarktransfer' %}Transfer Agent Name to Agent 1 and Remark to Remark 1
@@ -2213,6 +2233,126 @@ HTML_TEMPLATE = """
                     <p>Clear all uploaded files and generated Step 1 output.</p>
                     <form action="/reset_master_allocation_builder" method="post" onsubmit="return confirm('Reset Master Allocation Builder and clear all data?');">
                         <button type="submit" class="reset-btn">🗑️ Reset Master Allocation Builder</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab: AirPay Report -->
+            <div id="airpay-tab" class="tab-content {% if active_tab == 'airpay' %}active{% endif %}">
+                <div class="section">
+                    <h3>✈️ AirPay Report</h3>
+                    <p>Upload all four files in their labeled slots, then click Process All. Each slot tells the system which file is which (AirPay CSV, Appointment, Conversion, Smart Assist).</p>
+                </div>
+
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>📁 Upload All Files</h3>
+                    <form action="/upload_airpay_all" method="post" enctype="multipart/form-data" id="airpay-all-form">
+                        <div class="form-group">
+                            <label for="airpay_file"><strong>1. AirPay Appointments CSV</strong> (.csv)</label>
+                            <input type="file" id="airpay_file" name="airpay_file" accept=".csv" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="appointment_file"><strong>2. Appointment Report</strong> (.xlsx, .xls)</label>
+                            <input type="file" id="appointment_file" name="appointment_file" accept=".xlsx,.xls" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="conversion_file"><strong>3. Conversion Report</strong> (.xlsx, .xls)</label>
+                            <input type="file" id="conversion_file" name="conversion_file" accept=".xlsx,.xls" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="smart_assist_file"><strong>4. Smart Assist Report</strong> (.xlsx, .xls)</label>
+                            <input type="file" id="smart_assist_file" name="smart_assist_file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" id="airpay-all-btn" style="background: #667eea; color: white; padding: 12px 30px; font-size: 16px;">
+                            🚀 Process All
+                        </button>
+                    </form>
+                </div>
+
+                {% if airpay_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">{{ airpay_result | safe }}</div>
+                </div>
+                {% endif %}
+
+                {% if airpay_step1_data and airpay_step1_result and 'error' not in airpay_step1_result.lower() %}
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>💾 1. AirPay Appointments</h3>
+                    <div class="status-success" style="margin-bottom: 10px;">
+                        ✅ {{ airpay_step1_filename }}
+                    </div>
+                    <form action="/download_airpay_step1" method="post" id="airpay-step1-download-form">
+                        <div class="form-group">
+                            <label for="airpay_step1_output_filename">Output filename (optional):</label>
+                            <input type="text" id="airpay_step1_output_filename" name="filename"
+                                   placeholder="AirPay Appointments MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="airpay-step1-download-btn">💾 Download AirPay Appointments</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if airpay_step2_data and airpay_step2_result and 'error' not in airpay_step2_result.lower() %}
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>💾 2. Appointment Report</h3>
+                    <div class="status-success" style="margin-bottom: 10px;">
+                        ✅ {{ airpay_step2_filename }}
+                    </div>
+                    <form action="/download_airpay_step2" method="post" id="airpay-step2-download-form">
+                        <div class="form-group">
+                            <label for="airpay_step2_output_filename">Output filename (optional):</label>
+                            <input type="text" id="airpay_step2_output_filename" name="filename"
+                                   placeholder="Appointment Report MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="airpay-step2-download-btn">💾 Download Appointment Report</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if airpay_step3_data and airpay_step3_result and 'error' not in airpay_step3_result.lower() %}
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>💾 3. Conversion Report</h3>
+                    <div class="status-success" style="margin-bottom: 10px;">
+                        ✅ {{ airpay_step3_filename }}
+                    </div>
+                    <form action="/download_airpay_step3" method="post" id="airpay-step3-download-form">
+                        <div class="form-group">
+                            <label for="airpay_step3_output_filename">Output filename (optional):</label>
+                            <input type="text" id="airpay_step3_output_filename" name="filename"
+                                   placeholder="Conversion Report MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="airpay-step3-download-btn">💾 Download Conversion Report</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if airpay_step4_data and airpay_step4_result and 'error' not in airpay_step4_result.lower() and 'processing complete' in airpay_step4_result.lower() %}
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>💾 4. Smart Assist Report</h3>
+                    <div class="status-success" style="margin-bottom: 10px;">
+                        ✅ {{ airpay_step4_filename }}
+                    </div>
+                    <form action="/download_airpay_step4" method="post" id="airpay-step4-download-form">
+                        <div class="form-group">
+                            <label for="airpay_step4_output_filename">Output filename (optional):</label>
+                            <input type="text" id="airpay_step4_output_filename" name="filename"
+                                   placeholder="Smart Assist Report MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="airpay-step4-download-btn">💾 Download Smart Assist Report</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <div class="section">
+                    <h3>🔄 Reset AirPay Report</h3>
+                    <p>Clear all AirPay Report outputs and start fresh.</p>
+                    <form action="/reset_airpay" method="post" onsubmit="return confirm('Reset AirPay Report and clear all outputs?');">
+                        <button type="submit" class="reset-btn">🗑️ Reset AirPay Report</button>
                     </form>
                 </div>
             </div>
@@ -4325,11 +4465,12 @@ HTML_TEMPLATE = """
                     (tabName === 'conversion' && itemText.includes('conversion')) ||
                     (tabName === 'insurance' && itemText.includes('insurance')) ||
                     (tabName === 'remarks' && itemText.includes('remarks')) ||
-                    (tabName === 'appointment' && itemText.includes('appointment')) ||
+                    (tabName === 'appointment' && itemText.includes('appointment') && !itemText.includes('airpay')) ||
                     (tabName === 'smartassist' && itemText.includes('smart assist')) ||
                     (tabName === 'consolidate' && itemText.includes('consolidate')) ||
                     (tabName === 'reallocation' && itemText.includes('reallocation')) ||
                     (tabName === 'masterallocationbuilder' && itemText.includes('master allocation builder')) ||
+                    (tabName === 'airpay' && itemText.includes('airpay')) ||
                     (tabName === 'general' && itemText.includes('general comparison')) ||
                     (tabName === 'datacleanser' && itemText.includes('data cleanser')) ||
                     (tabName === 'agentremarktransfer' && itemText.includes('agent') && itemText.includes('remark')) ||
@@ -4352,6 +4493,7 @@ HTML_TEMPLATE = """
                 'consolidate': '📊 Consolidate Report',
                 'reallocation': '♻️ Generate Reallocation Data',
                 'masterallocationbuilder': '🧱 Master Allocation Builder',
+                'airpay': '✈️ AirPay Report',
                 'general': '🧭 General Comparison',
                 'datacleanser': '🧹 Data Cleanser',
                 'agentremarktransfer': '🔄 Agent & Remark Transfer',
@@ -4371,6 +4513,7 @@ HTML_TEMPLATE = """
                 'consolidate': 'Consolidate master and daily report files',
                 'reallocation': 'Generate reallocation data from consolidate file',
                 'masterallocationbuilder': 'Build Work Done file from uploaded files with sheet/date filtering',
+                'airpay': 'Upload all four labeled files and process them in one click',
                 'general': 'Compare two files and update primary rows on match',
                 'datacleanser': 'Remove selected values from a column and create clean/removed sheets',
                 'agentremarktransfer': 'Transfer Agent Name to Agent 1 and Remark to Remark 1',
@@ -4485,6 +4628,68 @@ HTML_TEMPLATE = """
             appointmentForm.addEventListener('submit', function() {
                 showProcessingModal('Formatting Insurance Columns', 'Processing file and formatting insurance names');
                 document.getElementById('appointment-btn').disabled = true;
+            });
+        }
+
+        // AirPay Report — Process All
+        const airpayAllForm = document.getElementById('airpay-all-form');
+        if (airpayAllForm) {
+            airpayAllForm.addEventListener('submit', function() {
+                showProcessingModal('AirPay Report', 'Processing all four files. Please wait…');
+                const btn = document.getElementById('airpay-all-btn');
+                if (btn) btn.disabled = true;
+            });
+        }
+        const airpayStep1DownloadForm = document.getElementById('airpay-step1-download-form');
+        if (airpayStep1DownloadForm) {
+            airpayStep1DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(airpayStep1DownloadForm, {
+                    buttonId: 'airpay-step1-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building AirPay Appointments Excel. Please wait…',
+                    redirectTab: 'airpay',
+                    defaultFilename: 'AirPay Appointments.xlsx',
+                });
+            });
+        }
+        const airpayStep2DownloadForm = document.getElementById('airpay-step2-download-form');
+        if (airpayStep2DownloadForm) {
+            airpayStep2DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(airpayStep2DownloadForm, {
+                    buttonId: 'airpay-step2-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building Appointment Report Excel. Please wait…',
+                    redirectTab: 'airpay',
+                    defaultFilename: 'Appointment Report.xlsx',
+                });
+            });
+        }
+        const airpayStep3DownloadForm = document.getElementById('airpay-step3-download-form');
+        if (airpayStep3DownloadForm) {
+            airpayStep3DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(airpayStep3DownloadForm, {
+                    buttonId: 'airpay-step3-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building Conversion Report Excel. Please wait…',
+                    redirectTab: 'airpay',
+                    defaultFilename: 'Conversion Report.xlsx',
+                });
+            });
+        }
+        const airpayStep4DownloadForm = document.getElementById('airpay-step4-download-form');
+        if (airpayStep4DownloadForm) {
+            airpayStep4DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(airpayStep4DownloadForm, {
+                    buttonId: 'airpay-step4-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building Smart Assist Report Excel. Please wait…',
+                    redirectTab: 'airpay',
+                    defaultFilename: 'Smart Assist Report.xlsx',
+                });
             });
         }
 
@@ -5155,6 +5360,8 @@ HTML_TEMPLATE = """
                 switchTab('nhallocation', true);
             } else if (activeTab === 'masterallocationbuilder') {
                 switchTab('masterallocationbuilder', true);
+            } else if (activeTab === 'airpay') {
+                switchTab('airpay', true);
             }
 
             // Restore scroll where user was before the last action.
@@ -6504,6 +6711,11 @@ def comparison_index():
     global mab_step4_result, mab_step4_output, mab_step4_final_data
     global mab_step4_result, mab_step4_output, mab_step4_final_data
     global mab_step3_comparison_file, mab_step3_result, mab_step3_output, mab_step3_merged_data
+    global airpay_result
+    global airpay_step1_data, airpay_step1_filename, airpay_step1_result
+    global airpay_step2_data, airpay_step2_filename, airpay_step2_result
+    global airpay_step3_data, airpay_step3_filename, airpay_step3_result
+    global airpay_step4_data, airpay_step4_filename, airpay_step4_result
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -6600,6 +6812,19 @@ def comparison_index():
         mab_step4_result=mab_step4_result,
         mab_step4_output=mab_step4_output,
         mab_step4_final_data=mab_step4_final_data,
+        airpay_result=airpay_result,
+        airpay_step1_data=airpay_step1_data,
+        airpay_step1_filename=airpay_step1_filename,
+        airpay_step1_result=airpay_step1_result,
+        airpay_step2_data=airpay_step2_data,
+        airpay_step2_filename=airpay_step2_filename,
+        airpay_step2_result=airpay_step2_result,
+        airpay_step3_data=airpay_step3_data,
+        airpay_step3_filename=airpay_step3_filename,
+        airpay_step3_result=airpay_step3_result,
+        airpay_step4_data=airpay_step4_data,
+        airpay_step4_filename=airpay_step4_filename,
+        airpay_step4_result=airpay_step4_result,
         ev_allocation_files=ev_allocation_files,
         ev_allocation_result=ev_allocation_result,
         ev_allocation_output_filename=ev_allocation_output_filename
@@ -7599,15 +7824,70 @@ def download_result():
 @app.route("/upload_conversion", methods=["POST"])
 def upload_conversion_file():
     global conversion_data, conversion_filename, conversion_result
+    global airpay_step2_data, airpay_step3_data, airpay_step3_filename, airpay_step3_result
+    global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+
+    from_airpay = request.form.get("from_airpay") == "1"
+    saved_state = None
+    if from_airpay:
+        if not airpay_step2_data:
+            airpay_step3_result = (
+                "❌ Error: Complete Step 2 (Appointment Report) first."
+            )
+            return redirect("/comparison?tab=airpay")
+        saved_state = (conversion_data, conversion_filename, conversion_result)
+
+    def _finish_conversion_upload():
+        global conversion_data, conversion_filename, conversion_result
+        global airpay_step3_data, airpay_step3_filename, airpay_step3_result
+        global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+        if from_airpay:
+            ok = (
+                conversion_data is not None
+                and conversion_result
+                and "error" not in str(conversion_result).lower()
+                and "processing completed successfully"
+                in str(conversion_result).lower()
+            )
+            if ok:
+                airpay_rename = {
+                    "appt date": "Appointment Date",
+                    "pat id": "(PMS) Patient ID",
+                    "status": "Remark",
+                }
+                airpay_step3_data = {}
+                for sheet_name, sheet_df in conversion_data.items():
+                    df_out = sheet_df.copy(deep=True)
+                    rename_map = {}
+                    for col in df_out.columns:
+                        key = str(col).strip().lower()
+                        if key in airpay_rename:
+                            rename_map[col] = airpay_rename[key]
+                    if rename_map:
+                        df_out = df_out.rename(columns=rename_map)
+                    airpay_step3_data[sheet_name] = df_out
+                airpay_step3_filename = conversion_filename
+                airpay_step3_result = conversion_result
+                airpay_step4_data = None
+                airpay_step4_filename = None
+                airpay_step4_result = None
+            else:
+                airpay_step3_result = (
+                    conversion_result or "❌ Error processing Conversion Report"
+                )
+            if saved_state is not None:
+                conversion_data, conversion_filename, conversion_result = saved_state
+            return redirect("/comparison?tab=airpay")
+        return redirect("/comparison?tab=conversion")
 
     if "file" not in request.files:
         conversion_result = "❌ Error: No file provided"
-        return redirect("/comparison?tab=conversion")
+        return _finish_conversion_upload()
 
     file = request.files["file"]
     if file.filename == "":
         conversion_result = "❌ Error: No file selected"
-        return redirect("/comparison?tab=conversion")
+        return _finish_conversion_upload()
 
     try:
         # Get filename without saving to disk
@@ -8259,13 +8539,13 @@ def upload_conversion_file():
 
             conversion_result = f"✅ Validation and processing completed successfully!\n\n📊 File loaded: {filename}\n📋 Sheets processed: {len(conversion_data)}\n📋 Sheet names: {', '.join(list(conversion_data.keys()))}\n📊 Total rows processed: {total_rows_processed}{dedup_msg}\n\n✅ New columns added:\n{columns_added_msg}\n💾 Ready to download the processed file!"
 
-        return redirect("/comparison?tab=conversion")
+        return _finish_conversion_upload()
 
     except Exception as e:
         conversion_result = f"❌ Error uploading Conversion Report: {str(e)}"
         conversion_data = None
         conversion_filename = None
-        return redirect("/comparison?tab=conversion")
+        return _finish_conversion_upload()
 
 
 @app.route("/download_conversion", methods=["POST"])
@@ -9468,15 +9748,78 @@ def reset_remarks():
 @app.route("/upload_appointment_report", methods=["POST"])
 def upload_appointment_report():
     global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
+    global airpay_step1_data, airpay_step2_data, airpay_step2_filename, airpay_step2_result
+    global airpay_step3_data, airpay_step3_filename, airpay_step3_result
+    global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+
+    from_airpay = request.form.get("from_airpay") == "1"
+    saved_state = None
+    if from_airpay:
+        if not airpay_step1_data:
+            airpay_step2_result = (
+                "❌ Error: Complete Step 1 (AirPay Appointments CSV) first."
+            )
+            return redirect("/comparison?tab=airpay")
+        saved_state = (
+            appointment_report_data,
+            appointment_report_filename,
+            appointment_report_result,
+            appointment_report_output,
+        )
+
+    def _finish_appointment_upload():
+        global appointment_report_data, appointment_report_filename, appointment_report_result, appointment_report_output
+        global airpay_step2_data, airpay_step2_filename, airpay_step2_result
+        global airpay_step3_data, airpay_step3_filename, airpay_step3_result
+        global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+        if from_airpay:
+            ok = (
+                appointment_report_data is not None
+                and appointment_report_result
+                and "error" not in str(appointment_report_result).lower()
+            )
+            if ok:
+                airpay_step2_data = {}
+                for sheet_name, sheet_df in appointment_report_data.items():
+                    df_out = sheet_df.copy(deep=True)
+                    rename_map = {}
+                    for col in df_out.columns:
+                        if str(col).strip().lower() == "patient id":
+                            rename_map[col] = "(PMS) Patient ID"
+                    if rename_map:
+                        df_out = df_out.rename(columns=rename_map)
+                    airpay_step2_data[sheet_name] = df_out
+                airpay_step2_filename = appointment_report_filename
+                airpay_step2_result = appointment_report_result
+                airpay_step3_data = None
+                airpay_step3_filename = None
+                airpay_step3_result = None
+                airpay_step4_data = None
+                airpay_step4_filename = None
+                airpay_step4_result = None
+            else:
+                airpay_step2_result = (
+                    appointment_report_result
+                    or "❌ Error processing Appointment Report"
+                )
+            if saved_state is not None:
+                (
+                    appointment_report_data,
+                    appointment_report_filename,
+                    appointment_report_result,
+                    appointment_report_output,
+                ) = saved_state
+            return redirect("/comparison?tab=airpay")
+        return redirect("/comparison?tab=appointment")
 
     if "file" not in request.files:
         appointment_report_result = "❌ Error: No file provided"
-        return redirect("/comparison?tab=appointment")
+        return _finish_appointment_upload()
 
     file = request.files["file"]
     if file.filename == "":
         appointment_report_result = "❌ Error: No file selected"
-        return redirect("/comparison?tab=appointment")
+        return _finish_appointment_upload()
 
     try:
         # Get filename without saving to disk
@@ -9989,12 +10332,12 @@ def upload_appointment_report():
         sheets_count = len(processed_sheets)
         appointment_report_result = f"✅ Processing complete! Formatted insurance columns in {sheets_count} sheet(s). Total rows processed: {total_rows_processed}"
 
-        return redirect("/comparison?tab=appointment")
+        return _finish_appointment_upload()
 
     except Exception as e:
         appointment_report_result = f"❌ Error processing file: {str(e)}"
         appointment_report_output = f"Error: {str(e)}"
-        return redirect("/comparison?tab=appointment")
+        return _finish_appointment_upload()
 
 
 @app.route("/download_appointment_report", methods=["POST"])
@@ -10108,15 +10451,73 @@ def reset_appointment_report():
 @app.route("/upload_smart_assist", methods=["POST"])
 def upload_smart_assist():
     global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
+    global airpay_step3_data, airpay_step4_data, airpay_step4_filename, airpay_step4_result
+
+    from_airpay = request.form.get("from_airpay") == "1"
+    saved_state = None
+    if from_airpay:
+        if not airpay_step3_data:
+            airpay_step4_result = (
+                "❌ Error: Complete Step 3 (Conversion Report) first."
+            )
+            return redirect("/comparison?tab=airpay")
+        saved_state = (
+            smart_assist_data,
+            smart_assist_filename,
+            smart_assist_result,
+            smart_assist_output,
+        )
+
+    def _finish_smart_assist_upload():
+        global smart_assist_data, smart_assist_filename, smart_assist_result, smart_assist_output
+        global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+        if from_airpay:
+            ok = (
+                smart_assist_data is not None
+                and smart_assist_result
+                and "error" not in str(smart_assist_result).lower()
+                and "processing complete" in str(smart_assist_result).lower()
+            )
+            if ok:
+                airpay_rename = {
+                    "provider": "Provider Name",
+                    "patient id": "(PMS) Patient ID",
+                }
+                airpay_step4_data = {}
+                for sheet_name, sheet_df in smart_assist_data.items():
+                    df_out = sheet_df.copy(deep=True)
+                    rename_map = {}
+                    for col in df_out.columns:
+                        key = str(col).strip().lower()
+                        if key in airpay_rename:
+                            rename_map[col] = airpay_rename[key]
+                    if rename_map:
+                        df_out = df_out.rename(columns=rename_map)
+                    airpay_step4_data[sheet_name] = df_out
+                airpay_step4_filename = smart_assist_filename
+                airpay_step4_result = smart_assist_result
+            else:
+                airpay_step4_result = (
+                    smart_assist_result or "❌ Error processing Smart Assist Report"
+                )
+            if saved_state is not None:
+                (
+                    smart_assist_data,
+                    smart_assist_filename,
+                    smart_assist_result,
+                    smart_assist_output,
+                ) = saved_state
+            return redirect("/comparison?tab=airpay")
+        return redirect("/comparison?tab=smartassist")
 
     if "file" not in request.files:
         smart_assist_result = "❌ Error: No file provided"
-        return redirect("/comparison?tab=smartassist")
+        return _finish_smart_assist_upload()
 
     file = request.files["file"]
     if file.filename == "":
         smart_assist_result = "❌ Error: No file selected"
-        return redirect("/comparison?tab=smartassist")
+        return _finish_smart_assist_upload()
 
     try:
         filename = secure_filename(file.filename)
@@ -10657,7 +11058,7 @@ def upload_smart_assist():
         sheets_count = len(processed_sheets)
         smart_assist_result = f"✅ Processing complete! Formatted {sheets_count} sheet(s) with {total_rows} total rows. All sections combined, blank rows removed, and headers consolidated."
 
-        return redirect("/comparison?tab=smartassist")
+        return _finish_smart_assist_upload()
 
     except Exception as e:
         import traceback
@@ -10665,7 +11066,7 @@ def upload_smart_assist():
         error_details = traceback.format_exc()
         smart_assist_result = f"❌ Error processing file: {str(e)}"
         smart_assist_output = f"Error: {str(e)}\n\nDetails:\n{error_details}"
-        return redirect("/comparison?tab=smartassist")
+        return _finish_smart_assist_upload()
 
 
 def _apply_imagen_openpyxl_worksheet(ws, column_headers):
@@ -10901,6 +11302,463 @@ def reset_smart_assist():
             f"❌ Error resetting smart assist report formatting tool: {str(e)}"
         )
         return redirect("/comparison?tab=smartassist")
+
+
+def _airpay_format_date_mmddyyyy(date_val):
+    """Format a value as MM/DD/YYYY when parseable; otherwise return original string."""
+    if pd.isna(date_val) or date_val == "":
+        return ""
+    try:
+        if isinstance(date_val, pd.Timestamp):
+            date_obj = date_val
+        else:
+            date_obj = pd.to_datetime(date_val, errors="coerce")
+            if pd.isna(date_obj):
+                return str(date_val)
+        return date_obj.strftime("%m/%d/%Y")
+    except (ValueError, TypeError, AttributeError):
+        return str(date_val)
+
+
+def _airpay_send_excel_download(sheets_dict, filename, conversion_style=False):
+    """Write sheets to an in-memory xlsx with Imagen styling and return as attachment."""
+    from io import BytesIO
+
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for sheet_name, df in sheets_dict.items():
+            df_clean = df.copy()
+            if conversion_style and "Conversion" in df_clean.columns:
+                df_clean = df_clean.drop(columns=["Conversion"])
+
+            for col in df_clean.columns:
+                col_lower = str(col).lower().strip().replace(" ", "").replace("_", "")
+                if conversion_style:
+                    if col_lower not in ("apptdate", "appointmentdate"):
+                        continue
+                elif "date" not in col_lower and "time" not in col_lower:
+                    continue
+                df_clean[col] = df_clean[col].apply(_airpay_format_date_mmddyyyy)
+                if not conversion_style:
+                    df_clean[col] = df_clean[col].astype(str)
+
+            safe_sheet = str(sheet_name)[:31] or "Sheet1"
+            df_clean.to_excel(writer, sheet_name=safe_sheet, index=False)
+            _apply_imagen_excel_sheet_styling(writer, safe_sheet, df_clean)
+
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def _airpay_post_labeled_file(endpoint, file_storage, extra_form=None):
+    """POST a labeled upload to an existing formatter endpoint (reuses its logic)."""
+    from io import BytesIO
+
+    file_storage.seek(0)
+    raw = file_storage.read()
+    fname = secure_filename(file_storage.filename) or "upload.bin"
+    data = {"file": (BytesIO(raw), fname)}
+    if extra_form:
+        data.update(extra_form)
+    with app.test_client() as client:
+        return client.post(
+            endpoint, data=data, content_type="multipart/form-data"
+        )
+
+
+@app.route("/upload_airpay_all", methods=["POST"])
+def upload_airpay_all():
+    """Process all four labeled AirPay inputs in one request."""
+    global airpay_result
+    global airpay_step1_data, airpay_step1_filename, airpay_step1_result
+    global airpay_step2_data, airpay_step2_filename, airpay_step2_result
+    global airpay_step3_data, airpay_step3_filename, airpay_step3_result
+    global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+
+    airpay_file = request.files.get("airpay_file")
+    appointment_file = request.files.get("appointment_file")
+    conversion_file = request.files.get("conversion_file")
+    smart_assist_file = request.files.get("smart_assist_file")
+
+    missing = []
+    if not airpay_file or not airpay_file.filename:
+        missing.append("AirPay Appointments CSV")
+    if not appointment_file or not appointment_file.filename:
+        missing.append("Appointment Report")
+    if not conversion_file or not conversion_file.filename:
+        missing.append("Conversion Report")
+    if not smart_assist_file or not smart_assist_file.filename:
+        missing.append("Smart Assist Report")
+    if missing:
+        airpay_result = "❌ Please select all four files: " + ", ".join(missing)
+        return redirect("/comparison?tab=airpay")
+
+    # Clear previous outputs
+    airpay_step1_data = None
+    airpay_step1_filename = None
+    airpay_step1_result = None
+    airpay_step2_data = None
+    airpay_step2_filename = None
+    airpay_step2_result = None
+    airpay_step3_data = None
+    airpay_step3_filename = None
+    airpay_step3_result = None
+    airpay_step4_data = None
+    airpay_step4_filename = None
+    airpay_step4_result = None
+
+    try:
+        # 1) AirPay CSV (labeled slot → /upload_airpay_step1)
+        _airpay_post_labeled_file("/upload_airpay_step1", airpay_file)
+        if (
+            not airpay_step1_data
+            or not airpay_step1_result
+            or "error" in str(airpay_step1_result).lower()
+        ):
+            airpay_result = (
+                "❌ AirPay Appointments failed. "
+                + (airpay_step1_result or "Unknown error")
+            )
+            return redirect("/comparison?tab=airpay")
+
+        # 2) Appointment Report
+        _airpay_post_labeled_file(
+            "/upload_appointment_report",
+            appointment_file,
+            {"from_airpay": "1"},
+        )
+        if (
+            not airpay_step2_data
+            or not airpay_step2_result
+            or "error" in str(airpay_step2_result).lower()
+        ):
+            airpay_result = (
+                "❌ Appointment Report failed. "
+                + (airpay_step2_result or "Unknown error")
+            )
+            return redirect("/comparison?tab=airpay")
+
+        # 3) Conversion Report
+        _airpay_post_labeled_file(
+            "/upload_conversion",
+            conversion_file,
+            {"from_airpay": "1"},
+        )
+        if (
+            not airpay_step3_data
+            or not airpay_step3_result
+            or "error" in str(airpay_step3_result).lower()
+        ):
+            airpay_result = (
+                "❌ Conversion Report failed. "
+                + (airpay_step3_result or "Unknown error")
+            )
+            return redirect("/comparison?tab=airpay")
+
+        # 4) Smart Assist Report
+        _airpay_post_labeled_file(
+            "/upload_smart_assist",
+            smart_assist_file,
+            {"from_airpay": "1"},
+        )
+        if (
+            not airpay_step4_data
+            or not airpay_step4_result
+            or "error" in str(airpay_step4_result).lower()
+            or "processing complete" not in str(airpay_step4_result).lower()
+        ):
+            airpay_result = (
+                "❌ Smart Assist Report failed. "
+                + (airpay_step4_result or "Unknown error")
+            )
+            return redirect("/comparison?tab=airpay")
+
+        airpay_result = (
+            "✅ All four files processed successfully! "
+            "Download each output below."
+        )
+        return redirect("/comparison?tab=airpay")
+
+    except Exception as e:
+        airpay_result = f"❌ Error processing AirPay files: {str(e)}"
+        return redirect("/comparison?tab=airpay")
+
+
+@app.route("/upload_airpay_step1", methods=["POST"])
+def upload_airpay_step1():
+    """Step 1: AirPay appointments CSV → blank Remark + MM/DD/YYYY Appointment Date → Excel."""
+    global airpay_step1_data, airpay_step1_filename, airpay_step1_result
+    global airpay_step2_data, airpay_step2_filename, airpay_step2_result
+    global airpay_step3_data, airpay_step3_filename, airpay_step3_result
+    global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+
+    if "file" not in request.files:
+        airpay_step1_result = "❌ Error: No file provided"
+        return redirect("/comparison?tab=airpay")
+
+    file = request.files["file"]
+    if file.filename == "":
+        airpay_step1_result = "❌ Error: No file selected"
+        return redirect("/comparison?tab=airpay")
+
+    try:
+        filename = secure_filename(file.filename)
+        if not filename.lower().endswith(".csv"):
+            airpay_step1_result = "❌ Error: Please upload a CSV file (.csv)"
+            return redirect("/comparison?tab=airpay")
+
+        file.seek(0)
+        try:
+            df = pd.read_csv(file)
+        except Exception:
+            file.seek(0)
+            df = pd.read_csv(file, encoding="latin-1")
+
+        # Format Appointment Date column (flexible name match)
+        appt_date_col = None
+        for col in df.columns:
+            col_norm = str(col).lower().strip().replace(" ", "").replace("_", "")
+            if col_norm in ("appointmentdate", "apptdate") or (
+                "appointment" in col_norm and "date" in col_norm
+            ):
+                appt_date_col = col
+                break
+        if appt_date_col is None:
+            for col in df.columns:
+                col_norm = str(col).lower().strip().replace(" ", "").replace("_", "")
+                if col_norm == "date" or col_norm.endswith("date"):
+                    appt_date_col = col
+                    break
+
+        if appt_date_col is not None:
+            df[appt_date_col] = df[appt_date_col].apply(_airpay_format_date_mmddyyyy)
+            df[appt_date_col] = df[appt_date_col].astype(str)
+
+        # Provider Name from Location: "<prefix>: <location_name>" → location_name only
+        location_col = None
+        for col in df.columns:
+            if str(col).lower().strip().replace(" ", "").replace("_", "") == "location":
+                location_col = col
+                break
+
+        def _extract_provider_name(val):
+            if pd.isna(val) or val == "":
+                return ""
+            s = str(val).strip()
+            if ":" in s:
+                return s.split(":", 1)[1].strip()
+            return s
+
+        provider_added = False
+        if location_col is not None:
+            provider_values = df[location_col].apply(_extract_provider_name)
+            # Place Provider Name immediately after Location
+            if "Provider Name" in df.columns:
+                df = df.drop(columns=["Provider Name"])
+            loc_idx = list(df.columns).index(location_col)
+            df.insert(loc_idx + 1, "Provider Name", provider_values)
+            provider_added = True
+        else:
+            if "Provider Name" not in df.columns:
+                df["Provider Name"] = ""
+
+        # Rename Patient ID → (PMS) Patient ID (if present)
+        pms_patient_id_col = None
+        for col in list(df.columns):
+            col_key = str(col).strip().lower()
+            if col_key in ("(pms) patient id", "pms patient id"):
+                pms_patient_id_col = col
+                break
+            if col_key == "patient id":
+                df = df.rename(columns={col: "(PMS) Patient ID"})
+                pms_patient_id_col = "(PMS) Patient ID"
+                break
+
+        # Combine Patient Last Name + Patient First Name → Patient Name ("Last, First")
+        last_name_col = None
+        first_name_col = None
+        for col in df.columns:
+            col_key = str(col).strip().lower()
+            if col_key == "patient last name":
+                last_name_col = col
+            elif col_key == "patient first name":
+                first_name_col = col
+
+        patient_name_added = False
+        if last_name_col is not None or first_name_col is not None:
+
+            def _combine_patient_name(row):
+                last = (
+                    str(row[last_name_col]).strip()
+                    if last_name_col and pd.notna(row[last_name_col])
+                    else ""
+                )
+                if last.lower() == "nan":
+                    last = ""
+                first = (
+                    str(row[first_name_col]).strip()
+                    if first_name_col and pd.notna(row[first_name_col])
+                    else ""
+                )
+                if first.lower() == "nan":
+                    first = ""
+                if last and first:
+                    return f"{last}, {first}"
+                return last or first
+
+            patient_name_values = df.apply(_combine_patient_name, axis=1)
+            if "Patient Name" in df.columns:
+                df = df.drop(columns=["Patient Name"])
+
+            # Place Patient Name beside (PMS) Patient ID
+            if pms_patient_id_col is not None and pms_patient_id_col in df.columns:
+                insert_at = list(df.columns).index(pms_patient_id_col) + 1
+                df.insert(insert_at, "Patient Name", patient_name_values)
+            else:
+                df["Patient Name"] = patient_name_values
+            patient_name_added = True
+
+        # Blank Remark column (add if missing)
+        remark_col = None
+        for col in df.columns:
+            if str(col).lower().strip() == "remark":
+                remark_col = col
+                break
+        if remark_col is None:
+            df["Remark"] = ""
+        else:
+            df[remark_col] = ""
+
+        extras = ["Blank Remark column added"]
+        if appt_date_col:
+            extras.append("Appointment Date formatted as MM/DD/YYYY")
+        if provider_added:
+            extras.append("Provider Name filled from Location (value after ':')")
+        elif location_col is None:
+            extras.append("Provider Name left blank (no Location column found)")
+        if patient_name_added:
+            extras.append(
+                "Patient Name created from Patient Last Name + Patient First Name"
+            )
+        if pms_patient_id_col:
+            extras.append("Patient ID renamed to (PMS) Patient ID")
+
+        airpay_step1_data = {"AirPay Appointments": df}
+        airpay_step1_filename = filename
+        airpay_step1_result = (
+            f"✅ Step 1 complete! Processed {len(df)} row(s) from {filename}. "
+            + "; ".join(extras)
+            + "."
+        )
+
+        # Re-running step 1 clears later steps
+        airpay_step2_data = None
+        airpay_step2_filename = None
+        airpay_step2_result = None
+        airpay_step3_data = None
+        airpay_step3_filename = None
+        airpay_step3_result = None
+        airpay_step4_data = None
+        airpay_step4_filename = None
+        airpay_step4_result = None
+
+        return redirect("/comparison?tab=airpay")
+
+    except Exception as e:
+        airpay_step1_data = None
+        airpay_step1_filename = None
+        airpay_step1_result = f"❌ Error processing AirPay CSV: {str(e)}"
+        return redirect("/comparison?tab=airpay")
+
+
+@app.route("/download_airpay_step1", methods=["POST"])
+def download_airpay_step1():
+    global airpay_step1_data
+    if not airpay_step1_data:
+        return jsonify({"error": "No Step 1 data to download"}), 400
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = f"AirPay Appointments {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+    try:
+        return _airpay_send_excel_download(airpay_step1_data, filename)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/download_airpay_step2", methods=["POST"])
+def download_airpay_step2():
+    global airpay_step2_data
+    if not airpay_step2_data:
+        return jsonify({"error": "No Step 2 data to download"}), 400
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = f"Appointment Report {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+    try:
+        return _airpay_send_excel_download(airpay_step2_data, filename)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/download_airpay_step3", methods=["POST"])
+def download_airpay_step3():
+    global airpay_step3_data
+    if not airpay_step3_data:
+        return jsonify({"error": "No Step 3 data to download"}), 400
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = f"Conversion Report {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+    try:
+        return _airpay_send_excel_download(
+            airpay_step3_data, filename, conversion_style=True
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/download_airpay_step4", methods=["POST"])
+def download_airpay_step4():
+    global airpay_step4_data
+    if not airpay_step4_data:
+        return jsonify({"error": "No Step 4 data to download"}), 400
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = f"Smart Assist Report {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+    try:
+        return _airpay_send_excel_download(airpay_step4_data, filename)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_airpay", methods=["POST"])
+def reset_airpay():
+    global airpay_result
+    global airpay_step1_data, airpay_step1_filename, airpay_step1_result
+    global airpay_step2_data, airpay_step2_filename, airpay_step2_result
+    global airpay_step3_data, airpay_step3_filename, airpay_step3_result
+    global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+
+    airpay_result = "🔄 AirPay Report reset successfully! All outputs cleared."
+    airpay_step1_data = None
+    airpay_step1_filename = None
+    airpay_step1_result = None
+    airpay_step2_data = None
+    airpay_step2_filename = None
+    airpay_step2_result = None
+    airpay_step3_data = None
+    airpay_step3_filename = None
+    airpay_step3_result = None
+    airpay_step4_data = None
+    airpay_step4_filename = None
+    airpay_step4_result = None
+    return redirect("/comparison?tab=airpay")
 
 
 def _mab_normalize_appt_date(value):
