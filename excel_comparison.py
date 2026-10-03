@@ -7865,6 +7865,7 @@ def upload_conversion_file():
                             rename_map[col] = airpay_rename[key]
                     if rename_map:
                         df_out = df_out.rename(columns=rename_map)
+                    df_out = _airpay_step2_add_payer_columns(df_out)
                     airpay_step3_data[sheet_name] = df_out
                 airpay_step3_filename = conversion_filename
                 airpay_step3_result = conversion_result
@@ -9788,6 +9789,7 @@ def upload_appointment_report():
                             rename_map[col] = "(PMS) Patient ID"
                     if rename_map:
                         df_out = df_out.rename(columns=rename_map)
+                    df_out = _airpay_step2_add_payer_columns(df_out)
                     airpay_step2_data[sheet_name] = df_out
                 airpay_step2_filename = appointment_report_filename
                 airpay_step2_result = appointment_report_result
@@ -10493,6 +10495,7 @@ def upload_smart_assist():
                             rename_map[col] = airpay_rename[key]
                     if rename_map:
                         df_out = df_out.rename(columns=rename_map)
+                    df_out = _airpay_step2_add_payer_columns(df_out)
                     airpay_step4_data[sheet_name] = df_out
                 airpay_step4_filename = smart_assist_filename
                 airpay_step4_result = smart_assist_result
@@ -11320,6 +11323,87 @@ def _airpay_format_date_mmddyyyy(date_val):
         return str(date_val)
 
 
+def _airpay_has_insurance_value(val):
+    """True when insurance cell has a usable non-empty value."""
+    if pd.isna(val):
+        return False
+    s = str(val).strip()
+    return bool(s) and s.lower() not in ("nan", "none", "nat")
+
+
+def _airpay_step2_add_payer_columns(df):
+    """
+    Add (PMS) Payer and Insurance Type from Dental Primary/Secondary Ins Carr.
+    Primary → PRIMARY; Secondary → SECONDARY. If both have values, emit two rows.
+    """
+    if df is None or df.empty:
+        out = df.copy() if df is not None else pd.DataFrame()
+        if "(PMS) Payer" not in out.columns:
+            out["(PMS) Payer"] = ""
+        if "Insurance Type" not in out.columns:
+            out["Insurance Type"] = ""
+        return out
+
+    primary_col = None
+    secondary_col = None
+    for col in df.columns:
+        key = str(col).strip().lower()
+        if key == "dental primary ins carr":
+            primary_col = col
+        elif key == "dental secondary ins carr":
+            secondary_col = col
+
+    # Drop existing target columns if re-processing
+    work = df.copy()
+    for drop_col in ("(PMS) Payer", "Insurance Type"):
+        if drop_col in work.columns:
+            work = work.drop(columns=[drop_col])
+
+    out_rows = []
+    for _, row in work.iterrows():
+        primary_val = row[primary_col] if primary_col is not None else None
+        secondary_val = row[secondary_col] if secondary_col is not None else None
+        has_primary = _airpay_has_insurance_value(primary_val)
+        has_secondary = _airpay_has_insurance_value(secondary_val)
+
+        if has_primary:
+            r = row.copy()
+            r["(PMS) Payer"] = str(primary_val).strip()
+            r["Insurance Type"] = "PRIMARY"
+            out_rows.append(r)
+        if has_secondary:
+            r = row.copy()
+            r["(PMS) Payer"] = str(secondary_val).strip()
+            r["Insurance Type"] = "SECONDARY"
+            out_rows.append(r)
+        if not has_primary and not has_secondary:
+            r = row.copy()
+            r["(PMS) Payer"] = ""
+            r["Insurance Type"] = ""
+            out_rows.append(r)
+
+    if not out_rows:
+        work["(PMS) Payer"] = ""
+        work["Insurance Type"] = ""
+        return work
+
+    result = pd.DataFrame(out_rows).reset_index(drop=True)
+
+    # Place new columns after Dental Secondary Ins Carr (or Primary, or at end)
+    cols = [c for c in result.columns if c not in ("(PMS) Payer", "Insurance Type")]
+    insert_after = None
+    if secondary_col is not None and secondary_col in cols:
+        insert_after = secondary_col
+    elif primary_col is not None and primary_col in cols:
+        insert_after = primary_col
+    if insert_after is not None:
+        idx = cols.index(insert_after) + 1
+        cols = cols[:idx] + ["(PMS) Payer", "Insurance Type"] + cols[idx:]
+    else:
+        cols = cols + ["(PMS) Payer", "Insurance Type"]
+    return result[cols]
+
+
 def _airpay_send_excel_download(sheets_dict, filename, conversion_style=False):
     """Write sheets to an in-memory xlsx with Imagen styling and return as attachment."""
     from io import BytesIO
@@ -11542,14 +11626,14 @@ def upload_airpay_step1():
             df[appt_date_col] = df[appt_date_col].apply(_airpay_format_date_mmddyyyy)
             df[appt_date_col] = df[appt_date_col].astype(str)
 
-        # Provider Name from Location: "<prefix>: <location_name>" → location_name only
+        # Location: "<prefix>: <location_name>" → keep location_name only in Location
         location_col = None
         for col in df.columns:
             if str(col).lower().strip().replace(" ", "").replace("_", "") == "location":
                 location_col = col
                 break
 
-        def _extract_provider_name(val):
+        def _extract_location_name(val):
             if pd.isna(val) or val == "":
                 return ""
             s = str(val).strip()
@@ -11557,18 +11641,13 @@ def upload_airpay_step1():
                 return s.split(":", 1)[1].strip()
             return s
 
-        provider_added = False
+        location_cleaned = False
         if location_col is not None:
-            provider_values = df[location_col].apply(_extract_provider_name)
-            # Place Provider Name immediately after Location
-            if "Provider Name" in df.columns:
-                df = df.drop(columns=["Provider Name"])
-            loc_idx = list(df.columns).index(location_col)
-            df.insert(loc_idx + 1, "Provider Name", provider_values)
-            provider_added = True
-        else:
-            if "Provider Name" not in df.columns:
-                df["Provider Name"] = ""
+            df[location_col] = df[location_col].apply(_extract_location_name)
+            location_cleaned = True
+        # Drop Provider Name if present in source (not needed for AirPay Step 1)
+        if "Provider Name" in df.columns:
+            df = df.drop(columns=["Provider Name"])
 
         # Rename Patient ID → (PMS) Patient ID (if present)
         pms_patient_id_col = None
@@ -11640,10 +11719,10 @@ def upload_airpay_step1():
         extras = ["Blank Remark column added"]
         if appt_date_col:
             extras.append("Appointment Date formatted as MM/DD/YYYY")
-        if provider_added:
-            extras.append("Provider Name filled from Location (value after ':')")
+        if location_cleaned:
+            extras.append("Location cleaned to value after ':'")
         elif location_col is None:
-            extras.append("Provider Name left blank (no Location column found)")
+            extras.append("Location column not found")
         if patient_name_added:
             extras.append(
                 "Patient Name created from Patient Last Name + Patient First Name"
