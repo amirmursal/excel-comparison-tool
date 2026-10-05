@@ -191,6 +191,7 @@ airpay_step3_result = None
 airpay_step4_data = None  # Smart Assist Report formatted
 airpay_step4_filename = None
 airpay_step4_result = None
+airpay_combined_data = None  # Step 4 skeleton filled from Step 2 matches
 
 NH_OUTPUT_COLUMNS = [
     "Software",
@@ -2344,6 +2345,22 @@ HTML_TEMPLATE = """
                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
                         <button type="submit" id="airpay-step4-download-btn">💾 Download Smart Assist Report</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if airpay_combined_data %}
+                <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
+                    <h3>💾 Common AirPay Report</h3>
+                    <p style="margin-bottom: 10px;">Step 4 rows with insurance columns filled from Step 2 on matching (PMS) Patient ID. Unmatched insurance columns are blank.</p>
+                    <form action="/download_airpay_combined" method="post" id="airpay-combined-download-form">
+                        <div class="form-group">
+                            <label for="airpay_combined_output_filename">Output filename (optional):</label>
+                            <input type="text" id="airpay_combined_output_filename" name="filename"
+                                   placeholder="AirPay Report MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="airpay-combined-download-btn">💾 Download AirPay Report</button>
                     </form>
                 </div>
                 {% endif %}
@@ -4692,6 +4709,19 @@ HTML_TEMPLATE = """
                 });
             });
         }
+        const airpayCombinedDownloadForm = document.getElementById('airpay-combined-download-form');
+        if (airpayCombinedDownloadForm) {
+            airpayCombinedDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(airpayCombinedDownloadForm, {
+                    buttonId: 'airpay-combined-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building AirPay Report Excel. Please wait…',
+                    redirectTab: 'airpay',
+                    defaultFilename: 'AirPay Report.xlsx',
+                });
+            });
+        }
 
         // Appointment report download (fetch + modal; same pattern as conversion / smart assist)
         const appointmentDownloadForm = document.getElementById('appointment-download-form');
@@ -6716,6 +6746,7 @@ def comparison_index():
     global airpay_step2_data, airpay_step2_filename, airpay_step2_result
     global airpay_step3_data, airpay_step3_filename, airpay_step3_result
     global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+    global airpay_combined_data
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -6825,6 +6856,7 @@ def comparison_index():
         airpay_step4_data=airpay_step4_data,
         airpay_step4_filename=airpay_step4_filename,
         airpay_step4_result=airpay_step4_result,
+        airpay_combined_data=airpay_combined_data,
         ev_allocation_files=ev_allocation_files,
         ev_allocation_result=ev_allocation_result,
         ev_allocation_output_filename=ev_allocation_output_filename
@@ -11404,6 +11436,104 @@ def _airpay_step2_add_payer_columns(df):
     return result[cols]
 
 
+AIRPAY_COMBINED_FILL_COLUMNS = [
+    "Dental Primary Ins Carr",
+    "Dental Secondary Ins Carr",
+    "(PMS) Payer",
+    "Insurance Type",
+]
+
+
+def _airpay_normalize_patient_id(val):
+    if pd.isna(val):
+        return ""
+    s = str(val).strip()
+    if s.lower() in ("nan", "none", "nat"):
+        return ""
+    if s.endswith(".0"):
+        core = s[:-2]
+        if core.replace("-", "", 1).isdigit():
+            s = core
+    return s.lower()
+
+
+def _airpay_find_named_col(df, target_name):
+    target = str(target_name).strip().lower()
+    for col in df.columns:
+        if str(col).strip().lower() == target:
+            return col
+    return None
+
+
+def _airpay_build_combined_output(step4_data, step2_data):
+    """
+    Step 4 skeleton: fill insurance columns from Step 2 when
+    (PMS) Patient ID matches. Unmatched fill columns are blank.
+    First Step 2 row for a Patient ID wins if duplicates exist.
+    """
+    lookup = {}
+    if step2_data:
+        for _, src_df in step2_data.items():
+            if src_df is None or src_df.empty:
+                continue
+            pid_col = _airpay_find_named_col(src_df, "(PMS) Patient ID")
+            if pid_col is None:
+                continue
+            src_cols = {}
+            for fill_col in AIRPAY_COMBINED_FILL_COLUMNS:
+                found = _airpay_find_named_col(src_df, fill_col)
+                if found is not None:
+                    src_cols[fill_col] = found
+            for _, row in src_df.iterrows():
+                pid = _airpay_normalize_patient_id(row.get(pid_col))
+                if not pid or pid in lookup:
+                    continue
+                values = {}
+                for fill_col in AIRPAY_COMBINED_FILL_COLUMNS:
+                    src_name = src_cols.get(fill_col)
+                    val = row.get(src_name) if src_name is not None else ""
+                    if pd.isna(val):
+                        val = ""
+                    values[fill_col] = val
+                lookup[pid] = values
+
+    combined = {}
+    matched = 0
+    unmatched = 0
+    for sheet_name, base_df in (step4_data or {}).items():
+        out = base_df.copy(deep=True) if base_df is not None else pd.DataFrame()
+        for fill_col in AIRPAY_COMBINED_FILL_COLUMNS:
+            if fill_col not in out.columns:
+                out[fill_col] = ""
+
+        if out.empty:
+            combined[sheet_name] = out
+            continue
+
+        pid_col = _airpay_find_named_col(out, "(PMS) Patient ID")
+        fill_values = {col: [] for col in AIRPAY_COMBINED_FILL_COLUMNS}
+
+        for _, row in out.iterrows():
+            pid = (
+                _airpay_normalize_patient_id(row.get(pid_col)) if pid_col is not None else ""
+            )
+            values = lookup.get(pid) if pid else None
+            if values:
+                matched += 1
+                for fill_col in AIRPAY_COMBINED_FILL_COLUMNS:
+                    fill_values[fill_col].append(values.get(fill_col, ""))
+            else:
+                unmatched += 1
+                for fill_col in AIRPAY_COMBINED_FILL_COLUMNS:
+                    fill_values[fill_col].append("")
+
+        for fill_col in AIRPAY_COMBINED_FILL_COLUMNS:
+            out[fill_col] = fill_values[fill_col]
+        combined[sheet_name] = out
+
+    return combined, matched, unmatched
+
+
 def _airpay_send_excel_download(sheets_dict, filename, conversion_style=False):
     """Write sheets to an in-memory xlsx with Imagen styling and return as attachment."""
     from io import BytesIO
@@ -11466,6 +11596,7 @@ def upload_airpay_all():
     global airpay_step2_data, airpay_step2_filename, airpay_step2_result
     global airpay_step3_data, airpay_step3_filename, airpay_step3_result
     global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+    global airpay_combined_data
 
     airpay_file = request.files.get("airpay_file")
     appointment_file = request.files.get("appointment_file")
@@ -11498,6 +11629,7 @@ def upload_airpay_all():
     airpay_step4_data = None
     airpay_step4_filename = None
     airpay_step4_result = None
+    airpay_combined_data = None
 
     try:
         # 1) AirPay CSV (labeled slot → /upload_airpay_step1)
@@ -11565,8 +11697,14 @@ def upload_airpay_all():
             )
             return redirect("/comparison?tab=airpay")
 
+        combined, matched, unmatched = _airpay_build_combined_output(
+            airpay_step4_data, airpay_step2_data
+        )
+        airpay_combined_data = combined
         airpay_result = (
             "✅ All four files processed successfully! "
+            f"Common AirPay Report built from Step 4 vs Step 2 on (PMS) Patient ID "
+            f"({matched} matched row(s), {unmatched} unmatched row(s) with insurance columns blanked). "
             "Download each output below."
         )
         return redirect("/comparison?tab=airpay")
@@ -11816,6 +11954,20 @@ def download_airpay_step4():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/download_airpay_combined", methods=["POST"])
+def download_airpay_combined():
+    global airpay_combined_data
+    if not airpay_combined_data:
+        return jsonify({"error": "No common AirPay Report to download"}), 400
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = f"AirPay Report {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+    try:
+        return _airpay_send_excel_download(airpay_combined_data, filename)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/reset_airpay", methods=["POST"])
 def reset_airpay():
     global airpay_result
@@ -11823,6 +11975,7 @@ def reset_airpay():
     global airpay_step2_data, airpay_step2_filename, airpay_step2_result
     global airpay_step3_data, airpay_step3_filename, airpay_step3_result
     global airpay_step4_data, airpay_step4_filename, airpay_step4_result
+    global airpay_combined_data
 
     airpay_result = "🔄 AirPay Report reset successfully! All outputs cleared."
     airpay_step1_data = None
@@ -11837,6 +11990,7 @@ def reset_airpay():
     airpay_step4_data = None
     airpay_step4_filename = None
     airpay_step4_result = None
+    airpay_combined_data = None
     return redirect("/comparison?tab=airpay")
 
 
