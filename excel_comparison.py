@@ -188,10 +188,10 @@ airpay_step2_result = None
 airpay_step3_data = None  # Conversion Report formatted
 airpay_step3_filename = None
 airpay_step3_result = None
-airpay_step4_data = None  # Smart Assist Report formatted
+airpay_step4_data = None  # Smart Assist Report formatted (filled from Step 2)
 airpay_step4_filename = None
 airpay_step4_result = None
-airpay_combined_data = None  # Step 4 skeleton filled from Step 2 matches
+airpay_eligible_data = None  # Step 1 with Remark updated from Step 4
 
 NH_OUTPUT_COLUMNS = [
     "Software",
@@ -2349,18 +2349,18 @@ HTML_TEMPLATE = """
                 </div>
                 {% endif %}
 
-                {% if airpay_combined_data %}
+                {% if airpay_eligible_data %}
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
-                    <h3>💾 Common AirPay Report</h3>
-                    <p style="margin-bottom: 10px;">Step 4 rows with insurance columns filled from Step 2 on matching (PMS) Patient ID. Unmatched insurance columns are blank.</p>
-                    <form action="/download_airpay_combined" method="post" id="airpay-combined-download-form">
+                    <h3>💾 5. Eligible AirPay Appointments</h3>
+                    <p style="margin-bottom: 10px;">Step 1 Remarks updated from Step 4, with only Step 3 rows whose Remark is Conversion appended on the same sheet.</p>
+                    <form action="/download_airpay_eligible" method="post" id="airpay-eligible-download-form">
                         <div class="form-group">
-                            <label for="airpay_combined_output_filename">Output filename (optional):</label>
-                            <input type="text" id="airpay_combined_output_filename" name="filename"
-                                   placeholder="AirPay Report MM_DD_YYYY.xlsx"
+                            <label for="airpay_eligible_output_filename">Output filename (optional):</label>
+                            <input type="text" id="airpay_eligible_output_filename" name="filename"
+                                   placeholder="Eligible AirPay appointments MM_DD_YYYY.xlsx"
                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
-                        <button type="submit" id="airpay-combined-download-btn">💾 Download AirPay Report</button>
+                        <button type="submit" id="airpay-eligible-download-btn">💾 Download Eligible AirPay Appointments</button>
                     </form>
                 </div>
                 {% endif %}
@@ -4709,16 +4709,16 @@ HTML_TEMPLATE = """
                 });
             });
         }
-        const airpayCombinedDownloadForm = document.getElementById('airpay-combined-download-form');
-        if (airpayCombinedDownloadForm) {
-            airpayCombinedDownloadForm.addEventListener('submit', function(ev) {
+        const airpayEligibleDownloadForm = document.getElementById('airpay-eligible-download-form');
+        if (airpayEligibleDownloadForm) {
+            airpayEligibleDownloadForm.addEventListener('submit', function(ev) {
                 ev.preventDefault();
-                void submitDownloadFormAsBlob(airpayCombinedDownloadForm, {
-                    buttonId: 'airpay-combined-download-btn',
+                void submitDownloadFormAsBlob(airpayEligibleDownloadForm, {
+                    buttonId: 'airpay-eligible-download-btn',
                     title: 'Preparing download',
-                    message: 'Building AirPay Report Excel. Please wait…',
+                    message: 'Building Eligible AirPay appointments Excel. Please wait…',
                     redirectTab: 'airpay',
-                    defaultFilename: 'AirPay Report.xlsx',
+                    defaultFilename: 'Eligible AirPay appointments.xlsx',
                 });
             });
         }
@@ -6746,7 +6746,7 @@ def comparison_index():
     global airpay_step2_data, airpay_step2_filename, airpay_step2_result
     global airpay_step3_data, airpay_step3_filename, airpay_step3_result
     global airpay_step4_data, airpay_step4_filename, airpay_step4_result
-    global airpay_combined_data
+    global airpay_eligible_data
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -6856,7 +6856,7 @@ def comparison_index():
         airpay_step4_data=airpay_step4_data,
         airpay_step4_filename=airpay_step4_filename,
         airpay_step4_result=airpay_step4_result,
-        airpay_combined_data=airpay_combined_data,
+        airpay_eligible_data=airpay_eligible_data,
         ev_allocation_files=ev_allocation_files,
         ev_allocation_result=ev_allocation_result,
         ev_allocation_output_filename=ev_allocation_output_filename
@@ -11534,6 +11534,141 @@ def _airpay_build_combined_output(step4_data, step2_data):
     return combined, matched, unmatched
 
 
+def _airpay_gc_patient_id_key(val):
+    """Same Patient ID key rules as General Comparison."""
+    if isinstance(val, pd.Series):
+        val = val.iloc[0] if len(val) > 0 else ""
+    try:
+        if pd.isna(val):
+            return ""
+    except (ValueError, TypeError):
+        pass
+    normalized = normalize_patient_id(val)
+    if normalized is None:
+        return ""
+    return str(normalized).strip()
+
+
+def _airpay_update_step1_remarks_from_step4(step1_data, step4_data):
+    """
+    General Comparison: primary = Step 1, main = Step 4.
+    Key = (PMS) Patient ID. Update Remark on Step 1 from Step 4 matches.
+    """
+    PREFERRED_REMARKS = {"UPDATED", "QCP", "ASST"}
+    remark_by_key = {}
+    remark_priority_by_key = {}
+
+    if step4_data:
+        for _, src_df in step4_data.items():
+            if src_df is None or src_df.empty:
+                continue
+            pid_col = _airpay_find_named_col(src_df, "(PMS) Patient ID")
+            remark_col = _airpay_find_named_col(src_df, "Remark")
+            if pid_col is None or remark_col is None:
+                continue
+            for _, row in src_df.iterrows():
+                key = _airpay_gc_patient_id_key(row.get(pid_col))
+                if not key:
+                    continue
+                remark_val = row.get(remark_col)
+                if pd.isna(remark_val):
+                    remark_val = ""
+                remark_str = str(remark_val).strip()
+                prefer = remark_str.upper() in PREFERRED_REMARKS
+                if key not in remark_by_key or prefer:
+                    remark_by_key[key] = remark_val
+                    remark_priority_by_key[key] = prefer
+                elif not remark_priority_by_key.get(key):
+                    # last non-empty-key occurrence wins when no preferred remark yet
+                    remark_by_key[key] = remark_val
+
+    updated_sheets = {}
+    matched = 0
+    unmatched = 0
+    for sheet_name, base_df in (step1_data or {}).items():
+        out = base_df.copy(deep=True) if base_df is not None else pd.DataFrame()
+        remark_col = _airpay_find_named_col(out, "Remark")
+        if remark_col is None:
+            out["Remark"] = ""
+            remark_col = "Remark"
+        pid_col = _airpay_find_named_col(out, "(PMS) Patient ID")
+        if out.empty or pid_col is None:
+            updated_sheets[sheet_name] = out
+            unmatched += len(out)
+            continue
+
+        new_remarks = []
+        for _, row in out.iterrows():
+            key = _airpay_gc_patient_id_key(row.get(pid_col))
+            if key and key in remark_by_key:
+                new_remarks.append(remark_by_key[key])
+                matched += 1
+            else:
+                new_remarks.append(row.get(remark_col) if pd.notna(row.get(remark_col)) else "")
+                unmatched += 1
+        out[remark_col] = new_remarks
+        updated_sheets[sheet_name] = out
+
+    return updated_sheets, matched, unmatched
+
+
+def _airpay_step4_patient_id_keys(step4_data):
+    """Patient ID keys from Step 4, using General Comparison Patient ID rules."""
+    keys = set()
+    if not step4_data:
+        return keys
+    for _, src_df in step4_data.items():
+        if src_df is None or src_df.empty:
+            continue
+        pid_col = _airpay_find_named_col(src_df, "(PMS) Patient ID")
+        if pid_col is None:
+            continue
+        for _, row in src_df.iterrows():
+            key = _airpay_gc_patient_id_key(row.get(pid_col))
+            if key:
+                keys.add(key)
+    return keys
+
+
+def _airpay_update_step3_remarks_as_conversion(step3_data, step4_keys):
+    """
+    General Comparison: primary = Step 3, main = Step 4.
+    Key = (PMS) Patient ID. On match, set Remark to 'Conversion'.
+    """
+    updated_sheets = {}
+    matched = 0
+    unmatched = 0
+    for sheet_name, base_df in (step3_data or {}).items():
+        out = base_df.copy(deep=True) if base_df is not None else pd.DataFrame()
+        remark_col = _airpay_find_named_col(out, "Remark")
+        if remark_col is None:
+            out["Remark"] = ""
+            remark_col = "Remark"
+        pid_col = _airpay_find_named_col(out, "(PMS) Patient ID")
+        if out.empty or pid_col is None:
+            unmatched += len(out)
+            continue
+
+        new_remarks = []
+        keep_idx = []
+        for i, (_, row) in enumerate(out.iterrows()):
+            key = _airpay_gc_patient_id_key(row.get(pid_col))
+            if key and key in step4_keys:
+                new_remarks.append("Conversion")
+                keep_idx.append(i)
+                matched += 1
+            else:
+                unmatched += 1
+        if keep_idx:
+            out = out.iloc[keep_idx].copy()
+            out[remark_col] = new_remarks
+        else:
+            out = out.iloc[0:0].copy()
+        updated_sheets[sheet_name] = out
+
+    return updated_sheets, matched, unmatched
+
+
 def _airpay_send_excel_download(sheets_dict, filename, conversion_style=False):
     """Write sheets to an in-memory xlsx with Imagen styling and return as attachment."""
     from io import BytesIO
@@ -11596,7 +11731,7 @@ def upload_airpay_all():
     global airpay_step2_data, airpay_step2_filename, airpay_step2_result
     global airpay_step3_data, airpay_step3_filename, airpay_step3_result
     global airpay_step4_data, airpay_step4_filename, airpay_step4_result
-    global airpay_combined_data
+    global airpay_eligible_data
 
     airpay_file = request.files.get("airpay_file")
     appointment_file = request.files.get("appointment_file")
@@ -11629,7 +11764,7 @@ def upload_airpay_all():
     airpay_step4_data = None
     airpay_step4_filename = None
     airpay_step4_result = None
-    airpay_combined_data = None
+    airpay_eligible_data = None
 
     try:
         # 1) AirPay CSV (labeled slot → /upload_airpay_step1)
@@ -11700,11 +11835,46 @@ def upload_airpay_all():
         combined, matched, unmatched = _airpay_build_combined_output(
             airpay_step4_data, airpay_step2_data
         )
-        airpay_combined_data = combined
+        airpay_step4_data = combined
+        eligible, remark_matched, remark_unmatched = (
+            _airpay_update_step1_remarks_from_step4(
+                airpay_step1_data, airpay_step4_data
+            )
+        )
+        step4_keys = _airpay_step4_patient_id_keys(airpay_step4_data)
+        conversion_sheets, conv_matched, conv_unmatched = (
+            _airpay_update_step3_remarks_as_conversion(
+                airpay_step3_data, step4_keys
+            )
+        )
+        extra_dfs = [
+            df
+            for df in conversion_sheets.values()
+            if df is not None and not df.empty
+        ]
+        if extra_dfs:
+            extra = pd.concat(extra_dfs, ignore_index=True, sort=False)
+            if not eligible:
+                eligible = {"AirPay Appointments": extra}
+            else:
+                first_name = next(iter(eligible))
+                first_df = eligible[first_name]
+                if first_df is None or first_df.empty:
+                    eligible[first_name] = extra
+                else:
+                    extra_aligned = extra.reindex(columns=list(first_df.columns))
+                    eligible[first_name] = pd.concat(
+                        [first_df, extra_aligned], ignore_index=True
+                    )
+        airpay_eligible_data = eligible
         airpay_result = (
             "✅ All four files processed successfully! "
-            f"Common AirPay Report built from Step 4 vs Step 2 on (PMS) Patient ID "
+            f"Step 4 Smart Assist insurance columns filled from Step 2 on (PMS) Patient ID "
             f"({matched} matched row(s), {unmatched} unmatched row(s) with insurance columns blanked). "
+            f"Eligible AirPay appointments: Step 1 Remark from Step 4 "
+            f"({remark_matched} matched, {remark_unmatched} unmatched); "
+            f"Step 3 Conversion rows appended "
+            f"({conv_matched} Conversion row(s); {conv_unmatched} other Step 3 row(s) skipped). "
             "Download each output below."
         )
         return redirect("/comparison?tab=airpay")
@@ -11954,16 +12124,18 @@ def download_airpay_step4():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/download_airpay_combined", methods=["POST"])
-def download_airpay_combined():
-    global airpay_combined_data
-    if not airpay_combined_data:
-        return jsonify({"error": "No common AirPay Report to download"}), 400
+@app.route("/download_airpay_eligible", methods=["POST"])
+def download_airpay_eligible():
+    global airpay_eligible_data
+    if not airpay_eligible_data:
+        return jsonify({"error": "No Eligible AirPay appointments to download"}), 400
     filename = request.form.get("filename", "").strip()
     if not filename:
-        filename = f"AirPay Report {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+        filename = (
+            f"Eligible AirPay appointments {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+        )
     try:
-        return _airpay_send_excel_download(airpay_combined_data, filename)
+        return _airpay_send_excel_download(airpay_eligible_data, filename)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -11975,7 +12147,7 @@ def reset_airpay():
     global airpay_step2_data, airpay_step2_filename, airpay_step2_result
     global airpay_step3_data, airpay_step3_filename, airpay_step3_result
     global airpay_step4_data, airpay_step4_filename, airpay_step4_result
-    global airpay_combined_data
+    global airpay_eligible_data
 
     airpay_result = "🔄 AirPay Report reset successfully! All outputs cleared."
     airpay_step1_data = None
@@ -11990,7 +12162,7 @@ def reset_airpay():
     airpay_step4_data = None
     airpay_step4_filename = None
     airpay_step4_result = None
-    airpay_combined_data = None
+    airpay_eligible_data = None
     return redirect("/comparison?tab=airpay")
 
 
