@@ -2352,7 +2352,7 @@ HTML_TEMPLATE = """
                 {% if airpay_eligible_data %}
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
                     <h3>💾 5. Eligible AirPay Appointments</h3>
-                    <p style="margin-bottom: 10px;">Step 1 Remarks updated from Step 4, with only Step 3 rows whose Remark is Conversion appended on the same sheet.</p>
+                    <p style="margin-bottom: 10px;">Pass 1: Step 1 × Step 4 on (PMS) Patient ID → Remark → <strong>Updated Remark</strong> / <strong>Blank Remark</strong>. Pass 2: Blank Remark × Step 3 rows with Remark = Conversion; matches move into Updated Remark; unmatched stay on Blank Remark.</p>
                     <form action="/download_airpay_eligible" method="post" id="airpay-eligible-download-form">
                         <div class="form-group">
                             <label for="airpay_eligible_output_filename">Output filename (optional):</label>
@@ -11553,6 +11553,10 @@ def _airpay_update_step1_remarks_from_step4(step1_data, step4_data):
     """
     General Comparison: primary = Step 1, main = Step 4.
     Key = (PMS) Patient ID. Update Remark on Step 1 from Step 4 matches.
+
+    Returns two sheets for the Eligible download:
+      - "Updated Remark": Step 1 rows matched to Step 4 (Remark filled)
+      - "Blank Remark": Step 1 rows with no Step 4 match (Remark blank)
     """
     PREFERRED_REMARKS = {"UPDATED", "QCP", "ASST"}
     remark_by_key = {}
@@ -11582,91 +11586,166 @@ def _airpay_update_step1_remarks_from_step4(step1_data, step4_data):
                     # last non-empty-key occurrence wins when no preferred remark yet
                     remark_by_key[key] = remark_val
 
-    updated_sheets = {}
+    updated_rows = []
+    blank_rows = []
+    columns = None
     matched = 0
     unmatched = 0
-    for sheet_name, base_df in (step1_data or {}).items():
+    for _, base_df in (step1_data or {}).items():
         out = base_df.copy(deep=True) if base_df is not None else pd.DataFrame()
+        if out.empty:
+            continue
+        if columns is None:
+            columns = list(out.columns)
         remark_col = _airpay_find_named_col(out, "Remark")
         if remark_col is None:
             out["Remark"] = ""
             remark_col = "Remark"
+            if columns is not None and "Remark" not in columns:
+                columns = list(out.columns)
         pid_col = _airpay_find_named_col(out, "(PMS) Patient ID")
-        if out.empty or pid_col is None:
-            updated_sheets[sheet_name] = out
+        if pid_col is None:
+            blank_rows.append(out)
             unmatched += len(out)
             continue
 
-        new_remarks = []
-        for _, row in out.iterrows():
+        match_idx = []
+        blank_idx = []
+        new_remarks = {}
+        out = out.reset_index(drop=True)
+        for i, row in out.iterrows():
             key = _airpay_gc_patient_id_key(row.get(pid_col))
             if key and key in remark_by_key:
-                new_remarks.append(remark_by_key[key])
+                match_idx.append(i)
+                new_remarks[i] = remark_by_key[key]
                 matched += 1
             else:
-                new_remarks.append(row.get(remark_col) if pd.notna(row.get(remark_col)) else "")
+                blank_idx.append(i)
                 unmatched += 1
-        out[remark_col] = new_remarks
-        updated_sheets[sheet_name] = out
 
-    return updated_sheets, matched, unmatched
+        if match_idx:
+            matched_df = out.iloc[match_idx].copy()
+            matched_df[remark_col] = [new_remarks[i] for i in match_idx]
+            updated_rows.append(matched_df)
+        if blank_idx:
+            blank_df = out.iloc[blank_idx].copy()
+            blank_df[remark_col] = ""
+            blank_rows.append(blank_df)
+
+    if columns is None:
+        columns = []
+    updated_df = (
+        pd.concat(updated_rows, ignore_index=True, sort=False)
+        if updated_rows
+        else pd.DataFrame(columns=columns)
+    )
+    blank_df = (
+        pd.concat(blank_rows, ignore_index=True, sort=False)
+        if blank_rows
+        else pd.DataFrame(columns=columns)
+    )
+    return (
+        {"Updated Remark": updated_df, "Blank Remark": blank_df},
+        matched,
+        unmatched,
+    )
 
 
-def _airpay_step4_patient_id_keys(step4_data):
-    """Patient ID keys from Step 4, using General Comparison Patient ID rules."""
-    keys = set()
-    if not step4_data:
-        return keys
-    for _, src_df in step4_data.items():
-        if src_df is None or src_df.empty:
-            continue
-        pid_col = _airpay_find_named_col(src_df, "(PMS) Patient ID")
-        if pid_col is None:
-            continue
-        for _, row in src_df.iterrows():
-            key = _airpay_gc_patient_id_key(row.get(pid_col))
-            if key:
-                keys.add(key)
-    return keys
-
-
-def _airpay_update_step3_remarks_as_conversion(step3_data, step4_keys):
+def _airpay_merge_blank_remark_from_step3(eligible_sheets, step3_data):
     """
-    General Comparison: primary = Step 3, main = Step 4.
-    Key = (PMS) Patient ID. On match, set Remark to 'Conversion'.
+    General Comparison Pass 2: primary = Blank Remark sheet, main = Step 3.
+    Key = (PMS) Patient ID. Only Step 3 rows with Remark == "Conversion" are used.
+    Matched rows get Remark = Conversion, move Blank Remark → Updated Remark.
+    Unmatched Blank Remark rows stay as-is.
+    Returns (updated_eligible_sheets, matched_count, still_blank_count).
     """
-    updated_sheets = {}
-    matched = 0
-    unmatched = 0
-    for sheet_name, base_df in (step3_data or {}).items():
-        out = base_df.copy(deep=True) if base_df is not None else pd.DataFrame()
-        remark_col = _airpay_find_named_col(out, "Remark")
-        if remark_col is None:
-            out["Remark"] = ""
-            remark_col = "Remark"
-        pid_col = _airpay_find_named_col(out, "(PMS) Patient ID")
-        if out.empty or pid_col is None:
-            unmatched += len(out)
-            continue
+    remark_by_key = {}
 
-        new_remarks = []
-        keep_idx = []
-        for i, (_, row) in enumerate(out.iterrows()):
-            key = _airpay_gc_patient_id_key(row.get(pid_col))
-            if key and key in step4_keys:
-                new_remarks.append("Conversion")
-                keep_idx.append(i)
-                matched += 1
-            else:
-                unmatched += 1
-        if keep_idx:
-            out = out.iloc[keep_idx].copy()
-            out[remark_col] = new_remarks
+    if step3_data:
+        for _, src_df in step3_data.items():
+            if src_df is None or src_df.empty:
+                continue
+            pid_col = _airpay_find_named_col(src_df, "(PMS) Patient ID")
+            remark_col = _airpay_find_named_col(src_df, "Remark")
+            if pid_col is None or remark_col is None:
+                continue
+            for _, row in src_df.iterrows():
+                remark_val = row.get(remark_col)
+                remark_str = (
+                    str(remark_val).strip() if pd.notna(remark_val) else ""
+                )
+                if remark_str.lower() != "conversion":
+                    continue
+                key = _airpay_gc_patient_id_key(row.get(pid_col))
+                if not key:
+                    continue
+                remark_by_key[key] = "Conversion"
+
+    updated_df = (eligible_sheets or {}).get("Updated Remark")
+    blank_df = (eligible_sheets or {}).get("Blank Remark")
+    if updated_df is None:
+        updated_df = pd.DataFrame()
+    else:
+        updated_df = updated_df.copy(deep=True)
+    if blank_df is None or blank_df.empty:
+        return (
+            {
+                "Updated Remark": updated_df,
+                "Blank Remark": (
+                    blank_df.copy(deep=True)
+                    if blank_df is not None
+                    else pd.DataFrame()
+                ),
+            },
+            0,
+            0 if blank_df is None else len(blank_df),
+        )
+
+    blank_df = blank_df.copy(deep=True).reset_index(drop=True)
+    remark_col = _airpay_find_named_col(blank_df, "Remark")
+    if remark_col is None:
+        blank_df["Remark"] = ""
+        remark_col = "Remark"
+    pid_col = _airpay_find_named_col(blank_df, "(PMS) Patient ID")
+    if pid_col is None or not remark_by_key:
+        return (
+            {"Updated Remark": updated_df, "Blank Remark": blank_df},
+            0,
+            len(blank_df),
+        )
+
+    match_idx = []
+    stay_idx = []
+    new_remarks = {}
+    for i, row in blank_df.iterrows():
+        key = _airpay_gc_patient_id_key(row.get(pid_col))
+        if key and key in remark_by_key:
+            match_idx.append(i)
+            new_remarks[i] = remark_by_key[key]
         else:
-            out = out.iloc[0:0].copy()
-        updated_sheets[sheet_name] = out
+            stay_idx.append(i)
 
-    return updated_sheets, matched, unmatched
+    if match_idx:
+        moved = blank_df.iloc[match_idx].copy()
+        moved[remark_col] = [new_remarks[i] for i in match_idx]
+        if updated_df is None or updated_df.empty:
+            updated_df = moved.reset_index(drop=True)
+        else:
+            moved_aligned = moved.reindex(columns=list(updated_df.columns))
+            updated_df = pd.concat(
+                [updated_df, moved_aligned], ignore_index=True
+            )
+
+    remaining_blank = (
+        blank_df.iloc[stay_idx].reset_index(drop=True)
+        if stay_idx
+        else blank_df.iloc[0:0].copy()
+    )
+    return (
+        {"Updated Remark": updated_df, "Blank Remark": remaining_blank},
+        len(match_idx),
+        len(stay_idx),
+    )
 
 
 def _airpay_send_excel_download(sheets_dict, filename, conversion_style=False):
@@ -11836,45 +11915,25 @@ def upload_airpay_all():
             airpay_step4_data, airpay_step2_data
         )
         airpay_step4_data = combined
+        # Pass 1: GC Step1 × Step4 → Updated Remark / Blank Remark
         eligible, remark_matched, remark_unmatched = (
             _airpay_update_step1_remarks_from_step4(
                 airpay_step1_data, airpay_step4_data
             )
         )
-        step4_keys = _airpay_step4_patient_id_keys(airpay_step4_data)
-        conversion_sheets, conv_matched, conv_unmatched = (
-            _airpay_update_step3_remarks_as_conversion(
-                airpay_step3_data, step4_keys
-            )
+        # Pass 2: GC Blank Remark × Step3 → matches append to Updated Remark
+        eligible, step3_matched, still_blank = (
+            _airpay_merge_blank_remark_from_step3(eligible, airpay_step3_data)
         )
-        extra_dfs = [
-            df
-            for df in conversion_sheets.values()
-            if df is not None and not df.empty
-        ]
-        if extra_dfs:
-            extra = pd.concat(extra_dfs, ignore_index=True, sort=False)
-            if not eligible:
-                eligible = {"AirPay Appointments": extra}
-            else:
-                first_name = next(iter(eligible))
-                first_df = eligible[first_name]
-                if first_df is None or first_df.empty:
-                    eligible[first_name] = extra
-                else:
-                    extra_aligned = extra.reindex(columns=list(first_df.columns))
-                    eligible[first_name] = pd.concat(
-                        [first_df, extra_aligned], ignore_index=True
-                    )
         airpay_eligible_data = eligible
         airpay_result = (
             "✅ All four files processed successfully! "
             f"Step 4 Smart Assist insurance columns filled from Step 2 on (PMS) Patient ID "
             f"({matched} matched row(s), {unmatched} unmatched row(s) with insurance columns blanked). "
-            f"Eligible AirPay appointments: Step 1 Remark from Step 4 "
-            f"({remark_matched} matched, {remark_unmatched} unmatched); "
-            f"Step 3 Conversion rows appended "
-            f"({conv_matched} Conversion row(s); {conv_unmatched} other Step 3 row(s) skipped). "
+            f"Eligible: Pass 1 Step1×Step4 "
+            f"({remark_matched} Updated Remark, {remark_unmatched} Blank Remark); "
+            f"Pass 2 Blank Remark×Step3 Conversion "
+            f"({step3_matched} moved to Updated Remark, {still_blank} remain Blank Remark). "
             "Download each output below."
         )
         return redirect("/comparison?tab=airpay")
