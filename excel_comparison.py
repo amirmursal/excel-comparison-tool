@@ -193,6 +193,43 @@ airpay_step4_filename = None
 airpay_step4_result = None
 airpay_eligible_data = None  # Step 1 with Remark updated from Step 4
 
+# Eligible final download: preferred column order; extras appended after these.
+AIRPAY_ELIGIBLE_OUTPUT_COLUMNS = [
+    "Received Date",
+    "Appointment Date",
+    "Carrier Phone",
+    "(PMS) Plan ID",
+    "Insurance Type",
+    "Subscriber Name",
+    "Subscriber DOB",
+    "Patient Name",
+    "Patient DOB",
+    "Status",
+    "Provider Name",
+    "Location",
+    "(PMS) Subscriber ID",
+    "Priority Status",
+    "OON 20%",
+    "(PMS) Patient ID",
+    "(PMS) Payer",
+    "Airpay Estimate",
+    "Remark",
+    "Status Code",
+    "Missing Info AP",
+    "PMS Update",
+    "Comment",
+    "Work Date",
+    "Agent Name",
+    "Supervisor",
+    "Auditor",
+    "QC Agent",
+    "QC Status",
+    "QC Comments",
+    "QC Date",
+    "Agent 1",
+    "Remark 1",
+]
+
 NH_OUTPUT_COLUMNS = [
     "Software",
     "Office Name",
@@ -11752,7 +11789,9 @@ def _airpay_append_step4_missing_from_updated_remark(eligible_sheets, step4_data
     """
     Pass 3: For each Step 4 (PMS) Patient ID not already on Updated Remark,
     append that Step 4 row to Updated Remark. IDs present on both keep the
-    existing Updated Remark row only (Step 4 row skipped). Blank Remark unchanged.
+    existing Updated Remark row only (Step 4 row skipped).
+    On appended rows, Location is filled from Step 4 Office Name.
+    Blank Remark unchanged.
     Returns (updated_eligible_sheets, appended_count).
     """
     updated_df = (eligible_sheets or {}).get("Updated Remark")
@@ -11792,9 +11831,25 @@ def _airpay_append_step4_missing_from_updated_remark(eligible_sheets, step4_data
     appended = len(to_append)
     if appended:
         extra = pd.DataFrame(to_append)
+        # Pass 3: Location ← Office Name (from Step 4 Smart Assist Report)
+        office_col = _airpay_find_named_col(extra, "Office Name")
+        if office_col is not None:
+            loc_col = _airpay_find_named_col(extra, "Location")
+            office_vals = extra[office_col].apply(
+                lambda v: "" if pd.isna(v) else str(v).strip()
+            )
+            if loc_col is not None:
+                extra[loc_col] = office_vals
+            else:
+                extra["Location"] = office_vals
         if updated_df.empty:
             updated_df = extra.reset_index(drop=True)
         else:
+            if (
+                _airpay_find_named_col(updated_df, "Location") is None
+                and "Location" in extra.columns
+            ):
+                updated_df["Location"] = ""
             extra_aligned = extra.reindex(columns=list(updated_df.columns))
             updated_df = pd.concat(
                 [updated_df, extra_aligned], ignore_index=True
@@ -11813,6 +11868,7 @@ def _airpay_append_step3_conversion_missing_from_updated_remark(
     Pass 4 (after Step 4 append): For each Step 3 row with Remark == Conversion
     whose (PMS) Patient ID is not already on Updated Remark, append that Step 3
     row. IDs present on both keep Updated Remark only (Step 3 row skipped).
+    On appended rows, Location is filled from Step 3 Office Name.
     Blank Remark unchanged.
     Returns (updated_eligible_sheets, appended_count).
     """
@@ -11860,10 +11916,29 @@ def _airpay_append_step3_conversion_missing_from_updated_remark(
     appended = len(to_append)
     if appended:
         extra = pd.DataFrame(to_append)
+        # Pass 4: Location ← Office Name (from Step 3 Conversion Report)
+        office_col = _airpay_find_named_col(extra, "Office Name")
+        if office_col is not None:
+            loc_col = _airpay_find_named_col(extra, "Location")
+            office_vals = extra[office_col].apply(
+                lambda v: "" if pd.isna(v) else str(v).strip()
+            )
+            if loc_col is not None:
+                extra[loc_col] = office_vals
+            else:
+                extra["Location"] = office_vals
         if updated_df.empty:
             updated_df = extra.reset_index(drop=True)
         else:
+            # Ensure Location exists on target so filled values survive reindex
+            if (
+                _airpay_find_named_col(updated_df, "Location") is None
+                and "Location" in extra.columns
+            ):
+                updated_df["Location"] = ""
             extra_aligned = extra.reindex(columns=list(updated_df.columns))
+            # If Location exists on both but Office Name was dropped by reindex,
+            # prefer values already copied onto Location above.
             updated_df = pd.concat(
                 [updated_df, extra_aligned], ignore_index=True
             )
@@ -11872,6 +11947,161 @@ def _airpay_append_step3_conversion_missing_from_updated_remark(
         {"Updated Remark": updated_df, "Blank Remark": blank_df},
         appended,
     )
+
+
+def _airpay_step3_primary_ins_by_patient_id(step3_data):
+    """
+    Map (PMS) Patient ID → Dental Primary Ins Carr from Conversion Report (Step 3).
+    First non-empty Dental Primary Ins Carr wins per Patient ID.
+    """
+    lookup = {}
+    for _, src_df in (step3_data or {}).items():
+        if src_df is None or src_df.empty:
+            continue
+        pid_col = _airpay_find_named_col(src_df, "(PMS) Patient ID")
+        ins_col = _airpay_find_named_col(src_df, "Dental Primary Ins Carr")
+        if pid_col is None or ins_col is None:
+            continue
+        for _, row in src_df.iterrows():
+            key = _airpay_gc_patient_id_key(row.get(pid_col))
+            if not key or key in lookup:
+                continue
+            ins_val = row.get(ins_col)
+            if pd.isna(ins_val):
+                continue
+            ins_str = str(ins_val).strip()
+            if not ins_str or ins_str.lower() == "nan":
+                continue
+            lookup[key] = ins_str
+    return lookup
+
+
+def _airpay_format_eligible_final_sheets(sheets_data, step3_data=None):
+    """
+    Final Eligible output shaping for each sheet:
+      - Merge Subscriber Last Name + Subscriber First Name → Subscriber Name
+        as "Last, First"; drop the source columns
+      - Drop Patient Last Name and Patient First Name
+      - Reorder to AIRPAY_ELIGIBLE_OUTPUT_COLUMNS; missing cols added blank;
+        any other columns appended after in their existing order
+      - (PMS) Payer starting with "CONVERSION DEFAULT" → Dental Primary Ins Carr
+        from Conversion Report (by Patient ID); else "No Insurance"
+      - Blank (PMS) Payer → "No Insurance"; any case of "no insurance" → "No Insurance"
+      - Blank Status + Remark == Workable → Status = "From SA Report"
+      - Blank Status + Remark == Conversion → Status = "From Conv Report"
+    """
+
+    def _cell_str(val):
+        if pd.isna(val):
+            return ""
+        s = str(val).strip()
+        return "" if s.lower() == "nan" else s
+
+    def _normalize_payer(val):
+        s = _cell_str(val)
+        if not s or s.lower() == "no insurance":
+            return "No Insurance"
+        return val if pd.notna(val) else "No Insurance"
+
+    def _combine_last_first(last, first):
+        if last and first:
+            return f"{last}, {first}"
+        return last or first
+
+    primary_ins_by_pid = _airpay_step3_primary_ins_by_patient_id(step3_data)
+
+    formatted = {}
+    for sheet_name, base_df in (sheets_data or {}).items():
+        df = base_df.copy(deep=True) if base_df is not None else pd.DataFrame()
+
+        sub_last = _airpay_find_named_col(df, "Subscriber Last Name")
+        sub_first = _airpay_find_named_col(df, "Subscriber First Name")
+        if not df.empty and (sub_last is not None or sub_first is not None):
+            subscriber_name = [
+                _combine_last_first(
+                    _cell_str(row[sub_last]) if sub_last else "",
+                    _cell_str(row[sub_first]) if sub_first else "",
+                )
+                for _, row in df.iterrows()
+            ]
+            drop_sub = [c for c in (sub_last, sub_first) if c is not None]
+            df = df.drop(columns=drop_sub)
+            if "Subscriber Name" in df.columns:
+                df = df.drop(columns=["Subscriber Name"])
+            df["Subscriber Name"] = subscriber_name
+        elif _airpay_find_named_col(df, "Subscriber Name") is None:
+            df["Subscriber Name"] = "" if len(df) else pd.Series(dtype=object)
+
+        drop_patient = []
+        for name in ("Patient Last Name", "Patient First Name"):
+            col = _airpay_find_named_col(df, name)
+            if col is not None:
+                drop_patient.append(col)
+        if drop_patient:
+            df = df.drop(columns=drop_patient)
+
+        # Map existing columns → canonical preferred names (case-insensitive)
+        rename_map = {}
+        used_src = set()
+        for preferred in AIRPAY_ELIGIBLE_OUTPUT_COLUMNS:
+            src = _airpay_find_named_col(df, preferred)
+            if src is not None and src not in used_src:
+                if src != preferred:
+                    rename_map[src] = preferred
+                used_src.add(src)
+        if rename_map:
+            df = df.rename(columns=rename_map)
+
+        ordered = []
+        for preferred in AIRPAY_ELIGIBLE_OUTPUT_COLUMNS:
+            if preferred in df.columns:
+                ordered.append(preferred)
+            else:
+                df[preferred] = ""
+                ordered.append(preferred)
+
+        extras = [c for c in df.columns if c not in ordered]
+        df = df[ordered + extras]
+
+        payer_col = _airpay_find_named_col(df, "(PMS) Payer")
+        pid_col = _airpay_find_named_col(df, "(PMS) Patient ID")
+        if payer_col is not None and not df.empty:
+            # CONVERSION DEFAULT… → Dental Primary Ins Carr from Step 3 (or No Insurance)
+            new_payers = []
+            for _, row in df.iterrows():
+                payer_s = _cell_str(row.get(payer_col))
+                if payer_s.lower().startswith("conversion default"):
+                    key = (
+                        _airpay_gc_patient_id_key(row.get(pid_col))
+                        if pid_col is not None
+                        else ""
+                    )
+                    ins = primary_ins_by_pid.get(key, "") if key else ""
+                    new_payers.append(ins if ins else "No Insurance")
+                else:
+                    new_payers.append(row.get(payer_col))
+            df[payer_col] = new_payers
+            # Blank / any-case "no insurance" → "No Insurance"
+            df[payer_col] = df[payer_col].apply(_normalize_payer)
+
+        # Blank Status + Remark Workable/Conversion → From SA / Conv Report
+        status_col = _airpay_find_named_col(df, "Status")
+        remark_col = _airpay_find_named_col(df, "Remark")
+        if status_col is not None and remark_col is not None and not df.empty:
+            new_status = []
+            for _, row in df.iterrows():
+                status_s = _cell_str(row.get(status_col))
+                remark_s = _cell_str(row.get(remark_col)).lower()
+                if not status_s and remark_s == "workable":
+                    new_status.append("From SA Report")
+                elif not status_s and remark_s == "conversion":
+                    new_status.append("From Conv Report")
+                else:
+                    new_status.append(row.get(status_col))
+            df[status_col] = new_status
+
+        formatted[sheet_name] = df
+    return formatted
 
 
 def _airpay_send_excel_download(sheets_dict, filename, conversion_style=False):
@@ -12063,7 +12293,10 @@ def upload_airpay_all():
                 eligible, airpay_step3_data
             )
         )
-        airpay_eligible_data = eligible
+        # Final Eligible shaping: Subscriber Name + drop Patient First/Last Name
+        airpay_eligible_data = _airpay_format_eligible_final_sheets(
+            eligible, airpay_step3_data
+        )
         airpay_result = (
             "✅ All four files processed successfully! "
             f"Step 4 Smart Assist insurance columns filled from Step 2 on (PMS) Patient ID "
@@ -12076,6 +12309,9 @@ def upload_airpay_all():
             f"({step4_appended} Step 4 row(s) appended); "
             f"Pass 4 Step 3 Conversion missing from Updated Remark "
             f"({step3_appended} Step 3 row(s) appended). "
+            "Final Eligible: fixed column order; "
+            "Subscriber Name = Last, First; Patient Last/First Name removed; "
+            "extra columns appended after. "
             "Download each output below."
         )
         return redirect("/comparison?tab=airpay")
