@@ -195,6 +195,7 @@ airpay_eligible_data = None  # Step 1 with Remark updated from Step 4
 
 # Eligible final download: preferred column order; extras appended after these.
 AIRPAY_ELIGIBLE_OUTPUT_COLUMNS = [
+    "Allocation Date",
     "Received Date",
     "Appointment Date",
     "Carrier Phone",
@@ -11989,6 +11990,7 @@ def _airpay_format_eligible_final_sheets(sheets_data, step3_data=None):
       - Blank (PMS) Payer → "No Insurance"; any case of "no insurance" → "No Insurance"
       - Blank Status + Remark == Workable → Status = "From SA Report"
       - Blank Status + Remark == Conversion → Status = "From Conv Report"
+      - Allocation Date first column (left blank for now; MM/DD/YYYY when filled)
     """
 
     def _cell_str(val):
@@ -12051,6 +12053,12 @@ def _airpay_format_eligible_final_sheets(sheets_data, step3_data=None):
                 used_src.add(src)
         if rename_map:
             df = df.rename(columns=rename_map)
+
+        # Allocation Date: first column, left blank for now
+        existing_alloc = _airpay_find_named_col(df, "Allocation Date")
+        if existing_alloc is not None and existing_alloc != "Allocation Date":
+            df = df.rename(columns={existing_alloc: "Allocation Date"})
+        df["Allocation Date"] = ""
 
         ordered = []
         for preferred in AIRPAY_ELIGIBLE_OUTPUT_COLUMNS:
