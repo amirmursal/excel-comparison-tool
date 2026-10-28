@@ -231,6 +231,29 @@ AIRPAY_ELIGIBLE_OUTPUT_COLUMNS = [
     "Remark 1",
 ]
 
+# Eligible final: Location values → "Location Not to Work" (case-insensitive).
+AIRPAY_NOT_TO_WORK_LOCATIONS = {
+    "bayshore dental",
+    "denmark dentistry",
+    "elements dental",
+    "harmony dental",
+    "kurt r k kwiatkowski, dds",
+    "kurt r. kwiatkowski, dds",
+    "smile crafters",
+    "smiles on clark",
+}
+# Eligible final: (PMS) Payer values → "Insurance Not to Work" (case-insensitive).
+AIRPAY_NOT_TO_WORK_PAYERS = {
+    "affordable dental plan",
+    "cash pt",
+    "community dental associates",
+    "heiden dental plan",
+    "in house discount plan",
+    "loyalties member",
+    "optimal health club plan",
+    "plan for health",
+}
+
 NH_OUTPUT_COLUMNS = [
     "Software",
     "Office Name",
@@ -1679,9 +1702,9 @@ HTML_TEMPLATE = """
                 <div class="menu-item {% if active_tab == 'remarks' %}active{% endif %}" onclick="switchTab('remarks')">
                     <span>Update Remarks</span>
                 </div>
-                <div class="menu-item {% if active_tab == 'insurance' %}active{% endif %}" onclick="switchTab('insurance')">
+                {# <div class="menu-item {% if active_tab == 'insurance' %}active{% endif %}" onclick="switchTab('insurance')">
                     <span>Insurance Formatting</span>
-                </div>
+                </div> #}
                 <div class="menu-item {% if active_tab == 'agentproductivity' %}active{% endif %}" onclick="switchTab('agentproductivity')">
                     <span>Agent Productivity Tracker</span>
                 </div>
@@ -2390,7 +2413,7 @@ HTML_TEMPLATE = """
                 {% if airpay_eligible_data %}
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
                     <h3>💾 5. Eligible AirPay Appointments</h3>
-                    <p style="margin-bottom: 10px;">Pass 1: Step 1 × Step 4 → <strong>Updated Remark</strong> / <strong>Blank Remark</strong>. Pass 2: Blank Remark × Step 3 Conversion → matches move to Updated Remark. Pass 3: append Step 4 rows missing from Updated Remark. Pass 4: append Step 3 Conversion rows missing from Updated Remark (overlaps keep Updated Remark only).</p>
+                    <p style="margin-bottom: 10px;">Pass 1–4 as before. Split sheets: No Insurance, Location Not to Work, Insurance Not to Work. <strong>Duplicates</strong> sheet for repeated Insurance Type + (PMS) Payer + (PMS) Patient ID (first kept on source sheet).</p>
                     <form action="/download_airpay_eligible" method="post" id="airpay-eligible-download-form">
                         <div class="form-group">
                             <label for="airpay_eligible_output_filename">Output filename (optional):</label>
@@ -11977,20 +12000,90 @@ def _airpay_step3_primary_ins_by_patient_id(step3_data):
     return lookup
 
 
-def _airpay_format_eligible_final_sheets(sheets_data, step3_data=None):
+def _airpay_step2_provider_name_by_patient_id(step2_data):
+    """
+    Map (PMS) Patient ID → Provider Name from Appointment Report (Step 2).
+    Accepts Provider Name or Provider. First non-empty wins per Patient ID.
+    """
+    lookup = {}
+    for _, src_df in (step2_data or {}).items():
+        if src_df is None or src_df.empty:
+            continue
+        pid_col = _airpay_find_named_col(src_df, "(PMS) Patient ID")
+        provider_col = _airpay_find_named_col(src_df, "Provider Name")
+        if provider_col is None:
+            provider_col = _airpay_find_named_col(src_df, "Provider")
+        if pid_col is None or provider_col is None:
+            continue
+        for _, row in src_df.iterrows():
+            key = _airpay_gc_patient_id_key(row.get(pid_col))
+            if not key or key in lookup:
+                continue
+            val = row.get(provider_col)
+            if pd.isna(val):
+                continue
+            val_str = str(val).strip()
+            if not val_str or val_str.lower() == "nan":
+                continue
+            lookup[key] = val_str
+    return lookup
+
+
+def _airpay_step2_office_name_by_patient_id(step2_data):
+    """
+    Map (PMS) Patient ID → Office Name from Appointment Report (Step 2).
+    First non-empty wins per Patient ID.
+    """
+    lookup = {}
+    for _, src_df in (step2_data or {}).items():
+        if src_df is None or src_df.empty:
+            continue
+        pid_col = _airpay_find_named_col(src_df, "(PMS) Patient ID")
+        office_col = _airpay_find_named_col(src_df, "Office Name")
+        if pid_col is None or office_col is None:
+            continue
+        for _, row in src_df.iterrows():
+            key = _airpay_gc_patient_id_key(row.get(pid_col))
+            if not key or key in lookup:
+                continue
+            val = row.get(office_col)
+            if pd.isna(val):
+                continue
+            val_str = str(val).strip()
+            if not val_str or val_str.lower() == "nan":
+                continue
+            lookup[key] = val_str
+    return lookup
+
+
+def _airpay_format_eligible_final_sheets(
+    sheets_data, step3_data=None, step2_data=None
+):
     """
     Final Eligible output shaping for each sheet:
       - Merge Subscriber Last Name + Subscriber First Name → Subscriber Name
         as "Last, First"; drop the source columns
       - Drop Patient Last Name and Patient First Name
       - Reorder to AIRPAY_ELIGIBLE_OUTPUT_COLUMNS; missing cols added blank;
-        any other columns appended after in their existing order
+        drop any columns after Remark 1 (no extras kept)
       - (PMS) Payer starting with "CONVERSION DEFAULT" → Dental Primary Ins Carr
         from Conversion Report (by Patient ID); else "No Insurance"
+      - Apply format_insurance_name() to (PMS) Payer (same rules as Insurance Formatting)
       - Blank (PMS) Payer → "No Insurance"; any case of "no insurance" → "No Insurance"
       - Blank Status + Remark == Workable → Status = "From SA Report"
       - Blank Status + Remark == Conversion → Status = "From Conv Report"
-      - Allocation Date first column (left blank for now; MM/DD/YYYY when filled)
+      - Then set all Remark values to "Workable" on every sheet
+      - Blank Provider Name ← Appointment Report (Step 2) by Patient ID (first wins)
+      - Location ← Appointment Report Office Name when present (else keep existing)
+      - Allocation Date and Received Date filled with today's date (MM/DD/YYYY)
+      - Move Updated Remark rows with (PMS) Payer == "No Insurance" onto
+        a "No Insurance" sheet (removed from Updated Remark)
+      - Move rows whose Location is in AIRPAY_NOT_TO_WORK_LOCATIONS onto
+        "Location Not to Work" (removed from all other sheets)
+      - Move rows whose (PMS) Payer is in AIRPAY_NOT_TO_WORK_PAYERS onto
+        "Insurance Not to Work" (removed from all other sheets)
+      - Dedupe by Insurance Type + (PMS) Payer + (PMS) Patient ID across sheets;
+        keep first occurrence, move later duplicates to "Duplicates"
     """
 
     def _cell_str(val):
@@ -12005,12 +12098,25 @@ def _airpay_format_eligible_final_sheets(sheets_data, step3_data=None):
             return "No Insurance"
         return val if pd.notna(val) else "No Insurance"
 
+    def _format_payer(val):
+        s = _cell_str(val)
+        if not s:
+            return "No Insurance"
+        formatted = format_insurance_name(s)
+        if pd.isna(formatted):
+            return "No Insurance"
+        out = _cell_str(formatted)
+        return out if out else "No Insurance"
+
     def _combine_last_first(last, first):
         if last and first:
             return f"{last}, {first}"
         return last or first
 
     primary_ins_by_pid = _airpay_step3_primary_ins_by_patient_id(step3_data)
+    provider_by_pid = _airpay_step2_provider_name_by_patient_id(step2_data)
+    office_by_pid = _airpay_step2_office_name_by_patient_id(step2_data)
+    today_mmddyyyy = datetime.now().strftime("%m/%d/%Y")
 
     formatted = {}
     for sheet_name, base_df in (sheets_data or {}).items():
@@ -12054,11 +12160,12 @@ def _airpay_format_eligible_final_sheets(sheets_data, step3_data=None):
         if rename_map:
             df = df.rename(columns=rename_map)
 
-        # Allocation Date: first column, left blank for now
-        existing_alloc = _airpay_find_named_col(df, "Allocation Date")
-        if existing_alloc is not None and existing_alloc != "Allocation Date":
-            df = df.rename(columns={existing_alloc: "Allocation Date"})
-        df["Allocation Date"] = ""
+        # Allocation Date + Received Date: today's date MM/DD/YYYY
+        for date_col_name in ("Allocation Date", "Received Date"):
+            existing = _airpay_find_named_col(df, date_col_name)
+            if existing is not None and existing != date_col_name:
+                df = df.rename(columns={existing: date_col_name})
+            df[date_col_name] = today_mmddyyyy if len(df) else ""
 
         ordered = []
         for preferred in AIRPAY_ELIGIBLE_OUTPUT_COLUMNS:
@@ -12068,8 +12175,8 @@ def _airpay_format_eligible_final_sheets(sheets_data, step3_data=None):
                 df[preferred] = ""
                 ordered.append(preferred)
 
-        extras = [c for c in df.columns if c not in ordered]
-        df = df[ordered + extras]
+        # Keep only preferred columns through Remark 1; drop everything after
+        df = df[ordered]
 
         payer_col = _airpay_find_named_col(df, "(PMS) Payer")
         pid_col = _airpay_find_named_col(df, "(PMS) Patient ID")
@@ -12089,6 +12196,8 @@ def _airpay_format_eligible_final_sheets(sheets_data, step3_data=None):
                 else:
                     new_payers.append(row.get(payer_col))
             df[payer_col] = new_payers
+            # Same insurance-name rules as Insurance Formatting tab
+            df[payer_col] = df[payer_col].apply(_format_payer)
             # Blank / any-case "no insurance" → "No Insurance"
             df[payer_col] = df[payer_col].apply(_normalize_payer)
 
@@ -12108,7 +12217,190 @@ def _airpay_format_eligible_final_sheets(sheets_data, step3_data=None):
                     new_status.append(row.get(status_col))
             df[status_col] = new_status
 
+        # All Remark values → Workable (after Status rules that depend on Remark)
+        if remark_col is not None:
+            df[remark_col] = "Workable"
+        else:
+            df["Remark"] = "Workable"
+
+        # Blank Provider Name ← Step 2 Appointment Report (first non-empty per PID)
+        provider_col = _airpay_find_named_col(df, "Provider Name")
+        pid_col_for_provider = _airpay_find_named_col(df, "(PMS) Patient ID")
+        if (
+            provider_col is not None
+            and pid_col_for_provider is not None
+            and not df.empty
+            and provider_by_pid
+        ):
+            new_providers = []
+            for _, row in df.iterrows():
+                current = _cell_str(row.get(provider_col))
+                if current:
+                    new_providers.append(row.get(provider_col))
+                    continue
+                key = _airpay_gc_patient_id_key(row.get(pid_col_for_provider))
+                new_providers.append(
+                    provider_by_pid.get(key, "") if key else ""
+                )
+            df[provider_col] = new_providers
+
+        # Location ← Step 2 Office Name when present; else keep existing Location
+        loc_col = _airpay_find_named_col(df, "Location")
+        pid_col_for_loc = _airpay_find_named_col(df, "(PMS) Patient ID")
+        if (
+            loc_col is not None
+            and pid_col_for_loc is not None
+            and not df.empty
+            and office_by_pid
+        ):
+            new_locations = []
+            for _, row in df.iterrows():
+                key = _airpay_gc_patient_id_key(row.get(pid_col_for_loc))
+                office_val = office_by_pid.get(key, "") if key else ""
+                if office_val:
+                    new_locations.append(office_val)
+                else:
+                    new_locations.append(row.get(loc_col))
+            df[loc_col] = new_locations
+
         formatted[sheet_name] = df
+
+    # Move No Insurance payer rows from Updated Remark → No Insurance sheet
+    updated_df = formatted.get("Updated Remark")
+    if updated_df is None:
+        updated_df = pd.DataFrame()
+    else:
+        updated_df = updated_df.copy(deep=True)
+
+    columns = (
+        list(updated_df.columns)
+        if updated_df is not None and not updated_df.empty
+        else list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS)
+    )
+    payer_col = _airpay_find_named_col(updated_df, "(PMS) Payer")
+    if payer_col is not None and not updated_df.empty:
+        no_ins_mask = updated_df[payer_col].apply(
+            lambda v: str(v).strip().lower() == "no insurance"
+            if pd.notna(v)
+            else False
+        )
+        no_ins_df = updated_df.loc[no_ins_mask].reset_index(drop=True)
+        kept_df = updated_df.loc[~no_ins_mask].reset_index(drop=True)
+    else:
+        no_ins_df = pd.DataFrame(columns=columns)
+        kept_df = updated_df
+
+    formatted["Updated Remark"] = kept_df
+    formatted["No Insurance"] = no_ins_df
+
+    # Move listed Location values from all sheets → Location Not to Work
+    not_to_work_parts = []
+    for sheet_name in list(formatted.keys()):
+        df = formatted[sheet_name]
+        if df is None or df.empty:
+            continue
+        loc_col = _airpay_find_named_col(df, "Location")
+        if loc_col is None:
+            continue
+
+        def _is_not_to_work_loc(v, _cell=_cell_str):
+            return _cell(v).lower() in AIRPAY_NOT_TO_WORK_LOCATIONS
+
+        mask = df[loc_col].apply(_is_not_to_work_loc)
+        if mask.any():
+            not_to_work_parts.append(df.loc[mask].copy())
+            formatted[sheet_name] = df.loc[~mask].reset_index(drop=True)
+
+    if not_to_work_parts:
+        ntw_df = pd.concat(not_to_work_parts, ignore_index=True, sort=False)
+        ntw_df = ntw_df.reindex(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
+    else:
+        ntw_df = pd.DataFrame(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
+    formatted["Location Not to Work"] = ntw_df
+
+    # Move listed (PMS) Payer values from all sheets → Insurance Not to Work
+    ins_ntw_parts = []
+    for sheet_name in list(formatted.keys()):
+        if sheet_name == "Insurance Not to Work":
+            continue
+        df = formatted[sheet_name]
+        if df is None or df.empty:
+            continue
+        payer_col_ntw = _airpay_find_named_col(df, "(PMS) Payer")
+        if payer_col_ntw is None:
+            continue
+
+        def _is_not_to_work_payer(v, _cell=_cell_str):
+            return _cell(v).lower() in AIRPAY_NOT_TO_WORK_PAYERS
+
+        mask = df[payer_col_ntw].apply(_is_not_to_work_payer)
+        if mask.any():
+            ins_ntw_parts.append(df.loc[mask].copy())
+            formatted[sheet_name] = df.loc[~mask].reset_index(drop=True)
+
+    if ins_ntw_parts:
+        ins_ntw_df = pd.concat(ins_ntw_parts, ignore_index=True, sort=False)
+        ins_ntw_df = ins_ntw_df.reindex(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
+    else:
+        ins_ntw_df = pd.DataFrame(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
+    formatted["Insurance Not to Work"] = ins_ntw_df
+
+    # Duplicates: Insurance Type + (PMS) Payer + (PMS) Patient ID
+    # Keep first occurrence across sheets; move later matches to Duplicates.
+    sheet_order = [
+        "Updated Remark",
+        "Blank Remark",
+        "No Insurance",
+        "Location Not to Work",
+        "Insurance Not to Work",
+    ]
+    seen_keys = set()
+    dup_parts = []
+    for sheet_name in sheet_order:
+        df = formatted.get(sheet_name)
+        if df is None or df.empty:
+            continue
+        ins_type_col = _airpay_find_named_col(df, "Insurance Type")
+        payer_dup_col = _airpay_find_named_col(df, "(PMS) Payer")
+        pid_dup_col = _airpay_find_named_col(df, "(PMS) Patient ID")
+        if pid_dup_col is None:
+            continue
+
+        keep_idx = []
+        dup_idx = []
+        df = df.reset_index(drop=True)
+        for i, row in df.iterrows():
+            ins_s = (
+                _cell_str(row.get(ins_type_col)).lower() if ins_type_col else ""
+            )
+            payer_s = (
+                _cell_str(row.get(payer_dup_col)).lower()
+                if payer_dup_col
+                else ""
+            )
+            pid_s = _airpay_gc_patient_id_key(row.get(pid_dup_col))
+            key = f"{ins_s}|{payer_s}|{pid_s}"
+            if key in seen_keys:
+                dup_idx.append(i)
+            else:
+                seen_keys.add(key)
+                keep_idx.append(i)
+
+        if dup_idx:
+            dup_parts.append(df.iloc[dup_idx].copy())
+        formatted[sheet_name] = (
+            df.iloc[keep_idx].reset_index(drop=True)
+            if keep_idx
+            else df.iloc[0:0].copy()
+        )
+
+    if dup_parts:
+        dup_df = pd.concat(dup_parts, ignore_index=True, sort=False)
+        dup_df = dup_df.reindex(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
+    else:
+        dup_df = pd.DataFrame(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
+    formatted["Duplicates"] = dup_df
+
     return formatted
 
 
@@ -12303,7 +12595,7 @@ def upload_airpay_all():
         )
         # Final Eligible shaping: Subscriber Name + drop Patient First/Last Name
         airpay_eligible_data = _airpay_format_eligible_final_sheets(
-            eligible, airpay_step3_data
+            eligible, airpay_step3_data, airpay_step2_data
         )
         airpay_result = (
             "✅ All four files processed successfully! "
@@ -12317,9 +12609,9 @@ def upload_airpay_all():
             f"({step4_appended} Step 4 row(s) appended); "
             f"Pass 4 Step 3 Conversion missing from Updated Remark "
             f"({step3_appended} Step 3 row(s) appended). "
-            "Final Eligible: fixed column order; "
-            "Subscriber Name = Last, First; Patient Last/First Name removed; "
-            "extra columns appended after. "
+            "Final Eligible: fixed column order through Remark 1 "
+            "(no columns after Remark 1); "
+            "Subscriber Name = Last, First; Patient Last/First Name removed. "
             "Download each output below."
         )
         return redirect("/comparison?tab=airpay")
