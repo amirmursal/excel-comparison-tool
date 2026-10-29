@@ -98,6 +98,13 @@ data_cleanser_result = None
 data_cleanser_output = ""
 data_cleanser_processed_data = None
 
+# Global variables for Remove Duplicate
+remove_dup_data = None  # {sheet_name: df}
+remove_dup_filename = None
+remove_dup_result = None
+remove_dup_output = ""
+remove_dup_processed_data = None  # output workbook sheets
+
 # Global variables for agent & remark transfer
 agent_remark_transfer_data = None
 agent_remark_transfer_filename = None
@@ -1715,6 +1722,9 @@ HTML_TEMPLATE = """
                 <div class="menu-item {% if active_tab == 'general' %}active{% endif %}" onclick="switchTab('general')">
                     <span>General Comparison</span>
                 </div>
+                <div class="menu-item {% if active_tab == 'removeduplicate' %}active{% endif %}" onclick="switchTab('removeduplicate')">
+                    <span>Remove Duplicates</span>
+                </div>
                 <div class="menu-item {% if active_tab == 'datacleanser' %}active{% endif %}" onclick="switchTab('datacleanser')">
                     <span>Data Cleanser</span>
                 </div>
@@ -1763,6 +1773,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'masterallocationbuilder' %}🧱 Master Allocation Builder
                     {% elif active_tab == 'airpay' %}✈️ AirPay Report
                     {% elif active_tab == 'general' %}🧭 General Comparison
+                    {% elif active_tab == 'removeduplicate' %}📑 Remove Duplicates
                     {% elif active_tab == 'datacleanser' %}🧹 Data Cleanser
                     {% elif active_tab == 'agentremarktransfer' %}🔄 Agent & Remark Transfer
                     {% elif active_tab == 'agentproductivity' %}📊 Agent Productivity Tracker
@@ -1784,6 +1795,7 @@ HTML_TEMPLATE = """
                     {% elif active_tab == 'masterallocationbuilder' %}Build Work Done file from uploaded files with sheet/date filtering
                     {% elif active_tab == 'airpay' %}Upload all four labeled files and process them in one click
                     {% elif active_tab == 'general' %}Compare two files and update primary rows on match
+                    {% elif active_tab == 'removeduplicate' %}Remove duplicate rows by selected column combination
                     {% elif active_tab == 'datacleanser' %}Remove selected values from a column and create clean/removed sheets
                     {% elif active_tab == 'agentremarktransfer' %}Transfer Agent Name to Agent 1 and Remark to Remark 1
                     {% elif active_tab == 'agentproductivity' %}Calculate agent productivity based on remark values and working days
@@ -3462,6 +3474,207 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
+            <!-- Tab: Remove Duplicates -->
+            <div id="removeduplicate-tab" class="tab-content {% if active_tab == 'removeduplicate' %}active{% endif %}">
+                <div class="section">
+                    <h3>📑 Remove Duplicates</h3>
+                    <p>
+                        Upload an Excel file, choose one sheet, then select one or more columns.
+                        Rows are deduplicated by the combination of those column values.
+                        The first matching row is kept on the original sheet; later matches go to a <strong>Duplicates</strong> sheet.
+                        Rows with any blank selected-column value are skipped for duplicate detection and stay on the original sheet.
+                    </p>
+                </div>
+
+                <div class="section">
+                    <h3>📁 Step 1: Upload Excel File</h3>
+                    <form action="/upload_remove_duplicate" method="post" enctype="multipart/form-data" id="removeduplicate-form">
+                        <div class="form-group">
+                            <label for="removeduplicate_file">Select Excel File (.xlsx, .xls):</label>
+                            <input type="file" id="removeduplicate_file" name="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" id="removeduplicate-upload-btn">📤 Upload File</button>
+                    </form>
+                    {% if remove_dup_filename %}
+                    <div class="status-success" style="margin-top: 10px;">
+                        ✅ {{ remove_dup_filename }}<br>
+                        📋 {{ remove_dup_data.keys() | list | length if remove_dup_data else 0 }} sheet(s)
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if remove_dup_data %}
+                <div class="section">
+                    <h3>📋 Step 2: Select Sheet</h3>
+                    <div class="form-group">
+                        <label for="removeduplicate_sheet">Select Sheet:</label>
+                        <select id="removeduplicate_sheet" name="sheet" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="">-- Select a sheet --</option>
+                            {% for sheet_name in remove_dup_data.keys() %}
+                            <option value="{{ sheet_name }}">{{ sheet_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="section" id="removeduplicate-columns-section" style="display: none;">
+                    <h3>🎯 Step 3: Select Columns (combination key)</h3>
+                    <p style="margin-bottom: 10px; color: #666;">
+                        Example: Insurance Type + (PMS) Payer + (PMS) Patient ID
+                    </p>
+                    <form id="removeduplicate-process-form" action="/process_remove_duplicate" method="post">
+                        <input type="hidden" id="removeduplicate_process_sheet" name="sheet" value="">
+                        <div class="form-group" id="removeduplicate-columns-checkboxes"
+                             style="max-height: 280px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 12px;">
+                            <div style="color: #666;">Select a sheet to load columns…</div>
+                        </div>
+                        <button type="submit" id="removeduplicate-process-btn" disabled style="margin-top: 12px;">
+                            🔄 Remove Duplicates
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if remove_dup_result %}
+                <div class="section">
+                    <h3>📢 Processing Status</h3>
+                    <div class="status-message">{{ remove_dup_result | safe }}</div>
+                </div>
+                {% endif %}
+
+                {% if remove_dup_output %}
+                <div class="section">
+                    <h3>📝 Processing Output</h3>
+                    <div class="output" style="background: #1e1e1e; color: #f8f8f2; padding: 20px; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', monospace; max-height: 500px; overflow-y: auto; border: 1px solid #333; font-size: 14px;">
+                        {{ remove_dup_output }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if remove_dup_processed_data and remove_dup_result and 'successfully' in remove_dup_result.lower() %}
+                <div class="section">
+                    <h3>💾 Download Result</h3>
+                    <form action="/download_remove_duplicate" method="post" id="removeduplicate-download-form">
+                        <div class="form-group">
+                            <label for="removeduplicate_output_filename">Output filename (optional):</label>
+                            <input type="text" id="removeduplicate_output_filename" name="filename"
+                                   placeholder="Remove Duplicates MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="removeduplicate-download-btn">💾 Download File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <div class="section">
+                    <h3>🔄 Reset Remove Duplicates</h3>
+                    <p>Clear uploaded files and results to start fresh.</p>
+                    <form action="/reset_remove_duplicate" method="post"
+                          onsubmit="return confirm('Reset Remove Duplicates and clear all uploaded data?');">
+                        <button type="submit" class="reset-btn">🗑️ Reset Remove Duplicates</button>
+                    </form>
+                </div>
+
+                <script>
+                (function(){
+                    const sheetSel = document.getElementById('removeduplicate_sheet');
+                    const colsSection = document.getElementById('removeduplicate-columns-section');
+                    const colsBox = document.getElementById('removeduplicate-columns-checkboxes');
+                    const processForm = document.getElementById('removeduplicate-process-form');
+                    const processSheetInput = document.getElementById('removeduplicate_process_sheet');
+                    const processBtn = document.getElementById('removeduplicate-process-btn');
+
+                    function updateProcessButton() {
+                        if (!processBtn || !colsBox) return;
+                        const checked = colsBox.querySelectorAll('input[name="columns"]:checked');
+                        processBtn.disabled = !(sheetSel && sheetSel.value && checked.length > 0);
+                    }
+
+                    async function loadColumns() {
+                        const sheet = sheetSel ? sheetSel.value : '';
+                        if (!sheet) {
+                            if (colsSection) colsSection.style.display = 'none';
+                            if (processSheetInput) processSheetInput.value = '';
+                            updateProcessButton();
+                            return;
+                        }
+                        if (processSheetInput) processSheetInput.value = sheet;
+                        if (typeof showProcessingModal === 'function') {
+                            showProcessingModal('Loading columns', 'Reading columns for the selected sheet…');
+                        }
+                        try {
+                            const resp = await fetch('/load_remove_duplicate_columns', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                                body: 'sheet=' + encodeURIComponent(sheet)
+                            });
+                            const data = await resp.json();
+                            if (!data.ok) throw new Error(data.error || 'Failed to load columns');
+                            if (colsBox) {
+                                colsBox.innerHTML = '';
+                                (data.columns || []).forEach(function(col, idx) {
+                                    const id = 'removeduplicate_col_' + idx;
+                                    const label = document.createElement('label');
+                                    label.style.display = 'block';
+                                    label.style.marginBottom = '6px';
+                                    label.style.cursor = 'pointer';
+                                    const cb = document.createElement('input');
+                                    cb.type = 'checkbox';
+                                    cb.name = 'columns';
+                                    cb.value = col;
+                                    cb.id = id;
+                                    cb.addEventListener('change', updateProcessButton);
+                                    label.appendChild(cb);
+                                    label.appendChild(document.createTextNode(' ' + col));
+                                    colsBox.appendChild(label);
+                                });
+                                if (!(data.columns || []).length) {
+                                    colsBox.innerHTML = '<div style="color:#b00020;">No columns found on this sheet.</div>';
+                                }
+                            }
+                            if (colsSection) colsSection.style.display = 'block';
+                            updateProcessButton();
+                        } catch (e) {
+                            alert('Error loading columns: ' + e.message);
+                            if (colsSection) colsSection.style.display = 'none';
+                        } finally {
+                            if (typeof hideProcessingModal === 'function') hideProcessingModal();
+                        }
+                    }
+
+                    if (sheetSel) {
+                        sheetSel.addEventListener('change', loadColumns);
+                    }
+                    if (processForm) {
+                        processForm.addEventListener('submit', function(ev) {
+                            const checked = colsBox ? colsBox.querySelectorAll('input[name="columns"]:checked') : [];
+                            if (!sheetSel || !sheetSel.value || !checked.length) {
+                                ev.preventDefault();
+                                alert('Please select a sheet and at least one column.');
+                                return;
+                            }
+                            if (processSheetInput) processSheetInput.value = sheetSel.value;
+                            if (typeof showProcessingModal === 'function') {
+                                showProcessingModal('Remove Duplicates', 'Finding and moving duplicate rows…');
+                            }
+                            if (processBtn) processBtn.disabled = true;
+                        });
+                    }
+
+                    const uploadForm = document.getElementById('removeduplicate-form');
+                    if (uploadForm) {
+                        uploadForm.addEventListener('submit', function() {
+                            if (typeof showProcessingModal === 'function') {
+                                showProcessingModal('Uploading', 'Reading Excel file…');
+                            }
+                            const btn = document.getElementById('removeduplicate-upload-btn');
+                            if (btn) btn.disabled = true;
+                        });
+                    }
+                })();
+                </script>
+            </div>
+
             <!-- Tab 10: Data Cleanser -->
             <div id="datacleanser-tab" class="tab-content {% if active_tab == 'datacleanser' %}active{% endif %}">
                 <div class="section">
@@ -4572,6 +4785,7 @@ HTML_TEMPLATE = """
                     (tabName === 'masterallocationbuilder' && itemText.includes('master allocation builder')) ||
                     (tabName === 'airpay' && itemText.includes('airpay')) ||
                     (tabName === 'general' && itemText.includes('general comparison')) ||
+                    (tabName === 'removeduplicate' && itemText.includes('remove duplicate')) ||
                     (tabName === 'datacleanser' && itemText.includes('data cleanser')) ||
                     (tabName === 'agentremarktransfer' && itemText.includes('agent') && itemText.includes('remark')) ||
                     (tabName === 'evallocation' && itemText.includes('ev allocation')) ||
@@ -4595,6 +4809,7 @@ HTML_TEMPLATE = """
                 'masterallocationbuilder': '🧱 Master Allocation Builder',
                 'airpay': '✈️ AirPay Report',
                 'general': '🧭 General Comparison',
+                'removeduplicate': '📑 Remove Duplicates',
                 'datacleanser': '🧹 Data Cleanser',
                 'agentremarktransfer': '🔄 Agent & Remark Transfer',
                 'evallocation': '📋 EV Allocation report',
@@ -4615,6 +4830,7 @@ HTML_TEMPLATE = """
                 'masterallocationbuilder': 'Build Work Done file from uploaded files with sheet/date filtering',
                 'airpay': 'Upload all four labeled files and process them in one click',
                 'general': 'Compare two files and update primary rows on match',
+                'removeduplicate': 'Remove duplicate rows by selected column combination',
                 'datacleanser': 'Remove selected values from a column and create clean/removed sheets',
                 'agentremarktransfer': 'Transfer Agent Name to Agent 1 and Remark to Remark 1',
                 'evallocation': 'Upload multiple files (identified by name), then generate output file',
@@ -4895,6 +5111,20 @@ HTML_TEMPLATE = """
                     message: 'Building your updated primary workbook. Please wait…',
                     redirectTab: 'general',
                     defaultFilename: 'general_comparison_output.xlsx',
+                });
+            });
+        }
+
+        const removeduplicateDownloadForm = document.getElementById('removeduplicate-download-form');
+        if (removeduplicateDownloadForm) {
+            removeduplicateDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(removeduplicateDownloadForm, {
+                    buttonId: 'removeduplicate-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building Remove Duplicates Excel file. Please wait…',
+                    redirectTab: 'removeduplicate',
+                    defaultFilename: 'Remove Duplicates.xlsx',
                 });
             });
         }
@@ -5459,6 +5689,10 @@ HTML_TEMPLATE = """
                 switchTab('reallocation', true);
             } else if (activeTab === 'comparison') {
                 switchTab('comparison', true);
+            } else if (activeTab === 'general') {
+                switchTab('general', true);
+            } else if (activeTab === 'removeduplicate') {
+                switchTab('removeduplicate', true);
             } else if (activeTab === 'datacleanser') {
                 switchTab('datacleanser', true);
             } else if (activeTab === 'agentremarktransfer') {
@@ -6816,6 +7050,7 @@ def comparison_index():
     global reallocation_consolidate_data, reallocation_blank_data, reallocation_consolidate_filename, reallocation_blank_filename, reallocation_result, reallocation_output, reallocation_merged_data, reallocation_available_remarks, reallocation_selected_remarks, reallocation_available_agents, reallocation_selected_agents
     global general_primary_data, general_main_data, general_primary_filename, general_main_filename, general_comparison_result, general_comparison_output, general_comparison_updated_data
     global data_cleanser_data, data_cleanser_filename, data_cleanser_result, data_cleanser_output, data_cleanser_processed_data
+    global remove_dup_data, remove_dup_filename, remove_dup_result, remove_dup_output, remove_dup_processed_data
     global agent_remark_transfer_data, agent_remark_transfer_filename, agent_remark_transfer_result, agent_remark_transfer_output, agent_remark_transfer_processed_data
     global ev_allocation_files, ev_allocation_result, ev_allocation_output, ev_allocation_output_filename
     global mab_step1_files, mab_result, mab_output, mab_step1_selected_sheets, mab_step1_unique_appointment_dates, mab_step1_excluded_appointment_dates, mab_step1_unique_remarks, mab_step1_excluded_remarks, mab_step1_work_done_data
@@ -6896,6 +7131,11 @@ def comparison_index():
         data_cleanser_result=data_cleanser_result,
         data_cleanser_output=data_cleanser_output,
         data_cleanser_processed_data=data_cleanser_processed_data,
+        remove_dup_data=remove_dup_data,
+        remove_dup_filename=remove_dup_filename,
+        remove_dup_result=remove_dup_result,
+        remove_dup_output=remove_dup_output,
+        remove_dup_processed_data=remove_dup_processed_data,
         agent_remark_transfer_data=agent_remark_transfer_data,
         agent_remark_transfer_filename=agent_remark_transfer_filename,
         agent_remark_transfer_result=agent_remark_transfer_result,
@@ -14038,6 +14278,242 @@ def reset_master_allocation_builder():
     except Exception as e:
         mab_result = f"❌ Error resetting Master Allocation Builder: {str(e)}"
         return redirect("/comparison?tab=masterallocationbuilder")
+
+
+def _remove_dup_cell_key(val):
+    """Normalize a cell for duplicate-key matching; empty/NaN → ''."""
+    if val is None:
+        return ""
+    try:
+        if pd.isna(val):
+            return ""
+    except (ValueError, TypeError):
+        pass
+    s = str(val).strip()
+    if not s or s.lower() == "nan":
+        return ""
+    return s.lower()
+
+
+@app.route("/upload_remove_duplicate", methods=["POST"])
+def upload_remove_duplicate():
+    global remove_dup_data, remove_dup_filename, remove_dup_result, remove_dup_output
+    global remove_dup_processed_data
+
+    if "file" not in request.files:
+        remove_dup_result = "❌ Error: No file provided"
+        return redirect("/comparison?tab=removeduplicate")
+
+    file = request.files["file"]
+    if file.filename == "":
+        remove_dup_result = "❌ Error: No file selected"
+        return redirect("/comparison?tab=removeduplicate")
+
+    try:
+        filename = secure_filename(file.filename)
+        file.seek(0)
+        remove_dup_data = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+        remove_dup_filename = filename
+        remove_dup_result = f"✅ File uploaded successfully: {filename}"
+        remove_dup_output = (
+            f"Loaded {len(remove_dup_data)} sheet(s): "
+            + ", ".join(remove_dup_data.keys())
+        )
+        remove_dup_processed_data = None
+        return redirect("/comparison?tab=removeduplicate")
+    except Exception as e:
+        remove_dup_data = None
+        remove_dup_filename = None
+        remove_dup_processed_data = None
+        remove_dup_result = f"❌ Error uploading file: {str(e)}"
+        remove_dup_output = ""
+        return redirect("/comparison?tab=removeduplicate")
+
+
+@app.route("/load_remove_duplicate_columns", methods=["POST"])
+def load_remove_duplicate_columns():
+    global remove_dup_data
+
+    if not remove_dup_data:
+        return jsonify({"ok": False, "error": "No file uploaded"}), 400
+
+    sheet_name = request.form.get("sheet", "")
+    if not sheet_name or sheet_name not in remove_dup_data:
+        return jsonify({"ok": False, "error": "Invalid sheet name"}), 400
+
+    df = remove_dup_data[sheet_name]
+    columns = [str(c) for c in df.columns]
+    return jsonify({"ok": True, "columns": columns})
+
+
+@app.route("/process_remove_duplicate", methods=["POST"])
+def process_remove_duplicate():
+    global remove_dup_data, remove_dup_result, remove_dup_output, remove_dup_processed_data
+
+    if not remove_dup_data:
+        remove_dup_result = "❌ Error: No file uploaded"
+        return redirect("/comparison?tab=removeduplicate")
+
+    try:
+        sheet_name = request.form.get("sheet", "").strip()
+        columns = request.form.getlist("columns")
+
+        if not sheet_name or sheet_name not in remove_dup_data:
+            remove_dup_result = "❌ Error: Invalid sheet name"
+            return redirect("/comparison?tab=removeduplicate")
+
+        if not columns:
+            remove_dup_result = "❌ Error: Select at least one column"
+            return redirect("/comparison?tab=removeduplicate")
+
+        df = remove_dup_data[sheet_name].copy()
+        missing = [c for c in columns if c not in df.columns]
+        if missing:
+            # Try match by stringified column names (Excel can yield non-str headers)
+            col_map = {str(c): c for c in df.columns}
+            resolved = []
+            missing = []
+            for c in columns:
+                if c in df.columns:
+                    resolved.append(c)
+                elif c in col_map:
+                    resolved.append(col_map[c])
+                else:
+                    missing.append(c)
+            if missing:
+                remove_dup_result = (
+                    "❌ Error: Column(s) not found on sheet: " + ", ".join(missing)
+                )
+                return redirect("/comparison?tab=removeduplicate")
+            columns = resolved
+
+        keep_idx = []
+        dup_idx = []
+        blank_skipped = 0
+        seen_keys = set()
+
+        df = df.reset_index(drop=True)
+        for i, row in df.iterrows():
+            parts = [_remove_dup_cell_key(row.get(c)) for c in columns]
+            if any(p == "" for p in parts):
+                # Any blank selected column → skip duplicate logic; keep on sheet
+                blank_skipped += 1
+                keep_idx.append(i)
+                continue
+            key = "|".join(parts)
+            if key in seen_keys:
+                dup_idx.append(i)
+            else:
+                seen_keys.add(key)
+                keep_idx.append(i)
+
+        unique_df = df.iloc[keep_idx].reset_index(drop=True)
+        duplicates_df = (
+            df.iloc[dup_idx].reset_index(drop=True)
+            if dup_idx
+            else df.iloc[0:0].copy()
+        )
+
+        # Keep other original sheets; replace selected sheet; add Duplicates
+        remove_dup_processed_data = {
+            name: sheet_df.copy() for name, sheet_df in remove_dup_data.items()
+        }
+        remove_dup_processed_data[sheet_name] = unique_df
+
+        dup_sheet_name = "Duplicates"
+        if dup_sheet_name in remove_dup_processed_data and dup_sheet_name != sheet_name:
+            suffix = 1
+            while f"Duplicates_{suffix}" in remove_dup_processed_data:
+                suffix += 1
+            dup_sheet_name = f"Duplicates_{suffix}"
+        remove_dup_processed_data[dup_sheet_name] = duplicates_df
+
+        # Stable order: other sheets as uploaded, selected sheet updated, Duplicates last
+        ordered = {}
+        for name, sheet_df in remove_dup_data.items():
+            if name == sheet_name:
+                ordered[name] = unique_df
+            else:
+                ordered[name] = sheet_df.copy()
+        ordered[dup_sheet_name] = duplicates_df
+        remove_dup_processed_data = ordered
+
+        lines = [
+            "=" * 70,
+            "REMOVE DUPLICATES — PROCESSING COMPLETE",
+            "=" * 70,
+            "",
+            f"Sheet: {sheet_name}",
+            f"Key columns: {' + '.join(columns)}",
+            "",
+            f"Original rows: {len(df)}",
+            f"Unique rows kept on '{sheet_name}': {len(unique_df)}",
+            f"  (includes {blank_skipped} row(s) skipped due to blank key column)",
+            f"Duplicate rows moved to '{dup_sheet_name}': {len(duplicates_df)}",
+            f"Unique keys seen: {len(seen_keys)}",
+            "",
+            "✅ First occurrence kept; later matches moved to Duplicates.",
+        ]
+        remove_dup_output = "\n".join(lines)
+        remove_dup_result = (
+            f"✅ Remove Duplicates completed successfully! "
+            f"Kept {len(unique_df)} row(s) on '{sheet_name}', "
+            f"moved {len(duplicates_df)} duplicate row(s) to '{dup_sheet_name}'."
+        )
+        return redirect("/comparison?tab=removeduplicate")
+
+    except Exception as e:
+        remove_dup_processed_data = None
+        remove_dup_result = f"❌ Error processing data: {str(e)}"
+        remove_dup_output = ""
+        return redirect("/comparison?tab=removeduplicate")
+
+
+@app.route("/download_remove_duplicate", methods=["POST"])
+def download_remove_duplicate():
+    global remove_dup_processed_data
+
+    if not remove_dup_processed_data:
+        return jsonify({"error": "No processed data to download"}), 400
+
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = f"Remove Duplicates {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+
+    try:
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+        try:
+            with pd.ExcelWriter(temp_path, engine="openpyxl") as writer:
+                for sheet_name, df in remove_dup_processed_data.items():
+                    safe_sheet = str(sheet_name)[:31] or "Sheet1"
+                    df.to_excel(writer, sheet_name=safe_sheet, index=False)
+                    _apply_imagen_excel_sheet_styling(writer, safe_sheet, df)
+            return send_file(temp_path, as_attachment=True, download_name=filename)
+        finally:
+            os.close(temp_fd)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reset_remove_duplicate", methods=["POST"])
+def reset_remove_duplicate():
+    global remove_dup_data, remove_dup_filename, remove_dup_result, remove_dup_output
+    global remove_dup_processed_data
+
+    remove_dup_data = None
+    remove_dup_filename = None
+    remove_dup_result = (
+        "🔄 Remove Duplicates reset successfully! All files and data have been cleared."
+    )
+    remove_dup_output = ""
+    remove_dup_processed_data = None
+    return redirect("/comparison?tab=removeduplicate")
 
 
 @app.route("/upload_data_cleanser", methods=["POST"])
