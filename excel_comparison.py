@@ -245,8 +245,11 @@ AIRPAY_NOT_TO_WORK_LOCATIONS = {
     "denmark dentistry",
     "elements dental",
     "harmony dental",
+    "koopah & koopah",
     "kurt r k kwiatkowski, dds",
     "kurt r. kwiatkowski, dds",
+    "kurt r kwiatkowski, dds",
+    "medical center dental",
     "smile crafters",
     "smiles on clark",
 }
@@ -271,6 +274,26 @@ AIRPAY_NOT_TO_WORK_LOCATION_KEYS = {
     _airpay_location_match_key(name) for name in AIRPAY_NOT_TO_WORK_LOCATIONS
 }
 AIRPAY_NOT_TO_WORK_LOCATION_KEYS.discard("")
+
+# Eligible final: Updated Remark Location values → set OON 20% = "YES"
+# (case-insensitive exact match; do not alter commas, spaces, or dots).
+AIRPAY_OON_20_YES_LOCATIONS = {
+    "alaniz dental group",
+    "bruce mitchell family dentistry",
+    "desert ridge prosthodontics",
+    "door county dental care",
+    "drs. browning, pafford, and flores",
+    "nathan j wong dds inc.",
+    "o'bryan advanced dentistry",
+    "otteson family and cosmetic dentistry",
+    "preferred dental partners - beaver dam",
+    "preferred dental partners - horicon",
+}
+AIRPAY_OON_20_YES_LOCATION_KEYS = {
+    _airpay_location_match_key(name) for name in AIRPAY_OON_20_YES_LOCATIONS
+}
+AIRPAY_OON_20_YES_LOCATION_KEYS.discard("")
+
 # Eligible final: (PMS) Payer values → "Insurance Not to Work" (case-insensitive).
 AIRPAY_NOT_TO_WORK_PAYERS = {
     "affordable dental plan",
@@ -2447,7 +2470,7 @@ HTML_TEMPLATE = """
                 {% if airpay_eligible_data %}
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
                     <h3>💾 5. Eligible AirPay Appointments</h3>
-                    <p style="margin-bottom: 10px;">Pass 1–4 as before. Split sheets: No Insurance, Location Not to Work, Insurance Not to Work. <strong>Duplicates</strong> sheet for repeated Insurance Type + (PMS) Payer + (PMS) Patient ID (first kept on source sheet).</p>
+                    <p style="margin-bottom: 10px;">Pass 1–4 as before. Split sheets: No Insurance, Location Not to Work, Insurance Not to Work. <strong>Duplicates</strong> sheet: repeated Insurance Type + (PMS) Payer + (PMS) Patient ID from <strong>Updated Remark</strong> only (first kept on Updated Remark).</p>
                     <form action="/download_airpay_eligible" method="post" id="airpay-eligible-download-form">
                         <div class="form-group">
                             <label for="airpay_eligible_output_filename">Output filename (optional):</label>
@@ -12344,9 +12367,11 @@ def _airpay_format_eligible_final_sheets(
         "Insurance Not to Work" (removed from other sheets)
       - Move rows whose Location is in AIRPAY_NOT_TO_WORK_LOCATIONS onto
         "Location Not to Work" (removed from ALL other sheets)
-      - Last: dedupe by Insurance Type + (PMS) Payer + (PMS) Patient ID across
-        ALL sheets; keep first occurrence, move later duplicates to "Duplicates"
-        (removed from every other sheet)
+      - Dedupe Updated Remark only by Insurance Type + (PMS) Payer +
+        (PMS) Patient ID; keep first occurrence, move later duplicates to
+        "Duplicates" (other sheets are left unchanged)
+      - On Updated Remark only: if Location is in AIRPAY_OON_20_YES_LOCATIONS,
+        set OON 20% = "YES"
     """
 
     def _cell_str(val):
@@ -12583,86 +12608,103 @@ def _airpay_format_eligible_final_sheets(
         ins_ntw_df = pd.DataFrame(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
     formatted["Insurance Not to Work"] = ins_ntw_df
 
+    def _row_is_blocked_location(row, loc_col, office_col):
+        """True if Location or Office Name matches a not-to-work location."""
+        keys = AIRPAY_NOT_TO_WORK_LOCATION_KEYS
+        if loc_col is not None:
+            if _airpay_location_match_key(row.get(loc_col)) in keys:
+                return True
+        if office_col is not None:
+            if _airpay_location_match_key(row.get(office_col)) in keys:
+                return True
+        return False
+
+    def _pull_blocked_locations_into_ntw(formatted_map, existing_ntw=None):
+        """
+        Remove blocked-location rows from every sheet except Location Not to Work
+        (especially Updated Remark) and collect them onto Location Not to Work.
+        """
+        parts = []
+        if existing_ntw is not None and not existing_ntw.empty:
+            parts.append(existing_ntw.copy())
+
+        for sheet_name in list(formatted_map.keys()):
+            if sheet_name == "Location Not to Work":
+                continue
+            df = formatted_map[sheet_name]
+            if df is None or df.empty:
+                continue
+            loc_col = _airpay_find_named_col(df, "Location")
+            office_col = _airpay_find_named_col(df, "Office Name")
+            if loc_col is None and office_col is None:
+                continue
+
+            mask = df.apply(
+                lambda row: _row_is_blocked_location(row, loc_col, office_col),
+                axis=1,
+            )
+            if mask.any():
+                parts.append(df.loc[mask].copy())
+                formatted_map[sheet_name] = df.loc[~mask].reset_index(drop=True)
+
+        if parts:
+            ntw = pd.concat(parts, ignore_index=True, sort=False)
+            ntw = ntw.reindex(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
+        else:
+            ntw = pd.DataFrame(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
+        formatted_map["Location Not to Work"] = ntw
+        return formatted_map
+
     # Location Not to Work — pull listed locations off every other sheet
-    not_to_work_parts = []
-    for sheet_name in list(formatted.keys()):
-        if sheet_name == "Location Not to Work":
-            continue
-        df = formatted[sheet_name]
-        if df is None or df.empty:
-            continue
-        loc_col = _airpay_find_named_col(df, "Location")
-        if loc_col is None:
-            continue
+    # (Updated Remark, Blank Remark, No Insurance, Insurance Not to Work, …)
+    formatted = _pull_blocked_locations_into_ntw(formatted)
 
-        mask = df[loc_col].apply(
-            lambda v: _airpay_location_match_key(v)
-            in AIRPAY_NOT_TO_WORK_LOCATION_KEYS
-        )
-        if mask.any():
-            not_to_work_parts.append(df.loc[mask].copy())
-            formatted[sheet_name] = df.loc[~mask].reset_index(drop=True)
-
-    if not_to_work_parts:
-        ntw_df = pd.concat(not_to_work_parts, ignore_index=True, sort=False)
-        ntw_df = ntw_df.reindex(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
-    else:
-        ntw_df = pd.DataFrame(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
-    formatted["Location Not to Work"] = ntw_df
-
-    # LAST: Duplicates — Insurance Type + (PMS) Payer + (PMS) Patient ID
-    # Keep first occurrence across ALL sheets; move every later match to Duplicates
-    # so no other sheet retains a duplicate of that key.
-    sheet_order = [
-        "Updated Remark",
-        "Blank Remark",
-        "No Insurance",
-        "Location Not to Work",
-        "Insurance Not to Work",
-    ]
+    # Duplicates — Updated Remark ONLY
+    # Key: Insurance Type + (PMS) Payer + (PMS) Patient ID
+    # Keep first occurrence; move later matches to Duplicates.
+    # Blank Remark / No Insurance / Location Not to Work / Insurance Not to Work
+    # are not deduped.
     seen_keys = set()
     dup_parts = []
-    for sheet_name in sheet_order:
-        df = formatted.get(sheet_name)
-        if df is None or df.empty:
-            continue
+    df = formatted.get("Updated Remark")
+    if df is not None and not df.empty:
         ins_type_col = _airpay_find_named_col(df, "Insurance Type")
         payer_dup_col = _airpay_find_named_col(df, "(PMS) Payer")
         pid_dup_col = _airpay_find_named_col(df, "(PMS) Patient ID")
-        if pid_dup_col is None:
-            continue
+        if pid_dup_col is not None:
+            keep_idx = []
+            dup_idx = []
+            df = df.reset_index(drop=True)
+            for i, row in df.iterrows():
+                pid_s = _airpay_gc_patient_id_key(row.get(pid_dup_col))
+                if not pid_s:
+                    # No Patient ID → cannot apply duplicate formula; keep row
+                    keep_idx.append(i)
+                    continue
+                ins_s = (
+                    _cell_str(row.get(ins_type_col)).lower()
+                    if ins_type_col
+                    else ""
+                )
+                payer_s = (
+                    _cell_str(row.get(payer_dup_col)).lower()
+                    if payer_dup_col
+                    else ""
+                )
+                key = f"{ins_s}|{payer_s}|{pid_s}"
+                if key in seen_keys:
+                    dup_idx.append(i)
+                else:
+                    seen_keys.add(key)
+                    keep_idx.append(i)
 
-        keep_idx = []
-        dup_idx = []
-        df = df.reset_index(drop=True)
-        for i, row in df.iterrows():
-            pid_s = _airpay_gc_patient_id_key(row.get(pid_dup_col))
-            if not pid_s:
-                # No Patient ID → cannot apply duplicate formula; keep row
-                keep_idx.append(i)
-                continue
-            ins_s = (
-                _cell_str(row.get(ins_type_col)).lower() if ins_type_col else ""
+            if dup_idx:
+                dup_parts.append(df.iloc[dup_idx].copy())
+            formatted["Updated Remark"] = (
+                df.iloc[keep_idx].reset_index(drop=True)
+                if keep_idx
+                else df.iloc[0:0].copy()
             )
-            payer_s = (
-                _cell_str(row.get(payer_dup_col)).lower()
-                if payer_dup_col
-                else ""
-            )
-            key = f"{ins_s}|{payer_s}|{pid_s}"
-            if key in seen_keys:
-                dup_idx.append(i)
-            else:
-                seen_keys.add(key)
-                keep_idx.append(i)
-
-        if dup_idx:
-            dup_parts.append(df.iloc[dup_idx].copy())
-        formatted[sheet_name] = (
-            df.iloc[keep_idx].reset_index(drop=True)
-            if keep_idx
-            else df.iloc[0:0].copy()
-        )
 
     if dup_parts:
         dup_df = pd.concat(dup_parts, ignore_index=True, sort=False)
@@ -12670,6 +12712,41 @@ def _airpay_format_eligible_final_sheets(
     else:
         dup_df = pd.DataFrame(columns=list(AIRPAY_ELIGIBLE_OUTPUT_COLUMNS))
     formatted["Duplicates"] = dup_df
+
+    # FINAL sweep: blocked locations must not remain on Updated Remark (or any
+    # other sheet) — including any that landed on Duplicates. Location wins.
+    formatted = _pull_blocked_locations_into_ntw(
+        formatted, existing_ntw=formatted.get("Location Not to Work")
+    )
+
+    # Updated Remark only: listed Locations → OON 20% = YES
+    updated_for_oon = formatted.get("Updated Remark")
+    if updated_for_oon is not None and not updated_for_oon.empty:
+        updated_for_oon = updated_for_oon.copy(deep=True)
+        loc_col_oon = _airpay_find_named_col(updated_for_oon, "Location")
+        oon_col = _airpay_find_named_col(updated_for_oon, "OON 20%")
+        if oon_col is None:
+            updated_for_oon["OON 20%"] = ""
+            oon_col = "OON 20%"
+        if loc_col_oon is not None:
+            new_oon = []
+            for _, row in updated_for_oon.iterrows():
+                if (
+                    _airpay_location_match_key(row.get(loc_col_oon))
+                    in AIRPAY_OON_20_YES_LOCATION_KEYS
+                ):
+                    new_oon.append("YES")
+                else:
+                    new_oon.append(row.get(oon_col))
+            updated_for_oon[oon_col] = new_oon
+        # Keep preferred column order
+        for preferred in AIRPAY_ELIGIBLE_OUTPUT_COLUMNS:
+            if preferred not in updated_for_oon.columns:
+                updated_for_oon[preferred] = ""
+        updated_for_oon = updated_for_oon[
+            [c for c in AIRPAY_ELIGIBLE_OUTPUT_COLUMNS if c in updated_for_oon.columns]
+        ]
+        formatted["Updated Remark"] = updated_for_oon
 
     # Stable sheet order for download
     ordered_sheets = {}
