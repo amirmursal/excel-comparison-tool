@@ -250,8 +250,10 @@ AIRPAY_NOT_TO_WORK_LOCATIONS = {
     "kurt r. kwiatkowski, dds",
     "kurt r kwiatkowski, dds",
     "medical center dental",
+    "otteson family and cosmetic dentistry",
     "smile crafters",
     "smiles on clark",
+    "toothologie - a smile studio",
 }
 
 
