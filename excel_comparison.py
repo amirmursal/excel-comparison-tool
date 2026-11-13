@@ -199,6 +199,118 @@ airpay_step4_data = None  # Smart Assist Report formatted (filled from Step 2)
 airpay_step4_filename = None
 airpay_step4_result = None
 airpay_eligible_data = None  # Step 1 with Remark updated from Step 4
+# AirPay Step 5: Day + Night Shift Consolidated combine
+airpay_step5_day_filename = None
+airpay_step5_night_filename = None
+airpay_step5_data = None  # {"Combined": df}
+airpay_step5_result = None
+# AirPay Step 6: IV Consolidate upload (stored for download via Process All)
+airpay_step6_data = None  # {sheet_name: df}
+airpay_step6_filename = None
+airpay_step6_result = None
+# AirPay Before Allocation (two GC passes; final replaces Step 8):
+# Pass 1: Eligible Updated Remark × IV Consolidate
+# Pass 2: Pass-1 result × Day/Night Combined
+# Output workbook = all Eligible sheets; Updated Remark replaced by Pass-2 result
+airpay_before_allocation_data = None  # {sheet_name: df} full Eligible-shaped workbook
+airpay_before_allocation_result = None
+
+AIRPAY_BEFORE_ALLOCATION_KEY_COLUMNS = [
+    "(PMS) Patient ID",
+    "(PMS) Payer",
+]
+AIRPAY_BEFORE_ALLOCATION_UPDATE_COLUMNS = [
+    "Allocation Date",
+    "Received Date",
+    "Priority Status",
+    "OON 20%",
+    "Remark",
+    "Status Code",
+    "Missing Info AP",
+    "PMS Update",
+    "Comment",
+    "Work Date",
+    "Agent Name",
+]
+# Before Allocation: these Remarks stay on "Today"; all other Remarks go to "AV"
+AIRPAY_BEFORE_ALLOCATION_TODAY_REMARKS = {
+    "ntc",
+    "ats",
+    "ntbp",
+    "workable",
+    "pending",
+}
+# Today sheet: if (PMS) Payer matches (case-insensitive), set Remark = "NTC"
+AIRPAY_BEFORE_ALLOCATION_NTC_PAYERS = {
+    "90 degree benefits oklahoma",
+    "adventist risk management",
+    "afscme",
+    "benefit administration services",
+    "benefit plan administrators",
+    "benefit programs administration",
+    "best life",
+    "careington benefit solutions",
+    "central states(dos",
+    "coastal administrative services",
+    "companion life",
+    "core health benefits",
+    "dental care plus",
+    "devoted health",
+    "employer driven insurance services (e.d.i.s",
+    "formula benefits corporation",
+    "health net insurance",
+    "healthchoice",
+    "henner gmc",
+    "kaiser permanente",
+    "kansas city",
+    "key benefit adminstrators",
+    "kleer plan",
+    "mayo clinic direct reimbursement plan",
+    "mayo health plan",
+    "national elevator industry",
+    "pacific life dental",
+    "pacificsource health plans",
+    "pacificsource-waiting periods",
+    "personify health",
+    "plan administrators inc.-kaiser permanente",
+    "prairie states enterprises, inc",
+    "professional benefit administrators",
+    "providence health plan",
+    "qtc",
+    "seafarers claims department",
+    "sisco",
+    "southland dental benefit solutions",
+    "the dental shop",
+    "trust dental plan",
+    "web tpa",
+    "wellcare health plans",
+    "wellness plan",
+    "zenith administrators",
+}
+# Today sheet: if (PMS) Payer matches, set Remark = "FAX"
+# (skip when Remark is already NTC or NTBP)
+AIRPAY_BEFORE_ALLOCATION_FAX_PAYERS = {
+    "meritain",
+    "truassure",
+    "physician mutual",
+    "unum",
+    "always care",
+    "colonial",
+}
+AIRPAY_BEFORE_ALLOCATION_FAX_SKIP_REMARKS = {
+    "ntc",
+    "ntbp",
+}
+# Today sheet: if (PMS) Payer matches, set Remark = "Skygen"
+AIRPAY_BEFORE_ALLOCATION_SKYGEN_PAYERS = {
+    "moonlight graham",
+    "dentaquest",
+    "bcbs mi",
+    "network health wisconsin",
+    "aflac",
+    "dd ky",
+    "uhc community plan ( medicare)",
+}
 
 # Eligible final download: preferred column order; extras appended after these.
 AIRPAY_ELIGIBLE_OUTPUT_COLUMNS = [
@@ -241,7 +353,9 @@ AIRPAY_ELIGIBLE_OUTPUT_COLUMNS = [
 # Eligible final: Location values → "Location Not to Work".
 # Match case-insensitively only; do not alter commas, spaces, or dots.
 AIRPAY_NOT_TO_WORK_LOCATIONS = {
+    "alaniz dental group",
     "bayshore dental",
+    "bruce mitchell family dentistry",
     "denmark dentistry",
     "elements dental",
     "harmony dental",
@@ -304,7 +418,9 @@ AIRPAY_NOT_TO_WORK_PAYERS = {
     "heiden dental plan",
     "in house discount plan",
     "loyalties member",
+    "membership plan august 2024",
     "optimal health club plan",
+    "*optimal health club plan",
     "plan for health",
 }
 
@@ -2362,7 +2478,7 @@ HTML_TEMPLATE = """
             <div id="airpay-tab" class="tab-content {% if active_tab == 'airpay' %}active{% endif %}">
                 <div class="section">
                     <h3>✈️ AirPay Report</h3>
-                    <p>Upload all four files in their labeled slots, then click Process All. Each slot tells the system which file is which (AirPay CSV, Appointment, Conversion, Smart Assist).</p>
+                    <p>Upload all labeled files, then click Process All. Step 5 Day/Night combine, Step 6 IV Consolidate, and Before Allocation (Eligible Updated Remark × IV, then × Day/Night Combined) run as part of Process All.</p>
                 </div>
 
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
@@ -2383,6 +2499,18 @@ HTML_TEMPLATE = """
                         <div class="form-group">
                             <label for="smart_assist_file"><strong>4. Smart Assist Report</strong> (.xlsx, .xls)</label>
                             <input type="file" id="smart_assist_file" name="smart_assist_file" accept=".xlsx,.xls" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="airpay_day_shift_file"><strong>5a. Day Shift Consolidated</strong> (.xlsx, .xls)</label>
+                            <input type="file" id="airpay_day_shift_file" name="day_shift_file" accept=".xlsx,.xls" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="airpay_night_shift_file"><strong>5b. Night Shift Consolidated</strong> (.xlsx, .xls)</label>
+                            <input type="file" id="airpay_night_shift_file" name="night_shift_file" accept=".xlsx,.xls" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="airpay_iv_file"><strong>6. IV Consolidate</strong> (.xlsx, .xls)</label>
+                            <input type="file" id="airpay_iv_file" name="iv_file" accept=".xlsx,.xls" required>
                         </div>
                         <button type="submit" id="airpay-all-btn" style="background: #667eea; color: white; padding: 12px 30px; font-size: 16px;">
                             🚀 Process All
@@ -2469,9 +2597,45 @@ HTML_TEMPLATE = """
                 </div>
                 {% endif %}
 
+                {% if airpay_step5_data and airpay_step5_result and 'error' not in airpay_step5_result.lower() %}
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>💾 5. Day / Night Shift Combined</h3>
+                    <div class="status-success" style="margin-bottom: 10px;">
+                        ✅ {{ airpay_step5_result }}
+                    </div>
+                    <form action="/download_airpay_step5" method="post" id="airpay-step5-download-form">
+                        <div class="form-group">
+                            <label for="airpay_step5_output_filename">Output filename (optional):</label>
+                            <input type="text" id="airpay_step5_output_filename" name="filename"
+                                   placeholder="Day Night Shift Combined MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="airpay-step5-download-btn">💾 Download Combined Day/Night Shift File</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if airpay_step6_data and airpay_step6_result and 'error' not in airpay_step6_result.lower() %}
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>💾 6. IV Consolidate</h3>
+                    <div class="status-success" style="margin-bottom: 10px;">
+                        ✅ {{ airpay_step6_filename }} — {{ airpay_step6_result }}
+                    </div>
+                    <form action="/download_airpay_step6" method="post" id="airpay-step6-download-form">
+                        <div class="form-group">
+                            <label for="airpay_step6_output_filename">Output filename (optional):</label>
+                            <input type="text" id="airpay_step6_output_filename" name="filename"
+                                   placeholder="IV Consolidate MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="airpay-step6-download-btn">💾 Download IV Consolidate</button>
+                    </form>
+                </div>
+                {% endif %}
+
                 {% if airpay_eligible_data %}
                 <div class="section" style="border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f8f9ff;">
-                    <h3>💾 5. Eligible AirPay Appointments</h3>
+                    <h3>💾 7. Eligible AirPay Appointments</h3>
                     <p style="margin-bottom: 10px;">Pass 1–4 as before. Split sheets: No Insurance, Location Not to Work, Insurance Not to Work. <strong>Duplicates</strong> sheet: repeated Insurance Type + (PMS) Payer + (PMS) Patient ID from <strong>Updated Remark</strong> only (first kept on Updated Remark).</p>
                     <form action="/download_airpay_eligible" method="post" id="airpay-eligible-download-form">
                         <div class="form-group">
@@ -2481,6 +2645,40 @@ HTML_TEMPLATE = """
                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
                         <button type="submit" id="airpay-eligible-download-btn">💾 Download Eligible AirPay Appointments</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if airpay_before_allocation_data and airpay_before_allocation_result and 'error' not in airpay_before_allocation_result.lower() %}
+                <div class="section" style="border: 2px solid #28a745; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f0fff4;">
+                    <h3>💾 8. Before Allocation</h3>
+                    <div class="status-success" style="margin-bottom: 10px;">
+                        ✅ {{ airpay_before_allocation_result }}
+                    </div>
+                    <p style="margin-bottom: 10px; color: #555;">
+                        Pass 1: Eligible <strong>Updated Remark</strong> × IV Consolidate;
+                        Pass 2: that result × <strong>Day / Night Shift Combined</strong>
+                        (same keys/columns). Output keeps all Eligible sheets;
+                        Updated Remark is GC-updated then split:
+                        <strong>Today</strong> = Remark in NTC / ATS / NTBP / Workable / Pending;
+                        <strong>AV</strong> = all other Remarks.
+                        On Today/AV: non-blank <strong>Agent Name</strong> → <strong>Agent 1</strong> (then cleared),
+                        and <strong>Remark</strong> → <strong>Remark 1</strong> for those rows.
+                        On <strong>Today</strong> only: listed <strong>(PMS) Payer</strong> values → Remark <strong>NTC</strong>;
+                        Meritain/TruAssure/Physician Mutual/Unum/Always Care/Colonial → Remark <strong>FAX</strong>
+                        (skipped if Remark is already NTC or NTBP);
+                        listed Skygen payers → Remark <strong>Skygen</strong>;
+                        Remark <strong>NTBP</strong> → Agent Name = <strong>Need to Allocate</strong>.
+                        Other Eligible sheets unchanged. File name stays <strong>Before Allocation</strong>.
+                    </p>
+                    <form action="/download_airpay_before_allocation" method="post" id="airpay-before-allocation-download-form">
+                        <div class="form-group">
+                            <label for="airpay_before_allocation_output_filename">Output filename (optional):</label>
+                            <input type="text" id="airpay_before_allocation_output_filename" name="filename"
+                                   placeholder="Before Allocation MM_DD_YYYY.xlsx"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <button type="submit" id="airpay-before-allocation-download-btn">💾 Download Before Allocation</button>
                     </form>
                 </div>
                 {% endif %}
@@ -4972,13 +5170,52 @@ HTML_TEMPLATE = """
             });
         }
 
-        // AirPay Report — Process All
+        // AirPay Report — Process All (includes Day/Night Step 5 combine)
         const airpayAllForm = document.getElementById('airpay-all-form');
         if (airpayAllForm) {
             airpayAllForm.addEventListener('submit', function() {
-                showProcessingModal('AirPay Report', 'Processing all four files. Please wait…');
+                showProcessingModal('AirPay Report', 'Processing all files (including Day/Night combine). Please wait…');
                 const btn = document.getElementById('airpay-all-btn');
                 if (btn) btn.disabled = true;
+            });
+        }
+        const airpayStep5DownloadForm = document.getElementById('airpay-step5-download-form');
+        if (airpayStep5DownloadForm) {
+            airpayStep5DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(airpayStep5DownloadForm, {
+                    buttonId: 'airpay-step5-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building combined Day/Night Shift Excel. Please wait…',
+                    redirectTab: 'airpay',
+                    defaultFilename: 'Day Night Shift Combined.xlsx',
+                });
+            });
+        }
+        const airpayStep6DownloadForm = document.getElementById('airpay-step6-download-form');
+        if (airpayStep6DownloadForm) {
+            airpayStep6DownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(airpayStep6DownloadForm, {
+                    buttonId: 'airpay-step6-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building IV Consolidate Excel. Please wait…',
+                    redirectTab: 'airpay',
+                    defaultFilename: 'IV Consolidate.xlsx',
+                });
+            });
+        }
+        const airpayBeforeAllocationDownloadForm = document.getElementById('airpay-before-allocation-download-form');
+        if (airpayBeforeAllocationDownloadForm) {
+            airpayBeforeAllocationDownloadForm.addEventListener('submit', function(ev) {
+                ev.preventDefault();
+                void submitDownloadFormAsBlob(airpayBeforeAllocationDownloadForm, {
+                    buttonId: 'airpay-before-allocation-download-btn',
+                    title: 'Preparing download',
+                    message: 'Building Before Allocation Excel. Please wait…',
+                    redirectTab: 'airpay',
+                    defaultFilename: 'Before Allocation.xlsx',
+                });
             });
         }
         const airpayStep1DownloadForm = document.getElementById('airpay-step1-download-form');
@@ -7090,6 +7327,10 @@ def comparison_index():
     global airpay_step3_data, airpay_step3_filename, airpay_step3_result
     global airpay_step4_data, airpay_step4_filename, airpay_step4_result
     global airpay_eligible_data
+    global airpay_step5_day_filename, airpay_step5_night_filename
+    global airpay_step5_data, airpay_step5_result
+    global airpay_step6_data, airpay_step6_filename, airpay_step6_result
+    global airpay_before_allocation_data, airpay_before_allocation_result
 
     # Get the active tab from URL parameter
     active_tab = request.args.get("tab", "comparison")
@@ -7205,6 +7446,15 @@ def comparison_index():
         airpay_step4_filename=airpay_step4_filename,
         airpay_step4_result=airpay_step4_result,
         airpay_eligible_data=airpay_eligible_data,
+        airpay_step5_day_filename=airpay_step5_day_filename,
+        airpay_step5_night_filename=airpay_step5_night_filename,
+        airpay_step5_data=airpay_step5_data,
+        airpay_step5_result=airpay_step5_result,
+        airpay_step6_data=airpay_step6_data,
+        airpay_step6_filename=airpay_step6_filename,
+        airpay_step6_result=airpay_step6_result,
+        airpay_before_allocation_data=airpay_before_allocation_data,
+        airpay_before_allocation_result=airpay_before_allocation_result,
         ev_allocation_files=ev_allocation_files,
         ev_allocation_result=ev_allocation_result,
         ev_allocation_output_filename=ev_allocation_output_filename
@@ -12824,18 +13074,25 @@ def _airpay_post_labeled_file(endpoint, file_storage, extra_form=None):
 
 @app.route("/upload_airpay_all", methods=["POST"])
 def upload_airpay_all():
-    """Process all four labeled AirPay inputs in one request."""
+    """Process AirPay steps 1–4 + combine Day/Night Shift (step 5) in one request."""
     global airpay_result
     global airpay_step1_data, airpay_step1_filename, airpay_step1_result
     global airpay_step2_data, airpay_step2_filename, airpay_step2_result
     global airpay_step3_data, airpay_step3_filename, airpay_step3_result
     global airpay_step4_data, airpay_step4_filename, airpay_step4_result
     global airpay_eligible_data
+    global airpay_step5_day_filename, airpay_step5_night_filename
+    global airpay_step5_data, airpay_step5_result
+    global airpay_step6_data, airpay_step6_filename, airpay_step6_result
+    global airpay_before_allocation_data, airpay_before_allocation_result
 
     airpay_file = request.files.get("airpay_file")
     appointment_file = request.files.get("appointment_file")
     conversion_file = request.files.get("conversion_file")
     smart_assist_file = request.files.get("smart_assist_file")
+    day_shift_file = request.files.get("day_shift_file")
+    night_shift_file = request.files.get("night_shift_file")
+    iv_file = request.files.get("iv_file")
 
     missing = []
     if not airpay_file or not airpay_file.filename:
@@ -12846,8 +13103,14 @@ def upload_airpay_all():
         missing.append("Conversion Report")
     if not smart_assist_file or not smart_assist_file.filename:
         missing.append("Smart Assist Report")
+    if not day_shift_file or not day_shift_file.filename:
+        missing.append("Day Shift Consolidated")
+    if not night_shift_file or not night_shift_file.filename:
+        missing.append("Night Shift Consolidated")
+    if not iv_file or not iv_file.filename:
+        missing.append("IV Consolidate")
     if missing:
-        airpay_result = "❌ Please select all four files: " + ", ".join(missing)
+        airpay_result = "❌ Please select all files: " + ", ".join(missing)
         return redirect("/comparison?tab=airpay")
 
     # Clear previous outputs
@@ -12864,8 +13127,29 @@ def upload_airpay_all():
     airpay_step4_filename = None
     airpay_step4_result = None
     airpay_eligible_data = None
+    airpay_step5_day_filename = None
+    airpay_step5_night_filename = None
+    airpay_step5_data = None
+    airpay_step5_result = None
+    airpay_step6_data = None
+    airpay_step6_filename = None
+    airpay_step6_result = None
+    airpay_before_allocation_data = None
+    airpay_before_allocation_result = None
 
     try:
+        # 5) Day + Night Shift Consolidated combine (runs with Process All)
+        ok5, msg5 = _airpay_run_step5_combine(day_shift_file, night_shift_file)
+        if not ok5:
+            airpay_result = "❌ Day/Night Shift combine failed. " + msg5
+            return redirect("/comparison?tab=airpay")
+
+        # 6) IV Consolidate — load and keep for download
+        ok6, msg6 = _airpay_run_step6_iv(iv_file)
+        if not ok6:
+            airpay_result = "❌ IV Consolidate failed. " + msg6
+            return redirect("/comparison?tab=airpay")
+
         # 1) AirPay CSV (labeled slot → /upload_airpay_step1)
         _airpay_post_labeled_file("/upload_airpay_step1", airpay_file)
         if (
@@ -12961,8 +13245,18 @@ def upload_airpay_all():
         airpay_eligible_data = _airpay_format_eligible_final_sheets(
             eligible, airpay_step3_data, airpay_step2_data
         )
+
+        # Before Allocation: GC Eligible (primary) × File No. 6 IV Consolidate
+        ok_ba, msg_ba = _airpay_run_before_allocation()
+        if not ok_ba:
+            airpay_result = "❌ Before Allocation failed. " + msg_ba
+            return redirect("/comparison?tab=airpay")
+
         airpay_result = (
-            "✅ All four files processed successfully! "
+            "✅ Process All completed successfully! "
+            f"Step 5 Day/Night combine: {msg5} "
+            f"Step 6 IV Consolidate: {msg6} "
+            f"Before Allocation: {msg_ba} "
             f"Step 4 Smart Assist insurance columns filled from Step 2 on (PMS) Patient ID "
             f"({matched} matched row(s), {unmatched} unmatched row(s) with insurance columns blanked). "
             f"Eligible: Pass 1 Step1×Step4 "
@@ -12973,9 +13267,6 @@ def upload_airpay_all():
             f"({step4_appended} Step 4 row(s) appended); "
             f"Pass 4 Step 3 Conversion missing from Updated Remark "
             f"({step3_appended} Step 3 row(s) appended). "
-            "Final Eligible: fixed column order through Remark 1 "
-            "(no columns after Remark 1); "
-            "Subscriber Name = Last, First; Patient Last/First Name removed. "
             "Download each output below."
         )
         return redirect("/comparison?tab=airpay")
@@ -13241,6 +13532,535 @@ def download_airpay_eligible():
         return jsonify({"error": str(e)}), 500
 
 
+def _airpay_flatten_workbook_sheets(sheets_dict, shift_label):
+    """
+    Flatten all sheets from one workbook into a single DataFrame.
+    Ensures a Shift column tagged with shift_label (Day/Night).
+    """
+    frames = []
+    for sheet_name, df in (sheets_dict or {}).items():
+        if df is None or df.empty:
+            continue
+        part = df.copy(deep=True)
+        part["_Source Sheet"] = str(sheet_name)
+        frames.append(part)
+    if not frames:
+        out = pd.DataFrame()
+    else:
+        out = pd.concat(frames, ignore_index=True, sort=False)
+
+    # Ensure Shift column exists and fill blanks with Day/Night label
+    shift_col = None
+    for col in out.columns:
+        if str(col).strip().lower().replace("_", " ") == "shift":
+            shift_col = col
+            break
+    if shift_col is None:
+        out["Shift"] = shift_label
+    else:
+        if shift_col != "Shift":
+            out = out.rename(columns={shift_col: "Shift"})
+        filled = []
+        for v in out["Shift"]:
+            if pd.isna(v) or str(v).strip() == "" or str(v).strip().lower() == "nan":
+                filled.append(shift_label)
+            else:
+                filled.append(v)
+        out["Shift"] = filled
+    return out
+
+
+def _airpay_run_step5_combine(day_file, night_file):
+    """
+    Combine Day + Night Shift Consolidated uploads into airpay_step5_data.
+    Returns (ok: bool, message: str).
+    """
+    global airpay_step5_day_filename, airpay_step5_night_filename
+    global airpay_step5_data, airpay_step5_result
+
+    try:
+        day_name = secure_filename(day_file.filename)
+        night_name = secure_filename(night_file.filename)
+        day_file.seek(0)
+        night_file.seek(0)
+        day_sheets = pd.read_excel(day_file, sheet_name=None, engine="openpyxl")
+        night_sheets = pd.read_excel(night_file, sheet_name=None, engine="openpyxl")
+
+        day_df = _airpay_flatten_workbook_sheets(day_sheets, "Day")
+        night_df = _airpay_flatten_workbook_sheets(night_sheets, "Night")
+
+        if day_df.empty and night_df.empty:
+            airpay_step5_data = None
+            airpay_step5_result = "❌ Both Day/Night files have no data rows to combine."
+            return False, airpay_step5_result
+
+        combined = pd.concat([day_df, night_df], ignore_index=True, sort=False)
+        if "_Source Sheet" in combined.columns:
+            combined = combined.drop(columns=["_Source Sheet"])
+
+        airpay_step5_day_filename = day_name
+        airpay_step5_night_filename = night_name
+        airpay_step5_data = {"Combined": combined}
+        airpay_step5_result = (
+            f"✅ Day ({day_name}): {len(day_df)} row(s); "
+            f"Night ({night_name}): {len(night_df)} row(s); "
+            f"Combined total: {len(combined)} row(s). "
+            f"Shift tagged Day/Night."
+        )
+        return True, airpay_step5_result
+    except Exception as e:
+        airpay_step5_data = None
+        airpay_step5_result = f"❌ Error combining Day/Night Shift files: {str(e)}"
+        return False, airpay_step5_result
+
+
+def _airpay_run_step6_iv(iv_file):
+    """Load IV Consolidate workbook into airpay_step6_data. Returns (ok, message)."""
+    global airpay_step6_data, airpay_step6_filename, airpay_step6_result
+
+    try:
+        filename = secure_filename(iv_file.filename)
+        iv_file.seek(0)
+        sheets = pd.read_excel(iv_file, sheet_name=None, engine="openpyxl")
+        if not sheets:
+            airpay_step6_data = None
+            airpay_step6_filename = None
+            airpay_step6_result = "❌ IV Consolidate file has no sheets."
+            return False, airpay_step6_result
+
+        total_rows = sum(
+            len(df) for df in sheets.values() if df is not None and not df.empty
+        )
+        airpay_step6_data = {
+            name: df.copy(deep=True) for name, df in sheets.items()
+        }
+        airpay_step6_filename = filename
+        airpay_step6_result = (
+            f"✅ Loaded {len(sheets)} sheet(s), {total_rows} total row(s)."
+        )
+        return True, airpay_step6_result
+    except Exception as e:
+        airpay_step6_data = None
+        airpay_step6_filename = None
+        airpay_step6_result = f"❌ Error loading IV Consolidate: {str(e)}"
+        return False, airpay_step6_result
+
+
+def _airpay_flatten_sheets_dict(sheets_dict):
+    """Stack all non-empty sheets from a workbook dict into one DataFrame."""
+    frames = []
+    for _, df in (sheets_dict or {}).items():
+        if df is None or df.empty:
+            continue
+        part = df.copy(deep=True)
+        part.columns = [str(c).strip() for c in part.columns]
+        frames.append(part)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _airpay_align_gc_columns(primary_df, main_df, requested_names, role_label):
+    """
+    Resolve requested column names on both frames (case-insensitive).
+    Rename main columns to primary's actual names so GC keys align.
+    Returns (key_or_update_cols_on_primary, main_df_renamed, error_or_None).
+    """
+    rename_main = {}
+    resolved_primary = []
+    missing_primary = []
+    missing_main = []
+    for name in requested_names:
+        p_col = _airpay_find_named_col(primary_df, name)
+        m_col = _airpay_find_named_col(main_df, name)
+        if p_col is None:
+            missing_primary.append(name)
+        if m_col is None:
+            missing_main.append(name)
+        if p_col is not None and m_col is not None:
+            resolved_primary.append(p_col)
+            if m_col != p_col:
+                rename_main[m_col] = p_col
+    if missing_primary:
+        return (
+            None,
+            main_df,
+            f"{role_label} column(s) missing in primary (Eligible AirPay Appointments): "
+            + ", ".join(missing_primary),
+        )
+    if missing_main:
+        return (
+            None,
+            main_df,
+            f"{role_label} column(s) missing in Consolidate (File No. 6): "
+            + ", ".join(missing_main),
+        )
+    if rename_main:
+        main_df = main_df.rename(columns=rename_main)
+    return resolved_primary, main_df, None
+
+
+def _airpay_set_remark_for_payers(
+    df, payer_keys, new_remark, skip_remark_keys=None
+):
+    """
+    When (PMS) Payer matches payer_keys (case-insensitive strip), set Remark.
+    Skips rows whose current Remark is in skip_remark_keys (case-insensitive).
+    Returns (df, rows_updated).
+    """
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame(), 0
+
+    out = df.copy(deep=True)
+    out.columns = [str(c).strip() for c in out.columns]
+    payer_col = _airpay_find_named_col(out, "(PMS) Payer")
+    remark_col = _airpay_find_named_col(out, "Remark")
+    if payer_col is None:
+        return out, 0
+    if remark_col is None:
+        out["Remark"] = ""
+        remark_col = "Remark"
+
+    skip_keys = skip_remark_keys or set()
+    updated = 0
+    for idx in out.index:
+        payer_val = out.at[idx, payer_col]
+        if pd.isna(payer_val):
+            continue
+        payer_key = str(payer_val).strip().lower()
+        if not payer_key or payer_key not in payer_keys:
+            continue
+        remark_val = out.at[idx, remark_col]
+        remark_key = (
+            ""
+            if pd.isna(remark_val) or str(remark_val).strip() == ""
+            else str(remark_val).strip().lower()
+        )
+        if remark_key in skip_keys:
+            continue
+        out.at[idx, remark_col] = new_remark
+        updated += 1
+    return out, updated
+
+
+def _airpay_set_need_to_allocate_for_ntbp(df):
+    """
+    When Remark is NTBP (case-insensitive), set Agent Name to "Need to Allocate".
+    Ensures Agent Name column exists. Returns (df, rows_updated).
+    """
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame(), 0
+
+    out = df.copy(deep=True)
+    out.columns = [str(c).strip() for c in out.columns]
+    remark_col = _airpay_find_named_col(out, "Remark")
+    if remark_col is None:
+        return out, 0
+
+    agent_col = _airpay_find_named_col(out, "Agent Name")
+    if agent_col is None:
+        out["Agent Name"] = ""
+        agent_col = "Agent Name"
+
+    updated = 0
+    for idx in out.index:
+        remark_val = out.at[idx, remark_col]
+        if pd.isna(remark_val) or str(remark_val).strip().lower() != "ntbp":
+            continue
+        out.at[idx, agent_col] = "Need to Allocate"
+        updated += 1
+    return out, updated
+
+
+def _airpay_transfer_agent_name_to_agent1(df):
+    """
+    For rows with a non-blank Agent Name:
+      - copy Agent Name → Agent 1, then clear Agent Name
+      - copy Remark → Remark 1
+    Ensures Agent 1 / Remark 1 columns exist. Returns (df, rows_transferred).
+    """
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame(), 0
+
+    out = df.copy(deep=True)
+    out.columns = [str(c).strip() for c in out.columns]
+
+    agent_col = _airpay_find_named_col(out, "Agent Name")
+    if agent_col is None:
+        return out, 0
+
+    remark_col = _airpay_find_named_col(out, "Remark")
+    agent1_col = _airpay_find_named_col(out, "Agent 1")
+    if agent1_col is None:
+        out["Agent 1"] = ""
+        agent1_col = "Agent 1"
+    remark1_col = _airpay_find_named_col(out, "Remark 1")
+    if remark1_col is None:
+        out["Remark 1"] = ""
+        remark1_col = "Remark 1"
+
+    transferred = 0
+    for idx in out.index:
+        agent_val = out.at[idx, agent_col]
+        if pd.isna(agent_val) or str(agent_val).strip() == "":
+            continue
+        agent_str = str(agent_val).strip()
+        out.at[idx, agent1_col] = agent_str
+        out.at[idx, agent_col] = ""
+        if remark_col is not None:
+            remark_val = out.at[idx, remark_col]
+            if pd.isna(remark_val) or str(remark_val).strip() == "":
+                out.at[idx, remark1_col] = ""
+            else:
+                out.at[idx, remark1_col] = str(remark_val).strip()
+        transferred += 1
+    return out, transferred
+
+
+def _airpay_gc_pass(primary_df, main_df, pass_label):
+    """
+    One General Comparison pass with Before Allocation keys/update columns.
+    Returns (updated_df, matched, updated_cells, error_or_None).
+    """
+    primary_df = primary_df.copy(deep=True)
+    main_df = main_df.copy(deep=True)
+    primary_df.columns = [str(c).strip() for c in primary_df.columns]
+    main_df.columns = [str(c).strip() for c in main_df.columns]
+
+    if primary_df.empty:
+        return None, 0, 0, f"{pass_label}: primary data is empty."
+    if main_df.empty:
+        return None, 0, 0, f"{pass_label}: secondary/main data is empty."
+
+    key_cols, main_df, err = _airpay_align_gc_columns(
+        primary_df,
+        main_df,
+        AIRPAY_BEFORE_ALLOCATION_KEY_COLUMNS,
+        "Key",
+    )
+    if err:
+        return None, 0, 0, f"{pass_label}: {err}"
+
+    update_cols, main_df, err = _airpay_align_gc_columns(
+        primary_df,
+        main_df,
+        AIRPAY_BEFORE_ALLOCATION_UPDATE_COLUMNS,
+        "Update",
+    )
+    if err:
+        return None, 0, 0, f"{pass_label}: {err}"
+
+    updated_df, matched, updated_cells, gc_err = _general_comparison_apply_updates(
+        primary_df, main_df, key_cols, update_cols
+    )
+    if gc_err:
+        return None, 0, 0, f"{pass_label}: {gc_err}"
+    return updated_df, matched, updated_cells, None
+
+
+def _airpay_run_before_allocation():
+    """
+    Before Allocation (Step 8) — two General Comparison passes, same keys/columns:
+      Pass 1: primary = Eligible "Updated Remark", main = IV Consolidate (File 6)
+      Pass 2: primary = Pass 1 result, main = Day/Night Shift Combined (Output 5)
+    Final output replaces Step 8 as "Before Allocation".
+    Returns (ok: bool, message: str).
+    """
+    global airpay_eligible_data, airpay_step5_data, airpay_step6_data
+    global airpay_before_allocation_data, airpay_before_allocation_result
+
+    try:
+        if not airpay_eligible_data:
+            airpay_before_allocation_data = None
+            airpay_before_allocation_result = (
+                "❌ Before Allocation requires Eligible AirPay Appointments."
+            )
+            return False, airpay_before_allocation_result
+        if not airpay_step6_data:
+            airpay_before_allocation_data = None
+            airpay_before_allocation_result = (
+                "❌ Before Allocation requires File No. 6 (IV Consolidate)."
+            )
+            return False, airpay_before_allocation_result
+        if not airpay_step5_data:
+            airpay_before_allocation_data = None
+            airpay_before_allocation_result = (
+                "❌ Before Allocation requires Day / Night Shift Combined (Output 5)."
+            )
+            return False, airpay_before_allocation_result
+
+        # Pass 1 primary: Updated Remark sheet only
+        primary_df = None
+        for name, df in airpay_eligible_data.items():
+            if str(name).strip().lower() == "updated remark":
+                primary_df = (
+                    df.copy(deep=True) if df is not None else pd.DataFrame()
+                )
+                break
+        if primary_df is None:
+            airpay_before_allocation_data = None
+            available = ", ".join(str(n) for n in airpay_eligible_data.keys())
+            airpay_before_allocation_result = (
+                "❌ Before Allocation requires Eligible sheet 'Updated Remark'. "
+                f"Available sheets: {available or '(none)'}"
+            )
+            return False, airpay_before_allocation_result
+
+        iv_main = _airpay_flatten_sheets_dict(airpay_step6_data)
+        pass1_df, m1, c1, err1 = _airpay_gc_pass(
+            primary_df,
+            iv_main,
+            "Pass 1 (Updated Remark × IV Consolidate)",
+        )
+        if err1:
+            airpay_before_allocation_data = None
+            airpay_before_allocation_result = f"❌ {err1}"
+            return False, airpay_before_allocation_result
+
+        # Pass 2 secondary: Day / Night Shift Combined
+        if "Combined" in airpay_step5_data:
+            day_night_main = airpay_step5_data["Combined"].copy(deep=True)
+        else:
+            first_name = next(iter(airpay_step5_data.keys()))
+            day_night_main = airpay_step5_data[first_name].copy(deep=True)
+
+        pass2_df, m2, c2, err2 = _airpay_gc_pass(
+            pass1_df,
+            day_night_main,
+            "Pass 2 (Before Allocation × Day/Night Combined)",
+        )
+        if err2:
+            airpay_before_allocation_data = None
+            airpay_before_allocation_result = f"❌ {err2}"
+            return False, airpay_before_allocation_result
+
+        # Split GC-updated Updated Remark: Today = allowed remarks; AV = the rest
+        remark_col = _airpay_find_named_col(pass2_df, "Remark")
+        if remark_col is None:
+            today_df = pass2_df.iloc[0:0].copy()
+            av_df = pass2_df.copy(deep=True).reset_index(drop=True)
+        else:
+            remark_norm = pass2_df[remark_col].map(
+                lambda v: (
+                    ""
+                    if (pd.isna(v) or str(v).strip() == "")
+                    else str(v).strip().lower()
+                )
+            )
+            today_mask = remark_norm.isin(AIRPAY_BEFORE_ALLOCATION_TODAY_REMARKS)
+            today_df = pass2_df.loc[today_mask].copy(deep=True).reset_index(drop=True)
+            av_df = pass2_df.loc[~today_mask].copy(deep=True).reset_index(drop=True)
+
+        # Agent Name → Agent 1 (clear Agent Name); Remark → Remark 1 when copied
+        today_df, today_xfer = _airpay_transfer_agent_name_to_agent1(today_df)
+        av_df, av_xfer = _airpay_transfer_agent_name_to_agent1(av_df)
+
+        # Today only: listed (PMS) Payer values → Remark = "NTC"
+        today_df, ntc_payer_rows = _airpay_set_remark_for_payers(
+            today_df, AIRPAY_BEFORE_ALLOCATION_NTC_PAYERS, "NTC"
+        )
+        # Today only: FAX payers → Remark = "FAX" (do not overwrite NTC/NTBP)
+        today_df, fax_payer_rows = _airpay_set_remark_for_payers(
+            today_df,
+            AIRPAY_BEFORE_ALLOCATION_FAX_PAYERS,
+            "FAX",
+            skip_remark_keys=AIRPAY_BEFORE_ALLOCATION_FAX_SKIP_REMARKS,
+        )
+        # Today only: Skygen payers → Remark = "Skygen"
+        today_df, skygen_payer_rows = _airpay_set_remark_for_payers(
+            today_df, AIRPAY_BEFORE_ALLOCATION_SKYGEN_PAYERS, "Skygen"
+        )
+
+        # Remark NTBP → Agent Name = "Need to Allocate" on Today only
+        today_df, ntbp_today = _airpay_set_need_to_allocate_for_ntbp(today_df)
+
+        # Step 8 workbook: Eligible sheets; Updated Remark → Today/AV split
+        out_workbook = {}
+        for name, df in airpay_eligible_data.items():
+            if str(name).strip().lower() == "updated remark":
+                out_workbook["Today"] = today_df
+            elif df is None:
+                out_workbook[name] = pd.DataFrame()
+            else:
+                out_workbook[name] = df.copy(deep=True)
+        out_workbook["AV"] = av_df
+
+        airpay_before_allocation_data = out_workbook
+        other_count = max(0, len(out_workbook) - 2)  # exclude Today + AV
+        rate1 = (m1 / len(pass1_df) * 100.0) if len(pass1_df) > 0 else 0.0
+        rate2 = (m2 / len(pass2_df) * 100.0) if len(pass2_df) > 0 else 0.0
+        airpay_before_allocation_result = (
+            f"✅ Before Allocation complete (2 passes). "
+            f"Pass 1 Updated Remark×IV: rows {len(pass1_df)}, "
+            f"matched {m1} ({rate1:.1f}%), cells {c1}. "
+            f"Pass 2 ×Day/Night Combined: rows {len(pass2_df)}, "
+            f"matched {m2} ({rate2:.1f}%), cells {c2}. "
+            f"Today: {len(today_df)} row(s) "
+            f"(Remark in NTC/ATS/NTBP/Workable/Pending); "
+            f"AV: {len(av_df)} row(s) (all other Remarks). "
+            f"Agent Name→Agent 1 / Remark→Remark 1: "
+            f"Today {today_xfer}, AV {av_xfer} row(s). "
+            f"Payer→Remark NTC (Today only): {ntc_payer_rows} row(s). "
+            f"Payer→Remark FAX (Today only, skip NTC/NTBP): {fax_payer_rows} row(s). "
+            f"Payer→Remark Skygen (Today only): {skygen_payer_rows} row(s). "
+            f"NTBP→Need to Allocate (Today only): {ntbp_today} row(s). "
+            f"Output sheets: {len(out_workbook)} "
+            f"(Today + AV + {other_count} other Eligible sheet(s)). "
+            f"Keys: {', '.join(AIRPAY_BEFORE_ALLOCATION_KEY_COLUMNS)}."
+        )
+        return True, airpay_before_allocation_result
+    except Exception as e:
+        airpay_before_allocation_data = None
+        airpay_before_allocation_result = (
+            f"❌ Error building Before Allocation: {str(e)}"
+        )
+        return False, airpay_before_allocation_result
+
+
+@app.route("/download_airpay_step5", methods=["POST"])
+def download_airpay_step5():
+    global airpay_step5_data
+    if not airpay_step5_data:
+        return jsonify({"error": "No combined Day/Night Shift data to download"}), 400
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = (
+            f"Day Night Shift Combined {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+        )
+    try:
+        return _airpay_send_excel_download(airpay_step5_data, filename)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/download_airpay_step6", methods=["POST"])
+def download_airpay_step6():
+    global airpay_step6_data
+    if not airpay_step6_data:
+        return jsonify({"error": "No IV Consolidate data to download"}), 400
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = f"IV Consolidate {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+    try:
+        return _airpay_send_excel_download(airpay_step6_data, filename)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/download_airpay_before_allocation", methods=["POST"])
+def download_airpay_before_allocation():
+    global airpay_before_allocation_data
+    if not airpay_before_allocation_data:
+        return jsonify({"error": "No Before Allocation data to download"}), 400
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        filename = f"Before Allocation {datetime.now().strftime('%m_%d_%Y')}.xlsx"
+    try:
+        return _airpay_send_excel_download(airpay_before_allocation_data, filename)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/reset_airpay", methods=["POST"])
 def reset_airpay():
     global airpay_result
@@ -13249,6 +14069,10 @@ def reset_airpay():
     global airpay_step3_data, airpay_step3_filename, airpay_step3_result
     global airpay_step4_data, airpay_step4_filename, airpay_step4_result
     global airpay_eligible_data
+    global airpay_step5_day_filename, airpay_step5_night_filename
+    global airpay_step5_data, airpay_step5_result
+    global airpay_step6_data, airpay_step6_filename, airpay_step6_result
+    global airpay_before_allocation_data, airpay_before_allocation_result
 
     airpay_result = "🔄 AirPay Report reset successfully! All outputs cleared."
     airpay_step1_data = None
@@ -13264,6 +14088,15 @@ def reset_airpay():
     airpay_step4_filename = None
     airpay_step4_result = None
     airpay_eligible_data = None
+    airpay_step5_day_filename = None
+    airpay_step5_night_filename = None
+    airpay_step5_data = None
+    airpay_step5_result = None
+    airpay_step6_data = None
+    airpay_step6_filename = None
+    airpay_step6_result = None
+    airpay_before_allocation_data = None
+    airpay_before_allocation_result = None
     return redirect("/comparison?tab=airpay")
 
 
@@ -18408,6 +19241,144 @@ def reset_nh():
 # =============================
 # General Comparison
 # =============================
+
+
+def _general_comparison_apply_updates(primary_df, main_df, key_columns, update_columns):
+    """
+    Core General Comparison matching/update logic.
+    Matches primary rows to main on key_columns; copies update_columns from main.
+    When main has multiple rows per key, prefer Remark in UPDATED/QCP/ASST; else last wins.
+    Returns (updated_primary_df, matched_rows, updated_cells, error_message_or_None).
+    """
+    primary_df = primary_df.copy(deep=True)
+    main_df = main_df.copy(deep=True)
+
+    primary_df.columns = [str(col).strip() for col in primary_df.columns]
+    main_df.columns = [str(col).strip() for col in main_df.columns]
+
+    def _dedup_columns(df):
+        seen = {}
+        new_cols = []
+        for c in df.columns:
+            if c in seen:
+                seen[c] += 1
+                new_cols.append(f"{c}__dup{seen[c]}")
+            else:
+                seen[c] = 0
+                new_cols.append(c)
+        df.columns = new_cols
+        return df
+
+    primary_df = _dedup_columns(primary_df)
+    main_df = _dedup_columns(main_df)
+
+    for col in key_columns:
+        if col not in primary_df.columns:
+            return None, 0, 0, f"Key column '{col}' not found in primary sheet."
+        if col not in main_df.columns:
+            return None, 0, 0, f"Key column '{col}' not found in main dataset sheet."
+    for col in update_columns:
+        if col not in main_df.columns:
+            return None, 0, 0, f"Update column '{col}' not found in main dataset sheet."
+        if col not in primary_df.columns:
+            return (
+                None,
+                0,
+                0,
+                f"Header not found: '{col}'. "
+                "Please verify that the Primary and Secondary files have matching column names. "
+                "Missing in Primary sheet.",
+            )
+
+    def normalize_val(v, is_patient_id=False):
+        if isinstance(v, pd.Series):
+            v = v.iloc[0] if len(v) > 0 else ""
+        try:
+            if pd.isna(v):
+                return ""
+        except (ValueError, TypeError):
+            pass
+        if is_patient_id:
+            normalized = normalize_patient_id(v)
+            if normalized is None:
+                return ""
+            return str(normalized).strip()
+        s = str(v).strip()
+        s = " ".join(s.split())
+        return s.lower()
+
+    is_pid_col = {}
+    for col in key_columns:
+        col_lower = str(col).lower().strip()
+        is_pid_col[col] = (
+            ("patient" in col_lower and "id" in col_lower)
+            or col_lower in ["pid", "pat id", "patientid"]
+        )
+
+    def build_key(df_input):
+        return df_input[key_columns].apply(
+            lambda row: "|".join(
+                normalize_val(row[col], is_patient_id=is_pid_col.get(col, False))
+                for col in key_columns
+            ),
+            axis=1,
+        )
+
+    try:
+        primary_keys = build_key(primary_df)
+        main_keys = build_key(main_df)
+    except Exception as e:
+        return None, 0, 0, f"Error building keys: {str(e)}"
+
+    main_key_to_indices = {}
+    for idx, key in main_keys.items():
+        if not key:
+            continue
+        main_key_to_indices.setdefault(key, []).append(idx)
+
+    remark_col_main = None
+    if "Remark" in update_columns and "Remark" in main_df.columns:
+        remark_col_main = "Remark"
+    preferred_remarks = {"UPDATED", "QCP", "ASST"}
+
+    def choose_main_idx(indices):
+        if not indices:
+            return None
+        if remark_col_main is not None:
+            for idx in indices:
+                rv = (
+                    str(main_df.at[idx, remark_col_main]).strip().upper()
+                    if pd.notna(main_df.at[idx, remark_col_main])
+                    else ""
+                )
+                if rv in preferred_remarks:
+                    return idx
+        return indices[-1]
+
+    main_key_map = {
+        k: choose_main_idx(idxs) for k, idxs in main_key_to_indices.items()
+    }
+
+    matched_rows = 0
+    updated_cells = 0
+    for idx, key in primary_keys.items():
+        if not key or key not in main_key_map:
+            continue
+        matched_rows += 1
+        main_idx = main_key_map[key]
+        for col in update_columns:
+            try:
+                value = (
+                    main_df.at[main_idx, col] if col in main_df.columns else None
+                )
+                if pd.isna(value):
+                    value = ""
+                primary_df.at[idx, col] = value
+                updated_cells += 1
+            except Exception:
+                continue
+
+    return primary_df, matched_rows, updated_cells, None
 
 
 @app.route("/load_general_primary", methods=["POST"])
