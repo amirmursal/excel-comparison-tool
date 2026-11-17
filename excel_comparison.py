@@ -367,6 +367,7 @@ AIRPAY_NOT_TO_WORK_LOCATIONS = {
     "otteson family and cosmetic dentistry",
     "smile crafters",
     "smiles on clark",
+    "toothologie",
     "toothologie - a smile studio",
 }
 
