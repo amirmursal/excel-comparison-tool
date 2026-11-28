@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 import re
 from numbers import Integral, Real
+import imagen_row_form
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max file size
@@ -1862,6 +1863,9 @@ HTML_TEMPLATE = """
                 </div>
                 <div class="menu-item {% if active_tab == 'airpay' %}active{% endif %}" onclick="switchTab('airpay')">
                     <span>AirPay Report</span>
+                </div>
+                <div class="menu-item" onclick="window.location.href='/imagen-row'">
+                    <span>Imagen Row Form</span>
                 </div>
 
                 <div class="menu-group-header">General Automation</div>
@@ -7301,7 +7305,68 @@ def compare_patient_names(raw_df, previous_df):
 
 @app.route("/")
 def root():
+    if imagen_row_form.has_form_query(request.args):
+        return imagen_row_form.render_page(imagen_row_form.values_from_query(request.args))
     return redirect("/comparison")
+
+
+@app.route("/imagen-row")
+def imagen_row_page():
+    return imagen_row_form.render_page(imagen_row_form.values_from_query(request.args))
+
+
+@app.route("/imagen-row/extract-pdf", methods=["POST"])
+def imagen_row_extract_pdf():
+    pdf = request.files.get("pdf")
+    if not pdf or not (pdf.filename or "").strip():
+        return jsonify({"error": "Please upload a PDF"}), 400
+    filename = (pdf.filename or "").lower()
+    if not filename.endswith(".pdf"):
+        return jsonify({"error": "Please upload a PDF"}), 400
+    current = imagen_row_form.values_from_form(request.form)
+    try:
+        text = imagen_row_form.extract_text_from_pdf_bytes(pdf.read())
+    except Exception as exc:
+        return jsonify({"error": f"Could not read PDF: {exc}"}), 400
+    if not str(text or "").strip():
+        return jsonify({"error": "No text found in PDF. Fill the form manually."}), 400
+    extracted = imagen_row_form.extract_fields_from_text(text)
+    filled, updates = imagen_row_form.fill_missing_fields(current, extracted)
+    updated_labels = [
+        label for key, label in imagen_row_form.FORM_FIELDS if key in updates
+    ]
+    return jsonify({"values": filled, "updated": updated_labels})
+
+
+def _imagen_row_pdf_response(as_attachment):
+    values = imagen_row_form.values_from_form(request.form)
+    missing = imagen_row_form.missing_required_fields(values)
+    if missing:
+        return (
+            jsonify(
+                {
+                    "error": "Fill missing fields first: " + ", ".join(missing)
+                }
+            ),
+            400,
+        )
+    pdf_bytes = imagen_row_form.build_output_pdf_bytes(values)
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=as_attachment,
+        download_name="imagen-row.pdf",
+    )
+
+
+@app.route("/imagen-row/preview", methods=["POST"])
+def imagen_row_preview():
+    return _imagen_row_pdf_response(as_attachment=False)
+
+
+@app.route("/imagen-row/process", methods=["POST"])
+def imagen_row_process():
+    return _imagen_row_pdf_response(as_attachment=True)
 
 
 @app.route("/comparison")
